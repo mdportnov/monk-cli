@@ -164,7 +164,7 @@ pub async fn run() -> Result<()> {
     let cfg_locale = crate::config::Config::load().ok().and_then(|c| c.general.locale.clone());
     crate::i18n::init(cfg_locale.as_deref(), cli.locale.as_deref());
 
-    maybe_first_run_nudge(&cli.command);
+    maybe_first_run_onboarding(&cli.command, cli.locale.as_deref())?;
 
     let result: crate::Result<()> = match cli.command {
         Command::Init {
@@ -228,13 +228,30 @@ pub async fn run() -> Result<()> {
     result.map_err(miette::Report::from)
 }
 
-fn maybe_first_run_nudge(cmd: &Command) {
-    if matches!(cmd, Command::Init { .. } | Command::Doctor | Command::Completions { .. }) {
-        return;
+fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Result<()> {
+    use std::io::IsTerminal;
+    if matches!(
+        cmd,
+        Command::Init { .. }
+            | Command::Completions { .. }
+            | Command::Daemon(DaemonCmd::Run)
+            | Command::Lang { .. }
+    ) {
+        return Ok(());
     }
-    let Ok(cfg) = crate::config::Config::load() else { return };
-    if cfg.general.initialized {
-        return;
+    let already = crate::config::Config::load()
+        .map(|c| c.general.initialized)
+        .unwrap_or(false);
+    if already {
+        return Ok(());
     }
-    eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
+    if !std::io::stdin().is_terminal() {
+        eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
+        return Ok(());
+    }
+    let opts = crate::onboarding::Options {
+        locale: locale.map(|s| s.to_string()),
+        ..Default::default()
+    };
+    crate::onboarding::run(opts)
 }

@@ -1,5 +1,9 @@
 _version: 2
 
+common:
+  yes: "Yes"
+  no: "No"
+
 onboarding:
   welcome_title: "Welcome to monk"
   welcome_body: "Silence. Discipline. Flow.\nA focus & distraction blocker that lives in your terminal."

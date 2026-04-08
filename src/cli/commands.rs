@@ -25,11 +25,13 @@ pub async fn start(
             )
         );
         let confirm_text = crate::i18n::t!("hard.confirm_start").to_string();
-        let confirm = inquire::Confirm::new(&confirm_text)
-            .with_default(false)
+        let yes = crate::i18n::t!("common.yes").to_string();
+        let no = crate::i18n::t!("common.no").to_string();
+        let ans = inquire::Select::new(&confirm_text, vec![no.clone(), yes.clone()])
+            .with_starting_cursor(0)
             .prompt()
             .map_err(|e| Error::Other(e.to_string()))?;
-        if !confirm {
+        if ans != yes {
             return Err(Error::Other(crate::i18n::t!("hard.cancelled").to_string()));
         }
     }

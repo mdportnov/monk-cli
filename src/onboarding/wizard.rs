@@ -1,6 +1,6 @@
 use std::{io::IsTerminal, time::Duration};
 
-use inquire::{Confirm, MultiSelect, Select, Text};
+use inquire::{MultiSelect, Select, Text};
 
 use crate::{
     blocker,
@@ -198,12 +198,25 @@ fn pick_duration(current: Duration) -> Result<Duration> {
 }
 
 fn pick_hard_mode(default: bool) -> Result<bool> {
-    let q = format!("{}\n  {}", t!("onboarding.hard_mode_q"), t!("onboarding.hard_mode_hint"));
-    Confirm::new(&q).with_default(default).prompt().map_err(prompt_err)
+    let yes = t!("common.yes").to_string();
+    let no = t!("common.no").to_string();
+    let q = format!("{}  ({})", t!("onboarding.hard_mode_q"), t!("onboarding.hard_mode_hint"));
+    let opts = vec![no.clone(), yes.clone()];
+    let cursor = usize::from(default);
+    let ans = Select::new(&q, opts).with_starting_cursor(cursor).prompt().map_err(prompt_err)?;
+    Ok(ans == yes)
 }
 
 fn pick_autostart(default: bool) -> Result<bool> {
-    Confirm::new(&t!("onboarding.autostart_q")).with_default(default).prompt().map_err(prompt_err)
+    let yes = t!("common.yes").to_string();
+    let no = t!("common.no").to_string();
+    let opts = vec![no.clone(), yes.clone()];
+    let cursor = usize::from(default);
+    let ans = Select::new(&t!("onboarding.autostart_q"), opts)
+        .with_starting_cursor(cursor)
+        .prompt()
+        .map_err(prompt_err)?;
+    Ok(ans == yes)
 }
 
 fn pick_apps_for_presets(cache: &crate::apps::AppCache) -> Result<Vec<String>> {
