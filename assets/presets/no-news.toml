@@ -1,0 +1,3 @@
+site_groups = ["global.news", "ru.news"]
+sites = []
+apps = []

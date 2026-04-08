@@ -1,0 +1,56 @@
+default_subdomains = ["www", "m"]
+
+[social]
+label = "Соцсети RU"
+domains = [
+    "vk.com",
+    "ok.ru",
+    "livejournal.com",
+    "dzen.ru",
+    "my.mail.ru",
+]
+
+[video]
+label = "Видео RU"
+domains = [
+    "rutube.ru",
+    "kinopoisk.ru",
+    "ivi.ru",
+    "okko.tv",
+    "premier.one",
+    "kion.ru",
+    "start.ru",
+]
+
+[news]
+label = "Новости RU"
+domains = [
+    "lenta.ru",
+    "rbc.ru",
+    "ria.ru",
+    "tass.ru",
+    "meduza.io",
+    "kommersant.ru",
+    "vedomosti.ru",
+    "gazeta.ru",
+    "tjournal.ru",
+    "habr.com",
+]
+
+[shopping]
+label = "Магазины RU"
+domains = [
+    "wildberries.ru",
+    "ozon.ru",
+    "market.yandex.ru",
+    "avito.ru",
+    "dns-shop.ru",
+    "mvideo.ru",
+]
+
+[games]
+label = "Игры RU"
+domains = [
+    "vkplay.ru",
+    "mail.ru",
+]

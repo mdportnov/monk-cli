@@ -1,0 +1,60 @@
+_version: 2
+
+onboarding:
+  welcome_title: "Welcome to monk"
+  welcome_body: "Silence. Discipline. Flow.\nA focus & distraction blocker that lives in your terminal."
+  press_enter: "Press Enter to continue"
+  pick_language: "Choose your language"
+  pick_preset: "Pick one or more starting profiles"
+  preset_deepwork: "Deep Work — social media, video, news"
+  preset_no_chat: "No Chat — Slack, Discord, Telegram, Messenger"
+  preset_no_news: "No News — news sites, X/Twitter"
+  preset_no_games: "No Games — Steam, Epic, gaming sites"
+  preset_custom: "Custom — empty profile, fill it in later"
+  pick_duration: "Default session length"
+  duration_pomodoro: "25 minutes (pomodoro)"
+  duration_deep: "50 minutes"
+  duration_long: "90 minutes"
+  duration_custom: "Custom"
+  duration_custom_prompt: "Enter duration (e.g. 30m, 1h30m)"
+  hard_mode_q: "Enable hard mode by default?"
+  hard_mode_hint: "You won't be able to cancel sessions early."
+  autostart_q: "Start monk automatically at login?"
+  checking_hosts: "Checking write access to the hosts file…"
+  hosts_ok: "Hosts file is writable."
+  hosts_ro: "Hosts file is read-only. Run the daemon with elevated privileges."
+  done_title: "All set"
+  done_config_at: "Config:"
+  done_next_header: "Next steps:"
+  done_next_start: "  monk start         start your first focus session"
+  done_next_tui: "  monk tui           open the interactive UI"
+  done_next_doctor: "  monk doctor        diagnose your setup"
+  done_next_help: "  monk --help        full command reference"
+  first_run_nudge: "Looks like this is your first run. Run `monk init` for a quick setup."
+
+errors:
+  daemon_not_running: "Daemon is not running"
+  daemon_already_running: "Daemon is already running (pid {pid})"
+  permission_denied: "Permission denied: {path}"
+  unknown_profile: "Unknown profile `{name}`"
+  config_invalid: "Invalid config: {msg}"
+
+status:
+  daemon_running: "daemon: running (pid {pid})"
+  daemon_stopped: "daemon: not running"
+  active_none: "active: none"
+  active_session: "active: {profile} ({remaining} remaining)"
+  started: "started `{profile}` for {duration}"
+  stopped: "stopped `{profile}`"
+  no_profiles: "no profiles defined"
+
+hard:
+  ceremony_warning: "Hard mode engaged. You will not be able to stop this session for {duration}."
+  confirm_start: "Are you sure you want to start in hard mode?"
+  cancelled: "Hard mode start cancelled."
+  started_note: "Hard mode active. Use `monk panic` to request an escape with delay."
+  stop_denied: "Hard mode active. {remaining} remaining. Use `monk panic` to request an escape."
+
+panic:
+  scheduled: "Panic scheduled. Session will release at {at}."
+  cancelled: "Panic request cancelled."

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.monk.monkd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BIN__</string>
+        <string>daemon</string>
+        <string>run</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MONK_LOG</key>
+        <string>info</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>__LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG__</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,60 @@
+_version: 2
+
+onboarding:
+  welcome_title: "Добро пожаловать в monk"
+  welcome_body: "Тишина. Дисциплина. Поток.\nБлокировщик отвлечений, который живёт в твоём терминале."
+  press_enter: "Нажми Enter, чтобы продолжить"
+  pick_language: "Выбери язык"
+  pick_preset: "Выбери один или несколько стартовых профилей"
+  preset_deepwork: "Deep Work — соцсети, видео, новости"
+  preset_no_chat: "No Chat — Slack, Discord, Telegram, Messenger"
+  preset_no_news: "No News — новостные сайты, X/Twitter"
+  preset_no_games: "No Games — Steam, Epic, игровые сайты"
+  preset_custom: "Custom — пустой профиль, заполнишь позже"
+  pick_duration: "Длительность сессии по умолчанию"
+  duration_pomodoro: "25 минут (помидор)"
+  duration_deep: "50 минут"
+  duration_long: "90 минут"
+  duration_custom: "Своя"
+  duration_custom_prompt: "Введи длительность (например 30m, 1h30m)"
+  hard_mode_q: "Включить hard mode по умолчанию?"
+  hard_mode_hint: "Сессии нельзя будет прервать досрочно."
+  autostart_q: "Запускать monk автоматически при входе в систему?"
+  checking_hosts: "Проверяю доступ на запись в hosts-файл…"
+  hosts_ok: "Файл hosts доступен для записи."
+  hosts_ro: "Файл hosts защищён от записи. Запусти демон с повышенными правами."
+  done_title: "Готово"
+  done_config_at: "Конфиг:"
+  done_next_header: "Следующие шаги:"
+  done_next_start: "  monk start         начать первую focus-сессию"
+  done_next_tui: "  monk tui           открыть интерактивный интерфейс"
+  done_next_doctor: "  monk doctor        диагностика окружения"
+  done_next_help: "  monk --help        полный список команд"
+  first_run_nudge: "Похоже, это первый запуск. Запусти `monk init` для быстрой настройки."
+
+errors:
+  daemon_not_running: "Демон не запущен"
+  daemon_already_running: "Демон уже запущен (pid {pid})"
+  permission_denied: "Нет доступа: {path}"
+  unknown_profile: "Неизвестный профиль `{name}`"
+  config_invalid: "Некорректный конфиг: {msg}"
+
+status:
+  daemon_running: "демон: запущен (pid {pid})"
+  daemon_stopped: "демон: не запущен"
+  active_none: "активная сессия: нет"
+  active_session: "активная: {profile} (осталось {remaining})"
+  started: "запущено `{profile}` на {duration}"
+  stopped: "остановлено `{profile}`"
+  no_profiles: "профили не настроены"
+
+hard:
+  ceremony_warning: "Включён жёсткий режим. Сессию нельзя будет прервать в течение {duration}."
+  confirm_start: "Точно запустить в жёстком режиме?"
+  cancelled: "Запуск жёсткого режима отменён."
+  started_note: "Жёсткий режим активен. Используйте `monk panic` для запроса выхода с задержкой."
+  stop_denied: "Жёсткий режим активен. Осталось {remaining}. Используйте `monk panic`."
+
+panic:
+  scheduled: "Выход запланирован. Сессия завершится в {at}."
+  cancelled: "Запрос выхода отменён."

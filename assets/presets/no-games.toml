@@ -1,0 +1,3 @@
+site_groups = ["global.games", "ru.games"]
+sites = []
+apps = []

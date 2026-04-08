@@ -1,0 +1,88 @@
+default_subdomains = ["www", "m"]
+
+[social]
+label = "Social networks"
+domains = [
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+    "twitter.com",
+    "x.com",
+    "snapchat.com",
+    "pinterest.com",
+    "linkedin.com",
+    "threads.net",
+    "bsky.app",
+]
+extra_subdomains = { "facebook.com" = ["mbasic", "mtouch", "free"], "instagram.com" = ["help"] }
+
+[video]
+label = "Video and streaming"
+domains = [
+    "youtube.com",
+    "youtu.be",
+    "netflix.com",
+    "twitch.tv",
+    "vimeo.com",
+    "hulu.com",
+    "disneyplus.com",
+    "primevideo.com",
+]
+
+[news]
+label = "News and aggregators"
+domains = [
+    "news.ycombinator.com",
+    "reddit.com",
+    "cnn.com",
+    "bbc.com",
+    "bbc.co.uk",
+    "nytimes.com",
+    "theguardian.com",
+    "medium.com",
+]
+extra_subdomains = { "reddit.com" = ["old", "new", "np"] }
+
+[chat]
+label = "Chat and messengers (web)"
+domains = [
+    "discord.com",
+    "slack.com",
+    "messenger.com",
+    "telegram.org",
+    "web.telegram.org",
+    "web.whatsapp.com",
+]
+
+[shopping]
+label = "Shopping"
+domains = [
+    "amazon.com",
+    "ebay.com",
+    "aliexpress.com",
+    "temu.com",
+    "shein.com",
+]
+
+[games]
+label = "Gaming"
+domains = [
+    "steampowered.com",
+    "store.steampowered.com",
+    "epicgames.com",
+    "battle.net",
+    "roblox.com",
+    "ea.com",
+]
+
+[adult]
+label = "Adult"
+domains = [
+    "pornhub.com",
+    "xvideos.com",
+    "xnxx.com",
+    "xhamster.com",
+    "redtube.com",
+    "youporn.com",
+    "onlyfans.com",
+]

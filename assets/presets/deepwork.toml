@@ -1,0 +1,9 @@
+site_groups = [
+    "global.social",
+    "global.video",
+    "global.news",
+    "ru.social",
+    "ru.news",
+]
+sites = []
+apps = []

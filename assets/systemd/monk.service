@@ -1,0 +1,23 @@
+[Unit]
+Description=monk focus & distraction blocker daemon
+Documentation=https://github.com/mihail/monk
+After=network.target
+StartLimitIntervalSec=0
+StartLimitBurst=0
+
+[Service]
+Type=simple
+ExecStart=__BIN__ daemon run
+Restart=always
+RestartSec=1s
+Environment=MONK_LOG=info
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/etc/hosts
+AmbientCapabilities=CAP_DAC_OVERRIDE
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
+
+[Install]
+WantedBy=default.target

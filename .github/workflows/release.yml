@@ -1,0 +1,112 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN: monk
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu,    cross: false }
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-musl,   cross: true  }
+          - { os: ubuntu-latest,  target: aarch64-unknown-linux-gnu,   cross: true  }
+          - { os: ubuntu-latest,  target: aarch64-unknown-linux-musl,  cross: true  }
+          - { os: macos-latest,   target: x86_64-apple-darwin,         cross: false }
+          - { os: macos-latest,   target: aarch64-apple-darwin,        cross: false }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,      cross: false }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc,     cross: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: build
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+
+      - name: package
+        id: pkg
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ -z "$version" ] && version="dev"
+          name="${BIN}-v${version}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/${BIN}.exe" "dist/$name/"
+            cp README.md "dist/$name/" || true
+            (cd dist && 7z a "${name}.zip" "$name" >/dev/null)
+            echo "asset=dist/${name}.zip" >> "$GITHUB_OUTPUT"
+          else
+            cp "target/${{ matrix.target }}/release/${BIN}" "dist/$name/"
+            cp README.md "dist/$name/" || true
+            (cd dist && tar -czf "${name}.tar.gz" "$name")
+            echo "asset=dist/${name}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: checksums
+        shell: bash
+        run: |
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum monk-*.* > "SHA256SUMS-${{ matrix.target }}.txt"
+          else
+            shasum -a 256 monk-*.* > "SHA256SUMS-${{ matrix.target }}.txt"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monk-${{ matrix.target }}
+          path: |
+            ${{ steps.pkg.outputs.asset }}
+            dist/SHA256SUMS-${{ matrix.target }}.txt
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm SHA256SUMS-*.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/monk-*.tar.gz
+            dist/monk-*.zip
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
