@@ -1,6 +1,8 @@
 pub mod protocol;
 
-pub use protocol::{Envelope, HardModeInfo, ModeSummary, Request, Response, PROTOCOL_VERSION};
+pub use protocol::{
+    Envelope, HardModeInfo, ModeDetailPayload, ModeSummary, Request, Response, PROTOCOL_VERSION,
+};
 
 use std::time::Duration;
 

@@ -236,6 +236,10 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             Ok(s) => Response::ModeStatsData(s),
             Err(e) => Response::Error { message: e.to_string() },
         },
+        Request::ModeDetail { name, days } => match sup.mode_detail(&name, days) {
+            Ok(d) => Response::ModeDetailData(Box::new(d)),
+            Err(e) => Response::Error { message: e.to_string() },
+        },
         Request::SaveMode { name, profile } => match sup.save_mode(name, profile) {
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },

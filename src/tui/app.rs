@@ -126,6 +126,7 @@ pub struct ConfirmState {
     pub hard: bool,
     pub clamped: bool,
     pub error: Option<String>,
+    pub detail: Option<crate::ipc::ModeDetailPayload>,
 }
 
 impl ConfirmState {
@@ -141,6 +142,7 @@ impl ConfirmState {
             clamped: false,
             error: None,
             mode,
+            detail: None,
         };
         state.reclamp();
         state
@@ -885,7 +887,7 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
             KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
             KeyCode::Char('r') => self.refresh_picker().await,
-            KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker(),
+            KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker().await,
             KeyCode::Char('n') => self.open_editor_new(),
             KeyCode::Char('e') => self.open_editor_edit(),
             KeyCode::Char('d') => self.delete_current_mode().await,
@@ -1039,7 +1041,7 @@ impl App {
         }
     }
 
-    fn open_confirm_from_picker(&mut self) {
+    async fn open_confirm_from_picker(&mut self) {
         let Screen::ModePicker(picker) = &self.screen else { return };
         let Some(mode) = picker.current().cloned() else { return };
         let cfg = Config::load().ok();
@@ -1048,11 +1050,13 @@ impl App {
             .map(|c| c.general.default_duration)
             .unwrap_or(Duration::from_secs(25 * 60));
         let hard = cfg.as_ref().map(|c| c.general.hard_mode).unwrap_or(false);
-        self.set_screen(Screen::ModeConfirm(Box::new(ConfirmState::from_mode(
-            mode,
-            default_dur,
-            hard,
-        ))));
+        let mut state = ConfirmState::from_mode(mode.clone(), default_dur, hard);
+        if let Ok(Response::ModeDetailData(detail)) =
+            ipc::send(&Request::ModeDetail { name: mode.name.clone(), days: 14 }).await
+        {
+            state.detail = Some(*detail);
+        }
+        self.set_screen(Screen::ModeConfirm(Box::new(state)));
     }
 
     async fn handle_confirm_key(&mut self, key: KeyEvent) {

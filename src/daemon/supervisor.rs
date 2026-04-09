@@ -117,6 +117,46 @@ impl Supervisor {
             .collect()
     }
 
+    pub fn mode_detail(
+        &self,
+        name: &str,
+        days: u32,
+    ) -> Result<crate::ipc::ModeDetailPayload> {
+        let cfg = self.config.read().clone();
+        let profile = cfg
+            .profile(name)
+            .ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?
+            .clone();
+        let mut expanded: std::collections::BTreeSet<String> =
+            profile.sites.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect();
+        if let Ok(hosts) = crate::sites::expand_groups(&profile.site_groups) {
+            for h in hosts {
+                expanded.insert(h);
+            }
+        }
+        let events = self.audit.read_all().unwrap_or_default();
+        let now = chrono::Utc::now();
+        let usage = crate::audit::stats::daily_usage(&events, name, days.max(1), now);
+        let since = now - chrono::Duration::days(i64::from(days.max(1)));
+        let mut total_sessions_7d = 0u32;
+        let mut total_duration_7d = Duration::ZERO;
+        for e in &events {
+            if e.kind != AuditKind::SessionCompleted || e.message != name || e.at < since {
+                continue;
+            }
+            total_sessions_7d += 1;
+            let ms = e.extra.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            total_duration_7d = total_duration_7d.saturating_add(Duration::from_millis(ms));
+        }
+        Ok(crate::ipc::ModeDetailPayload {
+            profile,
+            expanded_sites: expanded.into_iter().collect(),
+            usage,
+            total_sessions_7d,
+            total_duration_7d,
+        })
+    }
+
     pub fn mode_stats(&self, name: &str) -> Result<crate::audit::stats::ModeStats> {
         let cfg = self.config.read().clone();
         let profile =

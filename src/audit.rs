@@ -288,6 +288,45 @@ pub mod stats {
         pub daily_cap_remaining: Option<Duration>,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct DayUsage {
+        pub date: String,
+        #[serde(with = "crate::audit::stats::dur_ms")]
+        pub total: Duration,
+    }
+
+    pub fn daily_usage(
+        events: &[AuditEvent],
+        mode: &str,
+        days: u32,
+        now: DateTime<Utc>,
+    ) -> Vec<DayUsage> {
+        use std::collections::BTreeMap;
+        let today = now.date_naive();
+        let start = today - chrono::Duration::days(i64::from(days.saturating_sub(1)));
+        let mut map: BTreeMap<chrono::NaiveDate, Duration> = BTreeMap::new();
+        let mut cursor = start;
+        while cursor <= today {
+            map.insert(cursor, Duration::ZERO);
+            cursor += chrono::Duration::days(1);
+        }
+        for e in events {
+            if e.kind != AuditKind::SessionCompleted || e.message != mode {
+                continue;
+            }
+            let d = e.at.date_naive();
+            if d < start || d > today {
+                continue;
+            }
+            let ms = e.extra.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+            let slot = map.entry(d).or_insert(Duration::ZERO);
+            *slot = slot.saturating_add(Duration::from_millis(ms));
+        }
+        map.into_iter()
+            .map(|(d, total)| DayUsage { date: d.format("%m-%d").to_string(), total })
+            .collect()
+    }
+
     pub fn mode_stats(
         events: &[AuditEvent],
         mode: &str,

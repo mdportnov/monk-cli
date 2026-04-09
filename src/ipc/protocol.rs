@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    audit::stats::ModeStats,
-    config::{Config, Limits},
+    audit::stats::{DayUsage, ModeStats},
+    config::{Config, Limits, Profile},
     session::Session,
 };
 
@@ -32,6 +32,7 @@ pub enum Request {
     Panic { phrase: String, cancel: bool },
     ListModes,
     ModeStats { name: String },
+    ModeDetail { name: String, days: u32 },
     SaveMode { name: String, profile: crate::config::Profile },
     DeleteMode { name: String },
     GetGeneral,
@@ -56,6 +57,15 @@ pub struct ModeSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeDetailPayload {
+    pub profile: Profile,
+    pub expanded_sites: Vec<String>,
+    pub usage: Vec<DayUsage>,
+    pub total_sessions_7d: u32,
+    pub total_duration_7d: Duration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HardModeInfo {
     pub ends_at: DateTime<Utc>,
     pub remaining: Duration,
@@ -77,6 +87,7 @@ pub enum Response {
     HardModeActive(Box<HardModeInfo>),
     Modes { modes: Vec<ModeSummary> },
     ModeStatsData(ModeStats),
+    ModeDetailData(Box<ModeDetailPayload>),
     General(crate::config::General),
     Config(Box<Config>),
     Error { message: String },

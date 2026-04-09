@@ -339,8 +339,7 @@ fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
         .wrap(Wrap { trim: true });
     f.render_widget(hints, body[3]);
 
-    let details = draw_confirm_details(confirm);
-    f.render_widget(details, body[4]);
+    draw_confirm_details(f, body[4], confirm);
 
     let help = if confirm.blocked_reason().is_some() {
         "←/→ duration   esc back   ·   start blocked"
@@ -408,31 +407,161 @@ fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
     lines
 }
 
-fn draw_confirm_details(confirm: &ConfirmState) -> Paragraph<'static> {
+fn draw_confirm_details(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(28),
+            Constraint::Percentage(40),
+            Constraint::Percentage(32),
+        ])
+        .split(area);
+
+    f.render_widget(build_contract_panel(confirm), cols[0]);
+    draw_blocklist_panel(f, cols[1], confirm);
+    draw_usage_panel(f, cols[2], confirm);
+}
+
+fn build_contract_panel(confirm: &ConfirmState) -> Paragraph<'static> {
     let limits = confirm.limits();
     let mut lines: Vec<Line> = vec![
-        Line::from(Span::styled(
-            "contract",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )),
         kv("max", &fmt_limit(limits.max_duration)),
         kv("min", &fmt_limit(limits.min_duration)),
         kv("cooldown", &fmt_limit(limits.cooldown)),
         kv("daily cap", &fmt_limit(limits.daily_cap)),
         Line::from(""),
         kv("used today", &fmt_short(confirm.mode.stats.used_24h)),
-        kv(
-            "blocks",
-            &format!(
-                "{} apps · {} sites · {} groups",
-                confirm.mode.blocked_apps, confirm.mode.blocked_sites, confirm.mode.blocked_groups
-            ),
-        ),
     ];
     if let Some(rem) = confirm.mode.stats.daily_cap_remaining {
         lines.push(kv("budget left", &fmt_short(rem)));
     }
+    if let Some(detail) = &confirm.detail {
+        lines.push(Line::from(""));
+        lines.push(kv("sessions 14d", &detail.total_sessions_7d.to_string()));
+        lines.push(kv("total 14d", &fmt_short(detail.total_duration_7d)));
+    }
     Paragraph::new(lines).wrap(Wrap { trim: false }).block(picker_block(" contract "))
+}
+
+fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
+    let block = picker_block(" blocked ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(detail) = &confirm.detail else {
+        let p = Paragraph::new(Span::styled(
+            "loading…",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ));
+        f.render_widget(p, inner);
+        return;
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    let apps = &detail.profile.apps;
+    lines.push(Line::from(vec![
+        Span::styled(format!("apps · {}", apps.len()), Style::default().fg(ACCENT)),
+    ]));
+    if apps.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  —",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    } else {
+        for a in apps.iter().take(6) {
+            let name: String = a.clone();
+            lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(DIM)),
+                Span::styled(name, Style::default().fg(TEXT)),
+            ]));
+        }
+        if apps.len() > 6 {
+            lines.push(Line::from(Span::styled(
+                format!("  +{} more", apps.len() - 6),
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+    lines.push(Line::from(""));
+    let sites = &detail.expanded_sites;
+    lines.push(Line::from(vec![
+        Span::styled(format!("sites · {}", sites.len()), Style::default().fg(ACCENT)),
+    ]));
+    if !detail.profile.site_groups.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("  groups  ", Style::default().fg(DIM)),
+            Span::styled(
+                detail.profile.site_groups.join(", "),
+                Style::default().fg(TEXT),
+            ),
+        ]));
+    }
+    let capacity = inner.height.saturating_sub(lines.len() as u16) as usize;
+    let shown = capacity.min(sites.len());
+    for host in sites.iter().take(shown) {
+        let short: String = host.trim_start_matches("www.").to_string();
+        lines.push(Line::from(vec![
+            Span::styled("  • ", Style::default().fg(DIM)),
+            Span::styled(short, Style::default().fg(TEXT)),
+        ]));
+    }
+    if sites.len() > shown {
+        lines.push(Line::from(Span::styled(
+            format!("  +{} more", sites.len() - shown),
+            Style::default().fg(DIM),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn draw_usage_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
+    let block = picker_block(" usage · 14d ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let Some(detail) = &confirm.detail else {
+        let p = Paragraph::new(Span::styled(
+            "loading…",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ));
+        f.render_widget(p, inner);
+        return;
+    };
+
+    if detail.usage.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "no history",
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )),
+            inner,
+        );
+        return;
+    }
+
+    let max_secs =
+        detail.usage.iter().map(|d| d.total.as_secs()).max().unwrap_or(0).max(1);
+    let bar_area_height = inner.height.saturating_sub(2);
+    let mut lines: Vec<Line> = Vec::new();
+    for day in &detail.usage {
+        let secs = day.total.as_secs();
+        let frac = secs as f64 / max_secs as f64;
+        let bar_width = inner.width.saturating_sub(14) as usize;
+        let filled = ((bar_width as f64) * frac).round() as usize;
+        let bar: String = "█".repeat(filled);
+        let pad: String = "·".repeat(bar_width.saturating_sub(filled));
+        let color = if secs == 0 { DIM } else { ACCENT };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<5} ", day.date), Style::default().fg(DIM)),
+            Span::styled(bar, Style::default().fg(color)),
+            Span::styled(pad, Style::default().fg(DIM)),
+            Span::styled(format!(" {:>5}", fmt_short(day.total)), Style::default().fg(TEXT)),
+        ]));
+        if lines.len() as u16 >= bar_area_height {
+            break;
+        }
+    }
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 pub fn fmt_short(d: Duration) -> String {
