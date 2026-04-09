@@ -191,7 +191,9 @@ impl Config {
             fs_err::create_dir_all(parent)?;
         }
         let raw = toml::to_string_pretty(self).map_err(|e| Error::Config(e.to_string()))?;
-        fs_err::write(path, raw)?;
+        let tmp = path.with_extension("toml.tmp");
+        fs_err::write(&tmp, raw)?;
+        fs_err::rename(&tmp, path)?;
         Ok(())
     }
 
