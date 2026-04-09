@@ -1,3 +1,8 @@
 site_groups = ["global.games", "ru.games"]
 sites = []
 apps = []
+
+[limits]
+max_duration = "4h"
+min_duration = "20m"
+daily_cap = "6h"
