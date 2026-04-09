@@ -1087,7 +1087,28 @@ impl App {
     }
 }
 
+async fn ensure_daemon() {
+    if ipc::send(&Request::Ping).await.is_ok() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    use std::process::{Command, Stdio};
+    let _ = Command::new(exe)
+        .args(["daemon", "run"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if ipc::send(&Request::Ping).await.is_ok() {
+            return;
+        }
+    }
+}
+
 pub async fn run() -> Result<()> {
+    ensure_daemon().await;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
