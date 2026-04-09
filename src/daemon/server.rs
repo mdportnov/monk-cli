@@ -190,6 +190,19 @@ async fn handle(
         Request::Pause { .. } | Request::Resume { .. } => {
             Response::Error { message: "not implemented".into() }
         }
+        Request::ListModes => Response::Modes(sup.list_modes()),
+        Request::ModeStats { name } => match sup.mode_stats(&name) {
+            Ok(s) => Response::ModeStatsData(s),
+            Err(e) => Response::Error { message: e.to_string() },
+        },
+        Request::SaveMode { name, profile } => match sup.save_mode(name, profile) {
+            Ok(()) => Response::Ok,
+            Err(e) => Response::Error { message: e.to_string() },
+        },
+        Request::DeleteMode { name } => match sup.delete_mode(&name) {
+            Ok(()) => Response::Ok,
+            Err(e) => Response::Error { message: e.to_string() },
+        },
     };
 
     let payload = serde_json::to_vec(&resp)?;

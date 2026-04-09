@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::session::Session;
+use crate::{audit::stats::ModeStats, config::Limits, session::Session};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -18,6 +18,22 @@ pub enum Request {
     List,
     Shutdown,
     Panic { phrase: String, cancel: bool },
+    ListModes,
+    ModeStats { name: String },
+    SaveMode { name: String, profile: crate::config::Profile },
+    DeleteMode { name: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeSummary {
+    pub name: String,
+    pub color: Option<String>,
+    pub blocked_apps: usize,
+    pub blocked_sites: usize,
+    pub blocked_groups: usize,
+    pub limits: Limits,
+    pub stats: ModeStats,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,5 +56,7 @@ pub enum Response {
     Status { active: Option<Box<Session>>, hard_mode: Option<Box<HardModeInfo>>, pid: u32 },
     PanicScheduled(Box<HardModeInfo>),
     HardModeActive(Box<HardModeInfo>),
+    Modes(Vec<ModeSummary>),
+    ModeStatsData(ModeStats),
     Error { message: String },
 }

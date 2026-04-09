@@ -14,7 +14,7 @@ use crate::{
     audit::{AuditKind, AuditLog},
     blocker::{BlockSet, Blocker, HostsBlocker, ProcessGuard},
     clock,
-    config::{Config, Profile},
+    config::{Config, Limits, Profile},
     ipc::HardModeInfo,
     session::{LoadKind, LockStore, NewLock, Session, SessionLock, SessionState},
     sites, Error, Result,
@@ -57,6 +57,62 @@ impl Supervisor {
         Some(lock_to_session(&lock))
     }
 
+    pub fn list_modes(&self) -> Vec<crate::ipc::ModeSummary> {
+        let cfg = self.config.read().clone();
+        let events = self.audit.read_all().unwrap_or_default();
+        let now = chrono::Utc::now();
+        let default = cfg.general.default_profile.clone();
+        cfg.profiles
+            .iter()
+            .map(|(name, p)| crate::ipc::ModeSummary {
+                name: name.clone(),
+                color: p.color.clone(),
+                blocked_apps: p.apps.len(),
+                blocked_sites: p.sites.len(),
+                blocked_groups: p.site_groups.len(),
+                limits: p.limits.clone(),
+                stats: crate::audit::stats::mode_stats(&events, name, &p.limits, now),
+                is_default: name == &default,
+            })
+            .collect()
+    }
+
+    pub fn mode_stats(&self, name: &str) -> Result<crate::audit::stats::ModeStats> {
+        let cfg = self.config.read().clone();
+        let profile = cfg
+            .profile(name)
+            .ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?;
+        let events = self.audit.read_all().unwrap_or_default();
+        Ok(crate::audit::stats::mode_stats(
+            &events,
+            name,
+            &profile.limits,
+            chrono::Utc::now(),
+        ))
+    }
+
+    pub fn save_mode(&self, name: String, profile: Profile) -> Result<()> {
+        if name.is_empty() {
+            return Err(Error::Config("mode name cannot be empty".into()));
+        }
+        let mut cfg = self.config.read().clone();
+        cfg.profiles.insert(name, profile);
+        cfg.validate()?;
+        cfg.save()?;
+        *self.config.write() = cfg;
+        Ok(())
+    }
+
+    pub fn delete_mode(&self, name: &str) -> Result<()> {
+        let mut cfg = self.config.read().clone();
+        if cfg.profiles.remove(name).is_none() {
+            return Err(Error::Config(format!("mode `{name}` not found")));
+        }
+        cfg.save()?;
+        *self.config.write() = cfg;
+        Ok(())
+    }
+
     pub fn hard_info(&self) -> Option<HardModeInfo> {
         let (lock, _) = self.store.load().ok().flatten()?;
         if !lock.hard_mode {
@@ -91,6 +147,7 @@ impl Supervisor {
             .profile(&profile)
             .ok_or_else(|| Error::Config(format!("unknown profile `{profile}`")))?
             .clone();
+        let duration = enforce_limits(&profile, &profile_def.limits, duration, &self.audit)?;
         let set = build_block_set(&profile_def)?;
 
         let lock = SessionLock::new(NewLock {
@@ -175,7 +232,12 @@ impl Supervisor {
 
         if lock.is_expired() {
             self.finalize(&lock, SessionState::Completed)?;
-            self.audit.append(AuditKind::SessionCompleted, Some(lock.id), &lock.profile);
+            self.audit.append_with(
+                AuditKind::SessionCompleted,
+                Some(lock.id),
+                &lock.profile,
+                serde_json::json!({ "duration_ms": lock.duration_ms }),
+            );
             return Ok(());
         }
 
@@ -243,6 +305,67 @@ impl Supervisor {
             &format!("+{}s", penalty.as_secs()),
         );
     }
+}
+
+fn enforce_limits(
+    profile: &str,
+    limits: &Limits,
+    requested: Duration,
+    audit: &AuditLog,
+) -> Result<Duration> {
+    let mut duration = requested;
+    if let Some(max) = limits.max_duration {
+        if duration > max {
+            duration = max;
+        }
+    }
+    if let Some(min) = limits.min_duration {
+        if duration < min {
+            return Err(Error::Config(format!(
+                "profile `{profile}` requires at least {}",
+                humantime::format_duration(min)
+            )));
+        }
+    }
+    if limits.cooldown.is_some() || limits.daily_cap.is_some() {
+        let events = audit.read_all().unwrap_or_default();
+        let now = chrono::Utc::now();
+        if let Some(cooldown) = limits.cooldown {
+            if let Some(last) = events
+                .iter()
+                .rev()
+                .find(|e| e.kind == AuditKind::SessionCompleted && e.message == profile)
+            {
+                let elapsed = now.signed_duration_since(last.at);
+                let cooldown_chrono = chrono::Duration::from_std(cooldown)
+                    .unwrap_or_else(|_| chrono::Duration::zero());
+                if elapsed < cooldown_chrono {
+                    let remaining = cooldown_chrono - elapsed;
+                    return Err(Error::Config(format!(
+                        "profile `{profile}` cooldown active ({}s remaining)",
+                        remaining.num_seconds().max(0)
+                    )));
+                }
+            }
+        }
+        if let Some(cap) = limits.daily_cap {
+            let since = now - chrono::Duration::hours(24);
+            let started_today = events
+                .iter()
+                .filter(|e| {
+                    e.kind == AuditKind::SessionStarted && e.message == profile && e.at >= since
+                })
+                .count() as u32;
+            let approx_used = requested.saturating_mul(started_today);
+            if approx_used >= cap {
+                return Err(Error::Config(format!(
+                    "profile `{profile}` daily cap reached ({})",
+                    humantime::format_duration(cap)
+                )));
+            }
+        }
+    }
+    Ok(duration)
 }
 
 fn build_block_set(profile: &Profile) -> Result<BlockSet> {

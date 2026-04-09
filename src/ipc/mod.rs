@@ -1,6 +1,6 @@
 pub mod protocol;
 
-pub use protocol::{HardModeInfo, Request, Response};
+pub use protocol::{HardModeInfo, ModeSummary, Request, Response};
 
 use std::time::Duration;
 
