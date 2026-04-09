@@ -11,21 +11,16 @@ async fn load_cfg_via_daemon() -> Result<Config> {
         Ok(Response::Config(c)) => Ok(*c),
         Ok(Response::Error { message }) => Err(Error::Other(message)),
         Ok(_) => Err(Error::Ipc("unexpected response".into())),
-        Err(Error::DaemonNotRunning) => Config::load(),
         Err(e) => Err(e),
     }
 }
 
 async fn save_cfg_via_daemon(cfg: Config) -> Result<()> {
-    let req = Request::SaveConfig { config: Box::new(cfg.clone()) };
+    let req = Request::SaveConfig { config: Box::new(cfg) };
     match ipc::send(&req).await {
         Ok(Response::Ok) => Ok(()),
         Ok(Response::Error { message }) => Err(Error::Other(message)),
         Ok(_) => Err(Error::Ipc("unexpected response".into())),
-        Err(Error::DaemonNotRunning) => {
-            cfg.validate()?;
-            cfg.save()
-        }
         Err(e) => Err(e),
     }
 }
@@ -455,7 +450,7 @@ pub fn daemon_uninstall() -> Result<()> {
 }
 
 pub async fn set_lang(locale: &str) -> Result<()> {
-    let mut cfg = load_cfg_via_daemon().await.unwrap_or_default();
+    let mut cfg = load_cfg_via_daemon().await?;
     cfg.general.locale = Some(crate::i18n::normalize(locale).to_string());
     save_cfg_via_daemon(cfg).await?;
     crate::i18n::set(locale);
