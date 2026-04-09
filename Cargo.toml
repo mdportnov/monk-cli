@@ -73,14 +73,14 @@ maintainer = "mihail"
 section = "utility"
 priority = "optional"
 assets = [
-    ["target/release/monk", "usr/bin/", "755"],
+    ["target/$CARGO_BUILD_TARGET/release/monk", "usr/bin/", "755"],
     ["assets/systemd/monk.service", "lib/systemd/user/", "644"],
     ["README.md", "usr/share/doc/monk/README", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/monk", dest = "/usr/bin/monk", mode = "755" },
+    { source = "target/$CARGO_BUILD_TARGET/release/monk", dest = "/usr/bin/monk", mode = "755" },
     { source = "assets/systemd/monk.service", dest = "/usr/lib/systemd/user/monk.service", mode = "644" },
 ]
 

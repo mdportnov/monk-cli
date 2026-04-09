@@ -71,6 +71,51 @@ jobs:
             echo "asset=dist/${name}.tar.gz" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: build macOS .pkg
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ -z "$version" ] && version="0.0.0-dev"
+          root="pkgroot"
+          mkdir -p "$root/usr/local/bin"
+          cp "target/${{ matrix.target }}/release/${BIN}" "$root/usr/local/bin/${BIN}"
+          chmod 755 "$root/usr/local/bin/${BIN}"
+          pkgbuild \
+            --identifier "dev.monk.cli" \
+            --version "$version" \
+            --root "$root" \
+            --install-location "/" \
+            "dist/${BIN}-v${version}-${{ matrix.target }}.pkg"
+
+      - name: install cargo-deb
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cargo-deb --locked
+
+      - name: build .deb
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
+        shell: bash
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ -z "$version" ] && version="0.0.0-dev"
+          cargo deb --no-build --no-strip --target ${{ matrix.target }} --output "dist/${BIN}-v${version}-${{ matrix.target }}.deb"
+
+      - name: install cargo-generate-rpm
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: build .rpm
+        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
+        shell: bash
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ -z "$version" ] && version="0.0.0-dev"
+          CARGO_BUILD_TARGET=${{ matrix.target }} cargo generate-rpm --output "dist/${BIN}-v${version}-${{ matrix.target }}.rpm"
+
       - name: checksums
         shell: bash
         run: |
@@ -85,8 +130,13 @@ jobs:
         with:
           name: monk-${{ matrix.target }}
           path: |
-            ${{ steps.pkg.outputs.asset }}
+            dist/monk-*.tar.gz
+            dist/monk-*.zip
+            dist/monk-*.pkg
+            dist/monk-*.deb
+            dist/monk-*.rpm
             dist/SHA256SUMS-${{ matrix.target }}.txt
+          if-no-files-found: ignore
 
   publish:
     needs: build
@@ -108,5 +158,8 @@ jobs:
           files: |
             dist/monk-*.tar.gz
             dist/monk-*.zip
+            dist/monk-*.pkg
+            dist/monk-*.deb
+            dist/monk-*.rpm
             dist/SHA256SUMS.txt
           generate_release_notes: true
