@@ -123,6 +123,21 @@ enum ProfileCmd {
         #[arg(value_name = "PROFILE")]
         name: String,
     },
+    #[command(about = "Set time limits for a profile (omit value to clear)")]
+    Limits {
+        #[arg(value_name = "PROFILE")]
+        name: String,
+        #[arg(long, value_parser = parse_duration_opt)]
+        max: Option<String>,
+        #[arg(long, value_parser = parse_duration_opt)]
+        min: Option<String>,
+        #[arg(long, value_parser = parse_duration_opt)]
+        cooldown: Option<String>,
+        #[arg(long = "daily-cap", value_parser = parse_duration_opt)]
+        daily_cap: Option<String>,
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -148,6 +163,11 @@ enum DaemonCmd {
 
 fn parse_duration(raw: &str) -> std::result::Result<Duration, String> {
     humantime::parse_duration(raw).map_err(|e| e.to_string())
+}
+
+fn parse_duration_opt(raw: &str) -> std::result::Result<String, String> {
+    humantime::parse_duration(raw).map_err(|e| e.to_string())?;
+    Ok(raw.to_string())
 }
 
 pub async fn run() -> Result<()> {
@@ -205,6 +225,9 @@ pub async fn run() -> Result<()> {
         }
         Command::Profile(ProfileCmd::Create { name }) => commands::profile_create(&name),
         Command::Profile(ProfileCmd::Delete { name }) => commands::profile_delete(&name),
+        Command::Profile(ProfileCmd::Limits { name, max, min, cooldown, daily_cap, clear }) => {
+            commands::profile_limits(&name, max, min, cooldown, daily_cap, clear)
+        }
         Command::Apps(AppsCmd::List { refresh }) => commands::apps_list(refresh),
         Command::Apps(AppsCmd::Scan) => commands::apps_scan(),
         Command::Stats => commands::stats(),

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{paths, Error, Result};
 
-pub const CURRENT_SCHEMA: u32 = 3;
+pub const CURRENT_SCHEMA: u32 = 4;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -113,6 +113,46 @@ pub struct Profile {
     pub allow: Vec<String>,
     #[serde(default)]
     pub hooks: Hooks,
+    #[serde(default)]
+    pub limits: Limits,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    #[serde(default, with = "humantime_serde_opt")]
+    pub max_duration: Option<Duration>,
+    #[serde(default, with = "humantime_serde_opt")]
+    pub min_duration: Option<Duration>,
+    #[serde(default, with = "humantime_serde_opt")]
+    pub cooldown: Option<Duration>,
+    #[serde(default, with = "humantime_serde_opt")]
+    pub daily_cap: Option<Duration>,
+}
+
+mod humantime_serde_opt {
+    use std::time::Duration;
+
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            Some(v) => s.serialize_str(&humantime::format_duration(*v).to_string()),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        let raw = Option::<String>::deserialize(d)?;
+        match raw {
+            Some(s) => humantime::parse_duration(&s)
+                .map(Some)
+                .map_err(serde::de::Error::custom),
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -199,6 +239,9 @@ impl Config {
                 );
             }
             self.schema_version = 3;
+        }
+        if self.schema_version < 4 {
+            self.schema_version = 4;
         }
         Ok(())
     }

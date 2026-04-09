@@ -168,6 +168,54 @@ pub fn profile_create(name: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn profile_limits(
+    name: &str,
+    max: Option<String>,
+    min: Option<String>,
+    cooldown: Option<String>,
+    daily_cap: Option<String>,
+    clear: bool,
+) -> Result<()> {
+    let mut cfg = Config::load()?;
+    let profile = cfg
+        .profiles
+        .get_mut(name)
+        .ok_or_else(|| Error::Config(format!("profile `{name}` not found")))?;
+    if clear {
+        profile.limits = crate::config::Limits::default();
+    }
+    let parse = |s: String| humantime::parse_duration(&s).map_err(|e| Error::Config(e.to_string()));
+    if let Some(v) = max {
+        profile.limits.max_duration = Some(parse(v)?);
+    }
+    if let Some(v) = min {
+        profile.limits.min_duration = Some(parse(v)?);
+    }
+    if let Some(v) = cooldown {
+        profile.limits.cooldown = Some(parse(v)?);
+    }
+    if let Some(v) = daily_cap {
+        profile.limits.daily_cap = Some(parse(v)?);
+    }
+    let snapshot = profile.limits.clone();
+    cfg.save()?;
+    println!(
+        "limits for `{name}`: max={} min={} cooldown={} daily_cap={}",
+        fmt_opt(snapshot.max_duration),
+        fmt_opt(snapshot.min_duration),
+        fmt_opt(snapshot.cooldown),
+        fmt_opt(snapshot.daily_cap),
+    );
+    Ok(())
+}
+
+fn fmt_opt(d: Option<Duration>) -> String {
+    match d {
+        Some(v) => humantime::format_duration(v).to_string(),
+        None => "-".into(),
+    }
+}
+
 pub fn profile_delete(name: &str) -> Result<()> {
     let mut cfg = Config::load()?;
     if cfg.profiles.remove(name).is_none() {
