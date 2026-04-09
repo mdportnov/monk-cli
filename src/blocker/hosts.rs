@@ -83,6 +83,9 @@ impl HostsBlocker {
 
 impl Blocker for HostsBlocker {
     fn apply(&mut self, set: &BlockSet) -> Result<()> {
+        if set.sites.is_empty() {
+            return Ok(());
+        }
         let current = self.read()?;
         if self.backup.is_none() {
             self.backup = Some(current.clone());

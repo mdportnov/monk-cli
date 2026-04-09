@@ -201,7 +201,13 @@ impl Supervisor {
             boot_ms: clock::monotonic_ms(),
         });
 
-        self.hosts.lock().apply(&set)?;
+        if let Err(e) = self.hosts.lock().apply(&set) {
+            if matches!(e, Error::Permission(_)) {
+                tracing::warn!(?e, "hosts apply failed; continuing without site blocking");
+            } else {
+                return Err(e);
+            }
+        }
         let _ = self.procs.lock().kill_matching(&set.apps);
         self.store.save(&lock)?;
         *self.active_profile.write() = Some(profile.clone());
