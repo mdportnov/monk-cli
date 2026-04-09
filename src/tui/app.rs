@@ -9,7 +9,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
     config::Config,
-    ipc::{self, HardModeInfo, Request, Response},
+    ipc::{self, HardModeInfo, ModeSummary, Request, Response},
     session::Session,
     Result,
 };
@@ -80,9 +80,42 @@ impl HomeState {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct PickerState {
+    pub modes: Vec<ModeSummary>,
+    pub selected: usize,
+    pub loading: bool,
+    pub error: Option<String>,
+}
+
+impl PickerState {
+    pub fn move_up(&mut self) {
+        if self.modes.is_empty() {
+            return;
+        }
+        if self.selected == 0 {
+            self.selected = self.modes.len() - 1;
+        } else {
+            self.selected -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.modes.is_empty() {
+            return;
+        }
+        self.selected = (self.selected + 1) % self.modes.len();
+    }
+
+    pub fn current(&self) -> Option<&ModeSummary> {
+        self.modes.get(self.selected)
+    }
+}
+
 #[derive(Debug)]
 pub enum Screen {
     Home(HomeState),
+    ModePicker(PickerState),
 }
 
 impl Default for Screen {
@@ -96,7 +129,6 @@ pub struct Globals {
     pub active: Option<Session>,
     pub hard_mode: Option<HardModeInfo>,
     pub daemon_running: bool,
-    pub profile_names: Vec<String>,
     pub flash: Option<String>,
     pub frame: u64,
 }
@@ -110,14 +142,8 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let profile_names = Config::load()
-            .ok()
-            .map(|c| c.profiles.keys().cloned().collect())
-            .unwrap_or_default();
-        Self {
-            globals: Globals { profile_names, ..Globals::default() },
-            ..Self::default()
-        }
+        let _ = Config::load();
+        Self::default()
     }
 
     pub async fn refresh(&mut self) {
@@ -139,19 +165,21 @@ impl App {
         if key.kind != KeyEventKind::Press {
             return;
         }
-        match &mut self.screen {
+        match &self.screen {
             Screen::Home(_) => self.handle_home_key(key).await,
+            Screen::ModePicker(_) => self.handle_picker_key(key).await,
         }
     }
 
-    #[allow(irrefutable_let_patterns)]
     async fn handle_home_key(&mut self, key: KeyEvent) {
         let Screen::Home(home) = &mut self.screen else { return };
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Esc => self.should_quit = true,
             KeyCode::Up | KeyCode::Char('k') => home.move_up(),
             KeyCode::Down | KeyCode::Char('j') => home.move_down(),
             KeyCode::Enter | KeyCode::Char(' ') => self.activate_home().await,
+            KeyCode::Char('m') => self.open_picker().await,
             KeyCode::Char('s') => {
                 home.selected = 0;
                 self.activate_home().await;
@@ -168,21 +196,49 @@ impl App {
         }
     }
 
-    #[allow(irrefutable_let_patterns)]
+    async fn handle_picker_key(&mut self, key: KeyEvent) {
+        let Screen::ModePicker(picker) = &mut self.screen else { return };
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.screen = Screen::Home(HomeState::default());
+            }
+            KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
+            KeyCode::Char('r') => self.refresh_picker().await,
+            _ => {}
+        }
+    }
+
+    async fn open_picker(&mut self) {
+        self.screen = Screen::ModePicker(PickerState { loading: true, ..Default::default() });
+        self.refresh_picker().await;
+    }
+
+    async fn refresh_picker(&mut self) {
+        let result = ipc::send(&Request::ListModes).await;
+        let Screen::ModePicker(picker) = &mut self.screen else { return };
+        picker.loading = false;
+        match result {
+            Ok(Response::Modes(modes)) => {
+                picker.error = None;
+                picker.modes = modes;
+                if picker.selected >= picker.modes.len() {
+                    picker.selected = 0;
+                }
+            }
+            Ok(Response::Error { message }) => picker.error = Some(message),
+            Ok(_) => picker.error = Some("unexpected response".into()),
+            Err(e) => picker.error = Some(e.to_string()),
+        }
+    }
+
     async fn activate_home(&mut self) {
         let Screen::Home(home) = &self.screen else { return };
         match home.selected_item() {
             MenuItem::Start => self.do_start().await,
             MenuItem::Stop => self.do_stop().await,
             MenuItem::Panic => self.do_panic().await,
-            MenuItem::Profiles => {
-                let msg = if self.globals.profile_names.is_empty() {
-                    "no modes — run `monk init`".to_string()
-                } else {
-                    format!("modes: {}", self.globals.profile_names.join(", "))
-                };
-                self.globals.flash = Some(msg);
-            }
+            MenuItem::Profiles => self.open_picker().await,
             MenuItem::Doctor => {
                 self.globals.flash =
                     Some("run `monk doctor` in a shell for the full report".into());
