@@ -48,6 +48,20 @@ impl Supervisor {
         self.config.read().clone()
     }
 
+    pub fn get_config(&self) -> Config {
+        if let Ok(fresh) = Config::load() {
+            *self.config.write() = fresh;
+        }
+        self.config.read().clone()
+    }
+
+    pub fn save_config(&self, cfg: Config) -> Result<()> {
+        cfg.validate()?;
+        cfg.save()?;
+        *self.config.write() = cfg;
+        Ok(())
+    }
+
     pub fn audit(&self) -> Arc<AuditLog> {
         self.audit.clone()
     }

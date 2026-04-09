@@ -1,21 +1,20 @@
 use std::{sync::Arc, time::Duration};
 
+use futures::{SinkExt, StreamExt};
 use interprocess::local_socket::{tokio::prelude::*, ListenerOptions};
 #[cfg(not(windows))]
 use interprocess::local_socket::{GenericFilePath, ToFsName};
 #[cfg(windows)]
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    sync::Notify,
-};
+use tokio::sync::Notify;
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 #[cfg(not(windows))]
 use crate::paths;
 use crate::{
     config::Config,
     daemon::{PidFile, Supervisor},
-    ipc::{Request, Response},
+    ipc::{Envelope, Request, Response, PROTOCOL_VERSION},
     Error, Result,
 };
 
@@ -144,21 +143,53 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
+fn codec() -> LengthDelimitedCodec {
+    LengthDelimitedCodec::builder().max_frame_length(4 * 1024 * 1024).new_codec()
+}
+
 async fn handle(
     stream: interprocess::local_socket::tokio::Stream,
     sup: Arc<Supervisor>,
     shutdown: Arc<Notify>,
 ) -> Result<()> {
-    let (reader, mut writer) = stream.split();
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-    reader.read_line(&mut line).await.map_err(|e| Error::Ipc(e.to_string()))?;
-    if line.is_empty() {
-        return Ok(());
-    }
-    let req: Request = serde_json::from_str(line.trim())?;
+    let (reader, writer) = stream.split();
+    let mut source = FramedRead::new(reader, codec());
+    let mut sink = FramedWrite::new(writer, codec());
 
-    let resp = match req {
+    while let Some(frame) = source.next().await {
+        let bytes = frame.map_err(|e| Error::Ipc(e.to_string()))?;
+        let env: Envelope<Request> = match serde_json::from_slice(&bytes) {
+            Ok(e) => e,
+            Err(e) => {
+                let resp = Response::Error { message: format!("bad envelope: {e}") };
+                let out = Envelope { v: PROTOCOL_VERSION, body: resp };
+                let payload = serde_json::to_vec(&out)?;
+                let _ = sink.send(payload.into()).await;
+                return Ok(());
+            }
+        };
+        if env.v != PROTOCOL_VERSION {
+            let resp = Response::Error {
+                message: format!(
+                    "protocol version mismatch: client={}, daemon={}",
+                    env.v, PROTOCOL_VERSION
+                ),
+            };
+            let out = Envelope { v: PROTOCOL_VERSION, body: resp };
+            let payload = serde_json::to_vec(&out)?;
+            let _ = sink.send(payload.into()).await;
+            return Ok(());
+        }
+        let resp = dispatch(env.body, &sup, &shutdown);
+        let out = Envelope { v: PROTOCOL_VERSION, body: resp };
+        let payload = serde_json::to_vec(&out)?;
+        sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
+    }
+    Ok(())
+}
+
+fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Response {
+    match req {
         Request::Ping => Response::Pong { version: env!("CARGO_PKG_VERSION").into() },
         Request::Status => Response::Status {
             active: sup.active().map(Box::new),
@@ -222,13 +253,12 @@ async fn handle(
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },
         },
-    };
-
-    let payload = serde_json::to_vec(&resp)?;
-    writer.write_all(&payload).await.map_err(|e| Error::Ipc(e.to_string()))?;
-    writer.write_all(b"\n").await.map_err(|e| Error::Ipc(e.to_string()))?;
-    writer.flush().await.map_err(|e| Error::Ipc(e.to_string()))?;
-    Ok(())
+        Request::GetConfig => Response::Config(Box::new(sup.get_config())),
+        Request::SaveConfig { config } => match sup.save_config(*config) {
+            Ok(()) => Response::Ok,
+            Err(e) => Response::Error { message: e.to_string() },
+        },
+    }
 }
 
 mod scopeguard {

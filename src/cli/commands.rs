@@ -6,6 +6,30 @@ use crate::{
     Error, Result,
 };
 
+async fn load_cfg_via_daemon() -> Result<Config> {
+    match ipc::send(&Request::GetConfig).await {
+        Ok(Response::Config(c)) => Ok(*c),
+        Ok(Response::Error { message }) => Err(Error::Other(message)),
+        Ok(_) => Err(Error::Ipc("unexpected response".into())),
+        Err(Error::DaemonNotRunning) => Config::load(),
+        Err(e) => Err(e),
+    }
+}
+
+async fn save_cfg_via_daemon(cfg: Config) -> Result<()> {
+    let req = Request::SaveConfig { config: Box::new(cfg.clone()) };
+    match ipc::send(&req).await {
+        Ok(Response::Ok) => Ok(()),
+        Ok(Response::Error { message }) => Err(Error::Other(message)),
+        Ok(_) => Err(Error::Ipc("unexpected response".into())),
+        Err(Error::DaemonNotRunning) => {
+            cfg.validate()?;
+            cfg.save()
+        }
+        Err(e) => Err(e),
+    }
+}
+
 pub async fn start(
     profile: Option<String>,
     duration: Option<Duration>,
@@ -121,8 +145,8 @@ pub async fn status() -> Result<()> {
     }
 }
 
-pub fn profiles() -> Result<()> {
-    let cfg = Config::load()?;
+pub async fn profiles() -> Result<()> {
+    let cfg = load_cfg_via_daemon().await?;
     if cfg.profiles.is_empty() {
         println!("no profiles defined");
         return Ok(());
@@ -153,18 +177,18 @@ pub fn apps_scan() -> Result<()> {
     Ok(())
 }
 
-pub fn profile_create(name: &str) -> Result<()> {
-    let mut cfg = Config::load()?;
+pub async fn profile_create(name: &str) -> Result<()> {
+    let mut cfg = load_cfg_via_daemon().await?;
     if cfg.profiles.contains_key(name) {
         return Err(Error::Config(format!("profile `{name}` already exists")));
     }
     cfg.profiles.insert(name.to_string(), crate::config::Profile::default());
-    cfg.save()?;
+    save_cfg_via_daemon(cfg).await?;
     println!("created profile `{name}` — run `monk profile edit {name}` to populate");
     Ok(())
 }
 
-pub fn profile_limits(
+pub async fn profile_limits(
     name: &str,
     max: Option<String>,
     min: Option<String>,
@@ -172,7 +196,7 @@ pub fn profile_limits(
     daily_cap: Option<String>,
     clear: bool,
 ) -> Result<()> {
-    let mut cfg = Config::load()?;
+    let mut cfg = load_cfg_via_daemon().await?;
     let profile = cfg
         .profiles
         .get_mut(name)
@@ -194,7 +218,7 @@ pub fn profile_limits(
         profile.limits.daily_cap = Some(parse(v)?);
     }
     let snapshot = profile.limits.clone();
-    cfg.save()?;
+    save_cfg_via_daemon(cfg).await?;
     println!(
         "limits for `{name}`: max={} min={} cooldown={} daily_cap={}",
         fmt_opt(snapshot.max_duration),
@@ -212,20 +236,23 @@ fn fmt_opt(d: Option<Duration>) -> String {
     }
 }
 
-pub fn profile_delete(name: &str) -> Result<()> {
-    let mut cfg = Config::load()?;
+pub async fn profile_delete(name: &str) -> Result<()> {
+    let mut cfg = load_cfg_via_daemon().await?;
     if cfg.profiles.remove(name).is_none() {
         return Err(Error::Config(format!("profile `{name}` not found")));
     }
-    cfg.save()?;
+    if cfg.general.default_profile == name {
+        cfg.general.default_profile = cfg.profiles.keys().next().cloned().unwrap_or_default();
+    }
+    save_cfg_via_daemon(cfg).await?;
     println!("deleted profile `{name}`");
     Ok(())
 }
 
-pub fn profile_edit(name: &str, add: Vec<String>, remove: Vec<String>) -> Result<()> {
+pub async fn profile_edit(name: &str, add: Vec<String>, remove: Vec<String>) -> Result<()> {
     use std::io::IsTerminal;
 
-    let mut cfg = Config::load()?;
+    let mut cfg = load_cfg_via_daemon().await?;
     if !cfg.profiles.contains_key(name) {
         return Err(Error::Config(format!("profile `{name}` not found")));
     }
@@ -240,7 +267,7 @@ pub fn profile_edit(name: &str, add: Vec<String>, remove: Vec<String>) -> Result
                 profile.apps.push(id);
             }
         }
-        cfg.save()?;
+        save_cfg_via_daemon(cfg).await?;
         println!("profile `{name}` updated");
         return Ok(());
     }
@@ -260,7 +287,7 @@ pub fn profile_edit(name: &str, add: Vec<String>, remove: Vec<String>) -> Result
     profile.apps = selected_apps;
     profile.site_groups = selected_groups;
     profile.sites = custom_sites;
-    cfg.save()?;
+    save_cfg_via_daemon(cfg).await?;
     println!("profile `{name}` saved");
     Ok(())
 }
@@ -427,10 +454,10 @@ pub fn daemon_uninstall() -> Result<()> {
     Ok(())
 }
 
-pub fn set_lang(locale: &str) -> Result<()> {
-    let mut cfg = Config::load().unwrap_or_default();
+pub async fn set_lang(locale: &str) -> Result<()> {
+    let mut cfg = load_cfg_via_daemon().await.unwrap_or_default();
     cfg.general.locale = Some(crate::i18n::normalize(locale).to_string());
-    cfg.save()?;
+    save_cfg_via_daemon(cfg).await?;
     crate::i18n::set(locale);
     println!("language: {}", crate::i18n::current());
     Ok(())
@@ -447,11 +474,10 @@ pub fn config_export() -> Result<()> {
     Ok(())
 }
 
-pub fn config_import(file: &std::path::Path) -> Result<()> {
+pub async fn config_import(file: &std::path::Path) -> Result<()> {
     let raw = fs_err::read_to_string(file)?;
     let cfg: Config = toml::from_str(&raw)?;
-    cfg.validate()?;
-    cfg.save()?;
+    save_cfg_via_daemon(cfg).await?;
     println!("imported {}", file.display());
     Ok(())
 }

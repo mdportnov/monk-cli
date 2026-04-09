@@ -1,15 +1,16 @@
 pub mod protocol;
 
-pub use protocol::{HardModeInfo, ModeSummary, Request, Response};
+pub use protocol::{Envelope, HardModeInfo, ModeSummary, Request, Response, PROTOCOL_VERSION};
 
 use std::time::Duration;
 
+use futures::{SinkExt, StreamExt};
 use interprocess::local_socket::tokio::{prelude::*, Stream};
 #[cfg(not(windows))]
 use interprocess::local_socket::{GenericFilePath, ToFsName};
 #[cfg(windows)]
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 #[cfg(not(windows))]
 use crate::paths;
@@ -27,20 +28,35 @@ fn socket_name() -> Result<interprocess::local_socket::Name<'static>> {
     }
 }
 
+fn codec() -> LengthDelimitedCodec {
+    LengthDelimitedCodec::builder().max_frame_length(4 * 1024 * 1024).new_codec()
+}
+
 pub async fn send(req: &Request) -> Result<Response> {
     let name = socket_name()?;
     let stream = tokio::time::timeout(Duration::from_secs(2), Stream::connect(name))
         .await
         .map_err(|_| Error::DaemonNotRunning)?
         .map_err(|_| Error::DaemonNotRunning)?;
-    let (reader, mut writer) = stream.split();
-    let payload = serde_json::to_vec(req)?;
-    writer.write_all(&payload).await.map_err(|e| Error::Ipc(e.to_string()))?;
-    writer.write_all(b"\n").await.map_err(|e| Error::Ipc(e.to_string()))?;
-    writer.flush().await.map_err(|e| Error::Ipc(e.to_string()))?;
+    let (reader, writer) = stream.split();
+    let mut sink = FramedWrite::new(writer, codec());
+    let mut source = FramedRead::new(reader, codec());
 
-    let mut buf = String::new();
-    BufReader::new(reader).read_line(&mut buf).await.map_err(|e| Error::Ipc(e.to_string()))?;
-    let resp: Response = serde_json::from_str(buf.trim())?;
-    Ok(resp)
+    let env = Envelope { v: PROTOCOL_VERSION, body: req };
+    let payload = serde_json::to_vec(&env)?;
+    sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
+
+    let frame = source
+        .next()
+        .await
+        .ok_or_else(|| Error::Ipc("eof before response".into()))?
+        .map_err(|e| Error::Ipc(e.to_string()))?;
+    let env: Envelope<Response> = serde_json::from_slice(&frame)?;
+    if env.v != PROTOCOL_VERSION {
+        return Err(Error::Ipc(format!(
+            "protocol version mismatch: daemon={}, client={}",
+            env.v, PROTOCOL_VERSION
+        )));
+    }
+    Ok(env.body)
 }

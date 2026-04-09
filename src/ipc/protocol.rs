@@ -4,7 +4,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{audit::stats::ModeStats, config::Limits, session::Session};
+use crate::{
+    audit::stats::ModeStats,
+    config::{Config, Limits},
+    session::Session,
+};
+
+pub const PROTOCOL_VERSION: u16 = 2;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Envelope<T> {
+    pub v: u16,
+    pub body: T,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -25,6 +37,8 @@ pub enum Request {
     GetGeneral,
     UpdateGeneral { general: crate::config::General },
     ResetAll,
+    GetConfig,
+    SaveConfig { config: Box<Config> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,5 +76,6 @@ pub enum Response {
     Modes { modes: Vec<ModeSummary> },
     ModeStatsData(ModeStats),
     General(crate::config::General),
+    Config(Box<Config>),
     Error { message: String },
 }

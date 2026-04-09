@@ -212,21 +212,21 @@ pub async fn run() -> Result<()> {
                 crate::onboarding::run(opts)
             }
         }
-        Command::Lang { locale } => commands::set_lang(&locale),
+        Command::Lang { locale } => commands::set_lang(&locale).await,
         Command::Start { profile, duration, hard, reason } => {
             commands::start(profile, duration, hard, reason).await
         }
         Command::Stop => commands::stop().await,
         Command::Panic { phrase, cancel } => commands::panic_cmd(phrase, cancel).await,
         Command::Status => commands::status().await,
-        Command::Profiles => commands::profiles(),
+        Command::Profiles => commands::profiles().await,
         Command::Profile(ProfileCmd::Edit { name, add, remove }) => {
-            commands::profile_edit(&name, add, remove)
+            commands::profile_edit(&name, add, remove).await
         }
-        Command::Profile(ProfileCmd::Create { name }) => commands::profile_create(&name),
-        Command::Profile(ProfileCmd::Delete { name }) => commands::profile_delete(&name),
+        Command::Profile(ProfileCmd::Create { name }) => commands::profile_create(&name).await,
+        Command::Profile(ProfileCmd::Delete { name }) => commands::profile_delete(&name).await,
         Command::Profile(ProfileCmd::Limits { name, max, min, cooldown, daily_cap, clear }) => {
-            commands::profile_limits(&name, max, min, cooldown, daily_cap, clear)
+            commands::profile_limits(&name, max, min, cooldown, daily_cap, clear).await
         }
         Command::Apps(AppsCmd::List { refresh }) => commands::apps_list(refresh),
         Command::Apps(AppsCmd::Scan) => commands::apps_scan(),
@@ -234,7 +234,7 @@ pub async fn run() -> Result<()> {
         Command::Doctor => commands::doctor().await,
         Command::Config(ConfigCmd::Path) => commands::config_path(),
         Command::Config(ConfigCmd::Export) => commands::config_export(),
-        Command::Config(ConfigCmd::Import { file }) => commands::config_import(&file),
+        Command::Config(ConfigCmd::Import { file }) => commands::config_import(&file).await,
         Command::Tui => commands::tui().await,
         Command::Daemon(DaemonCmd::Run) => commands::daemon_run().await,
         Command::Daemon(DaemonCmd::Start) => commands::daemon_start().await,

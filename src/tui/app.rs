@@ -1454,11 +1454,7 @@ async fn ensure_daemon() {
         let log = crate::paths::log_file()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_else(|_| "/tmp/monkd.log".into());
-        let shell = format!(
-            "nohup {exe:?} daemon run >>{log:?} 2>&1 &",
-            exe = exe,
-            log = log
-        );
+        let shell = format!("nohup {exe:?} daemon run >>{log:?} 2>&1 &", exe = exe, log = log);
         let _ = Command::new("sudo")
             .args([
                 "-E",
