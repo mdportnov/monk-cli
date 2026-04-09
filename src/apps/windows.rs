@@ -53,7 +53,7 @@ fn parse_lnk(path: &Path) -> Option<InstalledApp> {
     let target: String = shortcut
         .link_info()
         .as_ref()
-        .and_then(|info| info.local_base_path().clone())
+        .and_then(|info| info.local_base_path().map(str::to_string))
         .or_else(|| shortcut.string_data().relative_path().clone())?;
     let exec_path = PathBuf::from(&target);
     if exec_path.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("exe"))
