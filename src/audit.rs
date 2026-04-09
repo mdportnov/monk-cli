@@ -166,6 +166,26 @@ impl AuditLog {
         Ok(())
     }
 
+    pub fn last_open_session_start(&self) -> Result<Option<AuditEvent>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT at, kind, session_id, message, extra FROM audit_events
+             WHERE kind = 'session_started'
+               AND session_id IS NOT NULL
+               AND session_id NOT IN (
+                   SELECT session_id FROM audit_events
+                   WHERE kind IN ('session_completed', 'session_panicked')
+                     AND session_id IS NOT NULL
+               )
+             ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map([], row_to_event)?;
+        match rows.next() {
+            Some(Ok(Some(e))) => Ok(Some(e)),
+            _ => Ok(None),
+        }
+    }
+
     pub fn read_all(&self) -> Result<Vec<AuditEvent>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(

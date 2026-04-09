@@ -384,22 +384,10 @@ impl Supervisor {
     }
 
     fn reconstruct_from_audit(&self) -> Result<Option<SessionLock>> {
-        let events = self.audit.read_all().unwrap_or_default();
-        let mut last_start: Option<&crate::audit::AuditEvent> = None;
-        for e in &events {
-            match e.kind {
-                AuditKind::SessionStarted => last_start = Some(e),
-                AuditKind::SessionCompleted | AuditKind::SessionPanicked => {
-                    if let Some(start) = last_start {
-                        if e.session_id == start.session_id {
-                            last_start = None;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(start) = last_start else { return Ok(None) };
+        let Some(start) = self.audit.last_open_session_start().unwrap_or(None) else {
+            return Ok(None);
+        };
+        let start = &start;
         let extra = &start.extra;
         let id = start.session_id.unwrap_or_else(uuid::Uuid::new_v4);
         let profile = start.message.clone();
