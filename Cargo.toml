@@ -73,6 +73,7 @@ pkg-fmt = "zip"
 maintainer = "mihail"
 section = "utility"
 priority = "optional"
+depends = "libc6"
 assets = [
     ["target/release/monk", "usr/bin/", "755"],
     ["assets/systemd/monk.service", "lib/systemd/user/", "644"],
