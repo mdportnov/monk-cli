@@ -30,6 +30,7 @@ pub enum AuditKind {
     HostsRepaired,
     DaemonRestarted,
     ClockAnomaly,
+    SessionReconstructed,
 }
 
 impl AuditKind {
@@ -48,6 +49,7 @@ impl AuditKind {
             Self::HostsRepaired => "hosts_repaired",
             Self::DaemonRestarted => "daemon_restarted",
             Self::ClockAnomaly => "clock_anomaly",
+            Self::SessionReconstructed => "session_reconstructed",
         }
     }
 
@@ -66,6 +68,7 @@ impl AuditKind {
             "hosts_repaired" => Self::HostsRepaired,
             "daemon_restarted" => Self::DaemonRestarted,
             "clock_anomaly" => Self::ClockAnomaly,
+            "session_reconstructed" => Self::SessionReconstructed,
             _ => return None,
         })
     }

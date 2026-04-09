@@ -235,7 +235,12 @@ impl Supervisor {
         self.store.save(&lock)?;
         *self.active_profile.write() = Some(profile.clone());
         self.last_tick_ms.store(clock::monotonic_ms() as u64, Ordering::SeqCst);
-        self.audit.append(AuditKind::SessionStarted, Some(lock.id), &profile);
+        self.audit.append_with(
+            AuditKind::SessionStarted,
+            Some(lock.id),
+            &profile,
+            session_claim(&lock),
+        );
 
         Ok(lock_to_session(&lock))
     }
@@ -333,7 +338,23 @@ impl Supervisor {
     }
 
     pub fn restore(&self) -> Result<()> {
-        let Some((mut lock, kind)) = self.store.load()? else { return Ok(()) };
+        let loaded = self.store.load()?;
+        let loaded = match loaded {
+            Some(l) => Some(l),
+            None => match self.reconstruct_from_audit()? {
+                Some(lock) => {
+                    self.store.save(&lock)?;
+                    self.audit.append(
+                        AuditKind::SessionReconstructed,
+                        Some(lock.id),
+                        &lock.profile,
+                    );
+                    Some((lock, crate::session::LoadKind::Valid))
+                }
+                None => None,
+            },
+        };
+        let Some((mut lock, kind)) = loaded else { return Ok(()) };
         if matches!(kind, LoadKind::TamperedPrimary | LoadKind::TamperedBackup) {
             self.handle_tamper(&mut lock);
             self.store.save(&lock)?;
@@ -359,6 +380,69 @@ impl Supervisor {
         *self.active_profile.write() = None;
         tracing::info!(id = %lock.id, "session finalized");
         Ok(())
+    }
+
+    fn reconstruct_from_audit(&self) -> Result<Option<SessionLock>> {
+        let events = self.audit.read_all().unwrap_or_default();
+        let mut last_start: Option<&crate::audit::AuditEvent> = None;
+        for e in &events {
+            match e.kind {
+                AuditKind::SessionStarted => last_start = Some(e),
+                AuditKind::SessionCompleted
+                | AuditKind::SessionPanicked
+                | AuditKind::SessionReconstructed => {
+                    if let Some(start) = last_start {
+                        if e.session_id == start.session_id {
+                            last_start = None;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(start) = last_start else { return Ok(None) };
+        let extra = &start.extra;
+        let id = start.session_id.unwrap_or_else(uuid::Uuid::new_v4);
+        let profile = start.message.clone();
+        let duration_ms = extra.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        if duration_ms == 0 {
+            return Ok(None);
+        }
+        let hard_mode = extra.get("hard_mode").and_then(|v| v.as_bool()).unwrap_or(false);
+        let panic_delay_ms = extra.get("panic_delay_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+        let panic_phrase =
+            extra.get("panic_phrase").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let boot_id = extra.get("boot_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let boot_ms = extra.get("boot_ms").and_then(|v| v.as_u64()).unwrap_or(0) as u128;
+        let reason =
+            extra.get("reason").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
+
+        let now = chrono::Utc::now();
+        let elapsed = now.signed_duration_since(start.at).num_milliseconds().max(0) as u128;
+        if elapsed >= u128::from(duration_ms) {
+            return Ok(None);
+        }
+
+        let mut lock = SessionLock {
+            schema_version: crate::session::LOCK_SCHEMA,
+            id,
+            profile,
+            started_at: start.at,
+            started_at_boot_ms: boot_ms,
+            boot_id,
+            duration_ms: u128::from(duration_ms),
+            progressed_ms: elapsed,
+            hard_mode,
+            panic_requested_at: None,
+            panic_delay_ms: u128::from(panic_delay_ms),
+            panic_phrase,
+            reason,
+            penalty_applied_ms: 0,
+            mac: String::new(),
+        };
+        lock.reseal();
+        tracing::warn!(id = %lock.id, "session lock reconstructed from audit trail");
+        Ok(Some(lock))
     }
 
     fn handle_tamper(&self, lock: &mut SessionLock) {
@@ -409,6 +493,19 @@ fn enforce_limits(
         }
     }
     Ok(duration)
+}
+
+fn session_claim(lock: &SessionLock) -> serde_json::Value {
+    serde_json::json!({
+        "duration_ms": u64::try_from(lock.duration_ms).unwrap_or(u64::MAX),
+        "hard_mode": lock.hard_mode,
+        "panic_delay_ms": u64::try_from(lock.panic_delay_ms).unwrap_or(u64::MAX),
+        "panic_phrase": lock.panic_phrase,
+        "boot_id": lock.boot_id,
+        "boot_ms": u64::try_from(lock.started_at_boot_ms).unwrap_or(u64::MAX),
+        "reason": lock.reason,
+        "mac": lock.mac,
+    })
 }
 
 fn build_block_set(profile: &Profile) -> Result<BlockSet> {
