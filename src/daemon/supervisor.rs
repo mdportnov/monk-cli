@@ -227,6 +227,7 @@ impl Supervisor {
         if let Err(e) = self.hosts.lock().apply(&set) {
             if matches!(e, Error::Permission(_)) {
                 tracing::warn!(?e, "hosts apply failed; continuing without site blocking");
+                self.audit.append(AuditKind::HostsApplyFailed, None, &e.to_string());
             } else {
                 return Err(e);
             }
@@ -322,6 +323,11 @@ impl Supervisor {
                     let mut hosts = self.hosts.lock();
                     if let Err(e) = hosts.apply(&set) {
                         tracing::warn!(?e, "hosts reapply failed");
+                        self.audit.append(
+                            AuditKind::HostsApplyFailed,
+                            Some(lock.id),
+                            &e.to_string(),
+                        );
                     } else {
                         self.audit.append(AuditKind::HostsRepaired, Some(lock.id), "hosts ensured");
                     }
