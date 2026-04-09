@@ -20,6 +20,17 @@ use crate::{
     sites, Error, Result,
 };
 
+/// Lock ordering contract — acquire in this order, release in reverse:
+///
+/// 1. `config_write` (serializes writers against each other)
+/// 2. `config` (RwLock; clone out fast, never hold across I/O)
+/// 3. `hosts`
+/// 4. `procs`
+/// 5. `active_profile`
+/// 6. `last_tamper_at`
+///
+/// `store` is a standalone file-backed handle and is treated as a leaf —
+/// never acquire any of the above while it's in flight.
 #[derive(Debug)]
 pub struct Supervisor {
     config: Arc<RwLock<Config>>,
