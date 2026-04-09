@@ -258,6 +258,7 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },
         },
+        Request::Unknown => Response::Error { message: "unknown request kind".into() },
     }
 }
 

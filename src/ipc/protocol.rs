@@ -39,6 +39,8 @@ pub enum Request {
     ResetAll,
     GetConfig,
     SaveConfig { config: Box<Config> },
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,4 +80,6 @@ pub enum Response {
     General(crate::config::General),
     Config(Box<Config>),
     Error { message: String },
+    #[serde(other)]
+    Unknown,
 }
