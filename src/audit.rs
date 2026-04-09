@@ -368,6 +368,29 @@ mod tests {
     }
 
     #[test]
+    fn last_open_session_start_skips_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = AuditLog::with_path(dir.path().join(AUDIT_FILE));
+        let closed = Uuid::new_v4();
+        let open = Uuid::new_v4();
+        log.append(AuditKind::SessionStarted, Some(closed), "a");
+        log.append(AuditKind::SessionCompleted, Some(closed), "a");
+        log.append(AuditKind::SessionStarted, Some(open), "b");
+        let found = log.last_open_session_start().unwrap().unwrap();
+        assert_eq!(found.session_id, Some(open));
+    }
+
+    #[test]
+    fn last_open_session_start_none_when_all_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = AuditLog::with_path(dir.path().join(AUDIT_FILE));
+        let id = Uuid::new_v4();
+        log.append(AuditKind::SessionStarted, Some(id), "a");
+        log.append(AuditKind::SessionPanicked, Some(id), "a");
+        assert!(log.last_open_session_start().unwrap().is_none());
+    }
+
+    #[test]
     fn migrates_legacy_jsonl() {
         let dir = tempfile::tempdir().unwrap();
         let legacy = dir.path().join(LEGACY_AUDIT_FILE);

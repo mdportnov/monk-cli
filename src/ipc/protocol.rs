@@ -83,3 +83,31 @@ pub enum Response {
     #[serde(other)]
     Unknown,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_request_roundtrip() {
+        let env = Envelope { v: PROTOCOL_VERSION, body: Request::Ping };
+        let json = serde_json::to_string(&env).unwrap();
+        let back: Envelope<Request> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.v, PROTOCOL_VERSION);
+        assert!(matches!(back.body, Request::Ping));
+    }
+
+    #[test]
+    fn unknown_request_kind_decodes_to_unknown() {
+        let json = r#"{"v":2,"body":{"kind":"future_op","payload":123}}"#;
+        let env: Envelope<Request> = serde_json::from_str(json).unwrap();
+        assert!(matches!(env.body, Request::Unknown));
+    }
+
+    #[test]
+    fn unknown_response_kind_decodes_to_unknown() {
+        let json = r#"{"v":2,"body":{"kind":"future_status","extra":"hi"}}"#;
+        let env: Envelope<Response> = serde_json::from_str(json).unwrap();
+        assert!(matches!(env.body, Response::Unknown));
+    }
+}
