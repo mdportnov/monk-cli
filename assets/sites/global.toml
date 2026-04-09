@@ -5,16 +5,21 @@ label = "Social networks"
 domains = [
     "facebook.com",
     "instagram.com",
-    "tiktok.com",
     "twitter.com",
     "x.com",
+    "tiktok.com",
+    "reddit.com",
     "snapchat.com",
     "pinterest.com",
     "linkedin.com",
+    "tumblr.com",
     "threads.net",
     "bsky.app",
+    "mastodon.social",
+    "quora.com",
+    "weibo.com",
 ]
-extra_subdomains = { "facebook.com" = ["mbasic", "mtouch", "free"], "instagram.com" = ["help"] }
+extra_subdomains = { "reddit.com" = ["old", "new", "np", "i"], "facebook.com" = ["mbasic", "mtouch", "web"], "twitter.com" = ["mobile"] }
 
 [video]
 label = "Video and streaming"
@@ -27,31 +32,56 @@ domains = [
     "hulu.com",
     "disneyplus.com",
     "primevideo.com",
+    "max.com",
+    "paramountplus.com",
+    "peacocktv.com",
+    "appletv.com",
+    "crunchyroll.com",
+    "dailymotion.com",
+    "bilibili.com",
+    "kick.com",
+    "rumble.com",
 ]
 
 [news]
 label = "News and aggregators"
 domains = [
-    "news.ycombinator.com",
-    "reddit.com",
     "cnn.com",
     "bbc.com",
     "bbc.co.uk",
     "nytimes.com",
+    "washingtonpost.com",
     "theguardian.com",
-    "medium.com",
+    "reuters.com",
+    "apnews.com",
+    "bloomberg.com",
+    "wsj.com",
+    "ft.com",
+    "foxnews.com",
+    "nbcnews.com",
+    "aljazeera.com",
+    "economist.com",
+    "news.google.com",
+    "news.yahoo.com",
+    "flipboard.com",
 ]
-extra_subdomains = { "reddit.com" = ["old", "new", "np"] }
 
 [chat]
-label = "Chat and messengers (web)"
+label = "Messengers"
 domains = [
     "discord.com",
     "slack.com",
+    "whatsapp.com",
+    "web.whatsapp.com",
     "messenger.com",
     "telegram.org",
     "web.telegram.org",
-    "web.whatsapp.com",
+    "signal.org",
+    "wechat.com",
+    "line.me",
+    "viber.com",
+    "skype.com",
+    "teams.microsoft.com",
 ]
 
 [shopping]
@@ -59,20 +89,39 @@ label = "Shopping"
 domains = [
     "amazon.com",
     "ebay.com",
+    "etsy.com",
+    "walmart.com",
+    "target.com",
     "aliexpress.com",
+    "alibaba.com",
     "temu.com",
     "shein.com",
+    "bestbuy.com",
+    "costco.com",
+    "wayfair.com",
+    "ikea.com",
+    "asos.com",
+    "zalando.com",
 ]
 
 [games]
-label = "Gaming"
+label = "Game storefronts"
 domains = [
     "steampowered.com",
     "store.steampowered.com",
+    "steamcommunity.com",
     "epicgames.com",
-    "battle.net",
-    "roblox.com",
+    "gog.com",
     "ea.com",
+    "ubisoft.com",
+    "battle.net",
+    "blizzard.com",
+    "xbox.com",
+    "playstation.com",
+    "nintendo.com",
+    "itch.io",
+    "humblebundle.com",
+    "roblox.com",
 ]
 
 [adult]
@@ -84,5 +133,55 @@ domains = [
     "xhamster.com",
     "redtube.com",
     "youporn.com",
+    "tube8.com",
+    "spankbang.com",
+    "youjizz.com",
+    "brazzers.com",
     "onlyfans.com",
+    "chaturbate.com",
+    "stripchat.com",
+    "livejasmin.com",
+    "cam4.com",
+    "fansly.com",
+]
+
+[ai]
+label = "AI chat"
+domains = [
+    "chatgpt.com",
+    "openai.com",
+    "gemini.google.com",
+    "claude.ai",
+    "anthropic.com",
+    "perplexity.ai",
+    "character.ai",
+    "poe.com",
+    "copilot.microsoft.com",
+    "you.com",
+    "huggingface.co",
+    "mistral.ai",
+    "grok.com",
+    "deepseek.com",
+    "pi.ai",
+]
+
+[productivity_trap]
+label = "Productivity traps"
+domains = [
+    "news.ycombinator.com",
+    "producthunt.com",
+    "dribbble.com",
+    "behance.net",
+    "medium.com",
+    "dev.to",
+    "stackoverflow.com",
+    "lobste.rs",
+    "indiehackers.com",
+    "hackernoon.com",
+    "substack.com",
+    "9gag.com",
+    "imgur.com",
+    "buzzfeed.com",
+    "goodreads.com",
+    "letterboxd.com",
 ]

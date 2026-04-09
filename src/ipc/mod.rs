@@ -46,9 +46,9 @@ pub async fn send(req: &Request) -> Result<Response> {
     let payload = serde_json::to_vec(&env)?;
     sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
 
-    let frame = source
-        .next()
+    let frame = tokio::time::timeout(Duration::from_secs(3), source.next())
         .await
+        .map_err(|_| Error::Ipc("daemon read timeout".into()))?
         .ok_or_else(|| Error::Ipc("eof before response".into()))?
         .map_err(|e| Error::Ipc(e.to_string()))?;
     let env: Envelope<Response> = serde_json::from_slice(&frame)?;

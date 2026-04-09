@@ -706,7 +706,9 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(4),
             Constraint::Length(1),
             Constraint::Length(2),
-            Constraint::Min(2),
+            Constraint::Length(1),
+            Constraint::Min(3),
+            Constraint::Length(1),
         ])
         .split(inner);
 
@@ -779,6 +781,33 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     let info = Paragraph::new(info_lines).alignment(Alignment::Center);
     f.render_widget(info, layout[3]);
 
+    let blocked_title = Paragraph::new(Span::styled(
+        "— blocked —",
+        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(blocked_title, layout[4]);
+
+    let mut blocked_lines: Vec<Line> = Vec::new();
+    if let Some(profile) = &app.globals.active_profile_detail {
+        let width = layout[5].width.saturating_sub(8) as usize;
+        blocked_lines.push(blocked_line("apps ", &profile.apps, width));
+        let mut sites: Vec<String> = profile.sites.clone();
+        if let Ok(expanded) = crate::sites::expand_groups(&profile.site_groups) {
+            sites.extend(expanded);
+        }
+        sites.sort();
+        sites.dedup();
+        blocked_lines.push(blocked_line("sites", &sites, width));
+    } else {
+        blocked_lines.push(Line::from(Span::styled(
+            "—",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    let blocked = Paragraph::new(blocked_lines).alignment(Alignment::Center);
+    f.render_widget(blocked, layout[5]);
+
     let action = if app.globals.hard_mode.is_some() {
         "p  panic — delayed release"
     } else {
@@ -789,7 +818,41 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
         Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
     ))
     .alignment(Alignment::Center);
-    f.render_widget(actions, layout[4]);
+    f.render_widget(actions, layout[6]);
+}
+
+fn blocked_line(label: &str, items: &[String], width: usize) -> Line<'static> {
+    if items.is_empty() {
+        return Line::from(vec![
+            Span::styled(format!("{label}  "), Style::default().fg(DIM)),
+            Span::styled("—", Style::default().fg(DIM).add_modifier(Modifier::ITALIC)),
+        ]);
+    }
+    let total = items.len();
+    let mut shown: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    for (i, raw) in items.iter().enumerate() {
+        let s = short_token(raw);
+        let extra = if i == 0 { s.len() } else { s.len() + 2 };
+        if used + extra > width && !shown.is_empty() {
+            break;
+        }
+        used += extra;
+        shown.push(s);
+    }
+    let remainder = total.saturating_sub(shown.len());
+    let mut text = shown.join(", ");
+    if remainder > 0 {
+        text.push_str(&format!("  +{remainder}"));
+    }
+    Line::from(vec![
+        Span::styled(format!("{label}  "), Style::default().fg(DIM)),
+        Span::styled(text, Style::default().fg(TEXT)),
+    ])
+}
+
+fn short_token(raw: &str) -> String {
+    raw.trim().trim_start_matches("www.").to_string()
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {

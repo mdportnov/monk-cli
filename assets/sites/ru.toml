@@ -5,21 +5,32 @@ label = "Соцсети RU"
 domains = [
     "vk.com",
     "ok.ru",
+    "my.mail.ru",
     "livejournal.com",
     "dzen.ru",
-    "my.mail.ru",
+    "pikabu.ru",
+    "tenchat.ru",
+    "fishki.net",
+    "yaplakal.com",
+    "drive2.ru",
 ]
+extra_subdomains = { "vk.com" = ["vkvideo"] }
 
 [video]
 label = "Видео RU"
 domains = [
     "rutube.ru",
+    "vkvideo.ru",
     "kinopoisk.ru",
     "ivi.ru",
     "okko.tv",
+    "wink.ru",
     "premier.one",
-    "kion.ru",
     "start.ru",
+    "more.tv",
+    "kion.ru",
+    "smotrim.ru",
+    "nuum.ru",
 ]
 
 [news]
@@ -27,30 +38,68 @@ label = "Новости RU"
 domains = [
     "lenta.ru",
     "rbc.ru",
-    "ria.ru",
     "tass.ru",
-    "meduza.io",
+    "ria.ru",
     "kommersant.ru",
     "vedomosti.ru",
     "gazeta.ru",
-    "tjournal.ru",
-    "habr.com",
+    "kp.ru",
+    "mk.ru",
+    "rg.ru",
+    "iz.ru",
+    "interfax.ru",
+    "fontanka.ru",
+    "meduza.io",
+    "novayagazeta.ru",
+    "the-village.ru",
+    "news.mail.ru",
+]
+
+[chat]
+label = "Мессенджеры RU"
+domains = [
+    "telegram.org",
+    "web.telegram.org",
+    "tamtam.chat",
+    "icq.com",
 ]
 
 [shopping]
-label = "Магазины RU"
+label = "Маркетплейсы RU"
 domains = [
     "wildberries.ru",
     "ozon.ru",
-    "market.yandex.ru",
     "avito.ru",
+    "market.yandex.ru",
+    "aliexpress.ru",
+    "megamarket.ru",
+    "lamoda.ru",
+    "citilink.ru",
     "dns-shop.ru",
     "mvideo.ru",
+    "eldorado.ru",
+    "petrovich.ru",
+    "leroymerlin.ru",
+    "youla.ru",
 ]
 
 [games]
 label = "Игры RU"
 domains = [
     "vkplay.ru",
-    "mail.ru",
+    "my.games",
+    "igromania.ru",
+    "stopgame.ru",
+    "playground.ru",
+    "kanobu.ru",
+]
+
+[productivity_trap]
+label = "Отвлекающие RU"
+domains = [
+    "habr.com",
+    "vc.ru",
+    "dtf.ru",
+    "tproger.ru",
+    "adme.ru",
 ]

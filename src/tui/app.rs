@@ -706,6 +706,7 @@ pub struct Globals {
     pub flash: Option<Flash>,
     pub frame: u64,
     pub active_mode: Option<ModeSummary>,
+    pub active_profile_detail: Option<Profile>,
     pub help_open: bool,
     pub cached_modes: Vec<ModeSummary>,
 }
@@ -794,6 +795,7 @@ impl App {
                 self.globals.active = None;
                 self.globals.hard_mode = None;
                 self.globals.active_mode = None;
+                self.globals.active_profile_detail = None;
             }
         }
         if self.globals.daemon_running {
@@ -806,8 +808,16 @@ impl App {
                 }
                 self.globals.cached_modes = modes;
             }
+            if let Some(session) = &self.globals.active {
+                if let Ok(Response::Config(cfg)) = ipc::send(&Request::GetConfig).await {
+                    self.globals.active_profile_detail = cfg.profiles.get(&session.profile).cloned();
+                }
+            } else {
+                self.globals.active_profile_detail = None;
+            }
         } else {
             self.globals.active_mode = None;
+            self.globals.active_profile_detail = None;
             self.globals.cached_modes.clear();
         }
     }
