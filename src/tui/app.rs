@@ -1,10 +1,7 @@
 use std::{io, time::Duration};
 
 use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers,
-    },
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -1400,29 +1397,33 @@ pub async fn run() -> Result<()> {
     ensure_daemon().await;
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = main_loop(&mut terminal).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
     result
 }
 
 async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
     let mut app = App::new();
-    let mut ticks: u64 = 0;
+    let start = std::time::Instant::now();
+    let mut last_refresh = std::time::Instant::now()
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or_else(std::time::Instant::now);
 
     loop {
-        if ticks % 4 == 0 {
-            app.refresh().await;
-        }
-        app.globals.frame = ticks;
-        app.globals.tick_flash();
         let now = std::time::Instant::now();
+        if now.duration_since(last_refresh) >= Duration::from_millis(800) {
+            app.refresh().await;
+            last_refresh = now;
+        }
+        app.globals.frame = now.duration_since(start).as_millis() as u64 / 200;
+        app.globals.tick_flash();
         let dt = app
             .last_effect_tick
             .map(|t| now.duration_since(t))
@@ -1430,13 +1431,16 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         app.last_effect_tick = Some(now);
         terminal.draw(|f| super::view::draw_with_effects(f, &mut app, dt))?;
 
-        if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(key) = event::read()? {
-                app.handle_key(key).await;
+        if event::poll(Duration::from_millis(120))? {
+            while event::poll(Duration::from_millis(0))? {
+                if let Event::Key(key) = event::read()? {
+                    app.handle_key(key).await;
+                } else {
+                    let _ = event::read()?;
+                }
             }
         }
 
-        ticks = ticks.wrapping_add(1);
         if app.should_quit {
             break;
         }
