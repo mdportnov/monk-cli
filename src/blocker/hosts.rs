@@ -82,6 +82,9 @@ impl HostsBlocker {
 }
 
 impl Blocker for HostsBlocker {
+    fn name(&self) -> &'static str {
+        "hosts"
+    }
     fn apply(&mut self, set: &BlockSet) -> Result<()> {
         if set.sites.is_empty() {
             return Ok(());

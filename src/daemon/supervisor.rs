@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     apps::{self, AppCache},
     audit::{AuditKind, AuditLog},
-    blocker::{BlockSet, Blocker, HostsBlocker, ProcessGuard},
+    blocker::{self, BlockSet, Blocker, ProcessGuard},
     clock,
     config::{Config, Limits, Profile},
     ipc::HardModeInfo,
@@ -23,7 +23,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Supervisor {
     config: Arc<RwLock<Config>>,
-    hosts: Arc<Mutex<HostsBlocker>>,
+    hosts: Arc<Mutex<Box<dyn Blocker>>>,
     procs: Arc<Mutex<ProcessGuard>>,
     store: Arc<LockStore>,
     audit: Arc<AuditLog>,
@@ -35,7 +35,7 @@ impl Supervisor {
     pub fn new(config: Config) -> Result<Self> {
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
-            hosts: Arc::new(Mutex::new(HostsBlocker::default())),
+            hosts: Arc::new(Mutex::new(blocker::select_site_blocker())),
             procs: Arc::new(Mutex::new(ProcessGuard::new())),
             store: Arc::new(LockStore::new()?),
             audit: Arc::new(AuditLog::new()?),
