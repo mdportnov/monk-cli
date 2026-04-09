@@ -508,16 +508,54 @@ impl Default for Screen {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlashLevel {
+    Info,
+    Success,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flash {
+    pub message: String,
+    pub level: FlashLevel,
+    pub expires_at: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct Globals {
     pub active: Option<Session>,
     pub hard_mode: Option<HardModeInfo>,
     pub daemon_running: bool,
-    pub flash: Option<String>,
+    pub flash: Option<Flash>,
     pub frame: u64,
     pub active_mode: Option<ModeSummary>,
     pub help_open: bool,
     pub cached_modes: Vec<ModeSummary>,
+}
+
+impl Globals {
+    pub fn set_flash(&mut self, message: impl Into<String>, level: FlashLevel) {
+        let ttl_frames = match level {
+            FlashLevel::Error => 40,
+            FlashLevel::Warn => 30,
+            _ => 20,
+        };
+        self.flash = Some(Flash {
+            message: message.into(),
+            level,
+            expires_at: self.frame.saturating_add(ttl_frames),
+        });
+    }
+
+    pub fn tick_flash(&mut self) {
+        if let Some(f) = &self.flash {
+            if self.frame >= f.expires_at {
+                self.flash = None;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -663,7 +701,7 @@ impl App {
         };
         match ipc::send(&Request::DeleteMode { name: name.clone() }).await {
             Ok(Response::Ok) => {
-                self.globals.flash = Some(format!("deleted `{name}`"));
+                self.globals.set_flash(format!("deleted `{name}`"), FlashLevel::Success);
                 self.refresh_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -741,7 +779,7 @@ impl App {
         };
         match ipc::send(&Request::SaveMode { name: name.clone(), profile }).await {
             Ok(Response::Ok) => {
-                self.globals.flash = Some(format!("saved `{name}`"));
+                self.globals.set_flash(format!("saved `{name}`"), FlashLevel::Success);
                 self.open_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -796,7 +834,7 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.flash = Some(format!("started `{}`", s.profile));
+                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
                 self.screen = Screen::Home(HomeState::default());
             }
             Ok(Response::Error { message }) => {
@@ -848,8 +886,7 @@ impl App {
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => self.open_picker().await,
             MenuItem::Doctor => {
-                self.globals.flash =
-                    Some("run `monk doctor` in a shell for the full report".into());
+                self.globals.set_flash("run `monk doctor` in a shell for the full report", FlashLevel::Info);
             }
             MenuItem::Quit => self.should_quit = true,
         }
@@ -857,13 +894,13 @@ impl App {
 
     async fn quick_start(&mut self, idx: usize) {
         let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
-            self.globals.flash = Some(format!("no mode at slot {}", idx + 1));
+            self.globals.set_flash(format!("no mode at slot {}", idx + 1), FlashLevel::Error);
             return;
         };
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.flash = Some(format!("config error: {e}"));
+                self.globals.set_flash(format!("config error: {e}"), FlashLevel::Error);
                 return;
             }
         };
@@ -886,11 +923,11 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.flash = Some(format!("started `{}`", s.profile));
+                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
             }
-            Ok(Response::Error { message }) => self.globals.flash = Some(message),
-            Ok(_) => self.globals.flash = Some("unexpected response".into()),
-            Err(e) => self.globals.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
+            Ok(_) => self.globals.set_flash("unexpected response", FlashLevel::Error),
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
 
@@ -898,7 +935,7 @@ impl App {
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.flash = Some(format!("config error: {e}"));
+                self.globals.set_flash(format!("config error: {e}"), FlashLevel::Error);
                 return;
             }
         };
@@ -910,39 +947,40 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.flash = Some(format!("started `{}`", s.profile));
+                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
             }
-            Ok(Response::Error { message }) => self.globals.flash = Some(message),
-            Ok(_) => self.globals.flash = Some("unexpected response".into()),
-            Err(e) => self.globals.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
+            Ok(_) => self.globals.set_flash("unexpected response", FlashLevel::Error),
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
 
     async fn do_stop(&mut self) {
         match ipc::send(&Request::Stop { id: None }).await {
             Ok(Response::Session(s)) => {
-                self.globals.flash = Some(format!("stopped `{}`", s.profile))
+                self.globals.set_flash(format!("stopped `{}`", s.profile), FlashLevel::Success)
             }
             Ok(Response::HardModeActive(_)) => {
-                self.globals.flash = Some("hard mode active — stop denied".into())
+                self.globals.set_flash("hard mode active — stop denied", FlashLevel::Error)
             }
-            Ok(Response::Error { message }) => self.globals.flash = Some(message),
-            Ok(_) => self.globals.flash = Some("nothing to stop".into()),
-            Err(e) => self.globals.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
+            Ok(_) => self.globals.set_flash("nothing to stop", FlashLevel::Warn),
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
 
     async fn do_panic(&mut self) {
         match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
-                self.globals.flash = Some(match info.panic_releases_at {
+                let msg = match info.panic_releases_at {
                     Some(at) => format!("panic release at {}", at.to_rfc3339()),
                     None => "panic cancelled".into(),
-                });
+                };
+                self.globals.set_flash(msg, FlashLevel::Success);
             }
-            Ok(Response::Error { message }) => self.globals.flash = Some(message),
-            Ok(_) => self.globals.flash = Some("no hard-mode session".into()),
-            Err(e) => self.globals.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
+            Ok(_) => self.globals.set_flash("no hard-mode session", FlashLevel::Warn),
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
 }
@@ -971,6 +1009,7 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
             app.refresh().await;
         }
         app.globals.frame = ticks;
+        app.globals.tick_flash();
         terminal.draw(|f| super::view::draw(f, &app))?;
 
         if event::poll(Duration::from_millis(200))? {

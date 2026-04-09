@@ -835,8 +835,17 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
         ])),
     }
 
-    if let Some(msg) = &app.globals.flash {
-        lines.push(Line::from(Span::styled(msg.clone(), Style::default().fg(GLOW))));
+    if let Some(f) = &app.globals.flash {
+        let color = match f.level {
+            crate::tui::app::FlashLevel::Success => GLOW,
+            crate::tui::app::FlashLevel::Warn => Color::Rgb(220, 180, 90),
+            crate::tui::app::FlashLevel::Error => ALERT,
+            crate::tui::app::FlashLevel::Info => ACCENT,
+        };
+        lines.push(Line::from(Span::styled(
+            f.message.clone(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )));
     } else {
         lines.push(Line::from(Span::styled(
             home.selected_item().hint(),
@@ -974,4 +983,131 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    use crate::audit::stats::ModeStats;
+    use crate::config::Limits;
+    use crate::ipc::ModeSummary;
+    use crate::tui::app::{
+        App, ConfirmState, EditorState, Flash, FlashLevel, Globals, HomeState, PickerState, Screen,
+    };
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn render(app: &App, w: u16, h: u16) -> String {
+        let backend = TestBackend::new(w, h);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, app)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    fn sample_mode(name: &str) -> ModeSummary {
+        ModeSummary {
+            name: name.into(),
+            color: None,
+            blocked_apps: 1,
+            blocked_sites: 1,
+            blocked_groups: 1,
+            limits: Limits {
+                max_duration: Some(Duration::from_secs(2 * 3600)),
+                min_duration: Some(Duration::from_secs(15 * 60)),
+                cooldown: Some(Duration::from_secs(30 * 60)),
+                daily_cap: Some(Duration::from_secs(4 * 3600)),
+            },
+            stats: ModeStats {
+                used_24h: Duration::from_secs(45 * 60),
+                last_completed_at: None,
+                cooldown_remaining: None,
+                daily_cap_remaining: Some(Duration::from_secs(3 * 3600 + 15 * 60)),
+            },
+            is_default: true,
+        }
+    }
+
+    fn base_app() -> App {
+        let mut app = App::default();
+        app.globals = Globals {
+            daemon_running: true,
+            frame: 0,
+            cached_modes: vec![sample_mode("deepwork"), sample_mode("reading")],
+            ..Default::default()
+        };
+        app
+    }
+
+    #[test]
+    fn snapshot_home() {
+        let mut app = base_app();
+        app.screen = Screen::Home(HomeState::default());
+        app.globals.flash = Some(Flash {
+            message: "started `deepwork`".into(),
+            level: FlashLevel::Success,
+            expires_at: 100,
+        });
+        insta::assert_snapshot!(render(&app, 90, 28));
+    }
+
+    #[test]
+    fn snapshot_home_help_overlay() {
+        let mut app = base_app();
+        app.screen = Screen::Home(HomeState::default());
+        app.globals.help_open = true;
+        insta::assert_snapshot!(render(&app, 90, 28));
+    }
+
+    #[test]
+    fn snapshot_picker() {
+        let mut app = base_app();
+        let modes = app.globals.cached_modes.clone();
+        app.screen = Screen::ModePicker(PickerState {
+            modes,
+            selected: 0,
+            loading: false,
+            error: None,
+        });
+        insta::assert_snapshot!(render(&app, 100, 30));
+    }
+
+    #[test]
+    fn snapshot_confirm() {
+        let mut app = base_app();
+        let confirm = ConfirmState::from_mode(
+            sample_mode("deepwork"),
+            Duration::from_secs(50 * 60),
+            false,
+        );
+        app.screen = Screen::ModeConfirm(Box::new(confirm));
+        insta::assert_snapshot!(render(&app, 100, 30));
+    }
+
+    #[test]
+    fn snapshot_editor_new() {
+        let mut app = base_app();
+        app.screen = Screen::ModeEditor(Box::new(EditorState::new_mode()));
+        insta::assert_snapshot!(render(&app, 100, 30));
+    }
+
+    #[test]
+    fn flash_levels_all_render() {
+        for level in [FlashLevel::Info, FlashLevel::Success, FlashLevel::Warn, FlashLevel::Error] {
+            let mut app = base_app();
+            app.screen = Screen::Home(HomeState::default());
+            app.globals.flash = Some(Flash {
+                message: format!("{level:?} message"),
+                level,
+                expires_at: 100,
+            });
+            let _ = render(&app, 90, 24);
+        }
+    }
 }
