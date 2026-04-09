@@ -30,6 +30,67 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::ModeConfirm(confirm) => draw_confirm(f, app, confirm.as_ref()),
         Screen::ModeEditor(editor) => draw_editor(f, app, editor.as_ref()),
     }
+    if app.globals.help_open {
+        draw_help_overlay(f, app);
+    }
+}
+
+fn draw_help_overlay(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let lines: Vec<Line> = match &app.screen {
+        Screen::Home(_) => vec![
+            Line::from(Span::styled("home", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  ↑/↓ · j/k    navigate menu"),
+            Line::from("  enter        activate item"),
+            Line::from("  s · x · p    start · stop · panic"),
+            Line::from("  m            open modes picker"),
+            Line::from("  1..9         quick-start mode by slot"),
+            Line::from("  ?            toggle help"),
+            Line::from("  q · esc      quit"),
+        ],
+        Screen::ModePicker(_) => vec![
+            Line::from(Span::styled("modes", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  ↑/↓ · j/k    navigate"),
+            Line::from("  enter        configure & start"),
+            Line::from("  n · e · d    new · edit · delete"),
+            Line::from("  r            refresh"),
+            Line::from("  esc · q      back to home"),
+        ],
+        Screen::ModeConfirm(_) => vec![
+            Line::from(Span::styled("confirm", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  ←/→ · h/l    adjust duration (5m steps)"),
+            Line::from("  shift+h      toggle hard mode"),
+            Line::from("  enter        start session"),
+            Line::from("  esc · q      back to picker"),
+        ],
+        Screen::ModeEditor(_) => vec![
+            Line::from(Span::styled("editor", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  tab/shift-tab   next / prev field"),
+            Line::from("  ctrl+s          save"),
+            Line::from("  space           toggle app/group"),
+            Line::from("  esc             cancel"),
+        ],
+    };
+    let width = 44.min(area.width.saturating_sub(4));
+    let height = (lines.len() as u16 + 4).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let rect = Rect { x, y, width, height };
+    f.render_widget(ratatui::widgets::Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(" help ");
+    let para = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(TEXT))
+        .wrap(Wrap { trim: false });
+    f.render_widget(para, rect);
 }
 
 fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {

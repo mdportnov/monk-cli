@@ -516,6 +516,8 @@ pub struct Globals {
     pub flash: Option<String>,
     pub frame: u64,
     pub active_mode: Option<ModeSummary>,
+    pub help_open: bool,
+    pub cached_modes: Vec<ModeSummary>,
 }
 
 #[derive(Debug, Default)]
@@ -545,26 +547,36 @@ impl App {
                 self.globals.active_mode = None;
             }
         }
-        if let Some(session) = &self.globals.active {
-            if self
-                .globals
-                .active_mode
-                .as_ref()
-                .map(|m| m.name != session.profile)
-                .unwrap_or(true)
-            {
-                if let Ok(Response::Modes(modes)) = ipc::send(&Request::ListModes).await {
+        if self.globals.daemon_running {
+            if let Ok(Response::Modes(modes)) = ipc::send(&Request::ListModes).await {
+                if let Some(session) = &self.globals.active {
                     self.globals.active_mode =
-                        modes.into_iter().find(|m| m.name == session.profile);
+                        modes.iter().find(|m| m.name == session.profile).cloned();
+                } else {
+                    self.globals.active_mode = None;
                 }
+                self.globals.cached_modes = modes;
             }
         } else {
             self.globals.active_mode = None;
+            self.globals.cached_modes.clear();
         }
     }
 
     pub async fn handle_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
+            return;
+        }
+        if self.globals.help_open {
+            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')) {
+                self.globals.help_open = false;
+            }
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('?'))
+            && !matches!(self.screen, Screen::ModeEditor(_))
+        {
+            self.globals.help_open = true;
             return;
         }
         match &self.screen {
@@ -595,6 +607,10 @@ impl App {
             KeyCode::Char('p') => {
                 home.selected = 2;
                 self.activate_home().await;
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                let idx = (c as u8 - b'1') as usize;
+                self.quick_start(idx).await;
             }
             _ => {}
         }
@@ -836,6 +852,45 @@ impl App {
                     Some("run `monk doctor` in a shell for the full report".into());
             }
             MenuItem::Quit => self.should_quit = true,
+        }
+    }
+
+    async fn quick_start(&mut self, idx: usize) {
+        let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
+            self.globals.flash = Some(format!("no mode at slot {}", idx + 1));
+            return;
+        };
+        let cfg = match Config::load() {
+            Ok(c) => c,
+            Err(e) => {
+                self.globals.flash = Some(format!("config error: {e}"));
+                return;
+            }
+        };
+        let mut duration = cfg.general.default_duration;
+        if let Some(max) = mode.limits.max_duration {
+            if duration > max {
+                duration = max;
+            }
+        }
+        if let Some(min) = mode.limits.min_duration {
+            if duration < min {
+                duration = min;
+            }
+        }
+        let req = Request::Start {
+            profile: mode.name.clone(),
+            duration,
+            hard_mode: cfg.general.hard_mode,
+            reason: None,
+        };
+        match ipc::send(&req).await {
+            Ok(Response::Session(s)) => {
+                self.globals.flash = Some(format!("started `{}`", s.profile));
+            }
+            Ok(Response::Error { message }) => self.globals.flash = Some(message),
+            Ok(_) => self.globals.flash = Some("unexpected response".into()),
+            Err(e) => self.globals.flash = Some(e.to_string()),
         }
     }
 
