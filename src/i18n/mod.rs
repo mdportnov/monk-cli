@@ -74,26 +74,31 @@ pub fn render(key: &str, args: &[(&str, String)]) -> String {
 
 fn parse(yaml: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    let mut section: Option<String> = None;
+    let mut stack: Vec<(usize, String)> = Vec::new();
     for raw in yaml.lines() {
         if raw.trim().is_empty() || raw.trim_start().starts_with('#') {
             continue;
         }
-        if !raw.starts_with(' ') && !raw.starts_with('\t') {
-            if let Some((k, v)) = split_kv(raw.trim()) {
-                if v.is_empty() {
-                    section = Some(k.to_string());
-                } else if !k.starts_with('_') {
-                    out.insert(k.to_string(), unquote(v));
-                }
-            }
+        let indent = raw.len() - raw.trim_start().len();
+        while stack.last().map(|(i, _)| *i >= indent).unwrap_or(false) {
+            stack.pop();
+        }
+        let Some((k, v)) = split_kv(raw.trim()) else { continue };
+        if k.starts_with('_') {
             continue;
         }
-        let trimmed = raw.trim_start();
-        if let Some((k, v)) = split_kv(trimmed) {
-            let full = match &section {
-                Some(s) => format!("{s}.{k}"),
-                None => k.to_string(),
+        if v.is_empty() {
+            stack.push((indent, k.to_string()));
+        } else {
+            let prefix = stack
+                .iter()
+                .map(|(_, s)| s.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            let full = if prefix.is_empty() {
+                k.to_string()
+            } else {
+                format!("{prefix}.{k}")
             };
             out.insert(full, unquote(v));
         }
