@@ -210,6 +210,7 @@ impl ConfirmState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorField {
     Name,
+    Color,
     Max,
     Min,
     Cooldown,
@@ -222,8 +223,9 @@ pub enum EditorField {
 }
 
 impl EditorField {
-    pub const ORDER: [EditorField; 10] = [
+    pub const ORDER: [EditorField; 11] = [
         EditorField::Name,
+        EditorField::Color,
         EditorField::Max,
         EditorField::Min,
         EditorField::Cooldown,
@@ -238,6 +240,7 @@ impl EditorField {
     pub fn label(self) -> &'static str {
         match self {
             EditorField::Name => "name",
+            EditorField::Color => "color",
             EditorField::Max => "max duration",
             EditorField::Min => "min duration",
             EditorField::Cooldown => "cooldown",
@@ -253,6 +256,7 @@ impl EditorField {
     pub fn help(self) -> &'static str {
         match self {
             EditorField::Name => "mode identifier (1-30 chars)",
+            EditorField::Color => "← → cycle accent color",
             EditorField::Max => "ceiling — even you can't override (e.g. 2h, 90m)",
             EditorField::Min => "shorter doesn't count as a session",
             EditorField::Cooldown => "protects against compulsive restart",
@@ -266,10 +270,35 @@ impl EditorField {
     }
 }
 
+pub const COLOR_PALETTE: &[(&str, &str)] = &[
+    ("none", "—"),
+    ("blue", "blue"),
+    ("cyan", "cyan"),
+    ("green", "green"),
+    ("amber", "amber"),
+    ("violet", "violet"),
+    ("red", "red"),
+];
+
+pub fn palette_index(color: &Option<String>) -> usize {
+    let key = color.as_deref().unwrap_or("none");
+    COLOR_PALETTE.iter().position(|(k, _)| *k == key).unwrap_or(0)
+}
+
+pub fn palette_value(idx: usize) -> Option<String> {
+    let (k, _) = COLOR_PALETTE[idx % COLOR_PALETTE.len()];
+    if k == "none" {
+        None
+    } else {
+        Some(k.to_string())
+    }
+}
+
 #[derive(Debug)]
 pub struct EditorState {
     pub original_name: Option<String>,
     pub name: TextInput,
+    pub color_idx: usize,
     pub max: TextInput,
     pub min: TextInput,
     pub cooldown: TextInput,
@@ -291,6 +320,7 @@ impl EditorState {
         let mut s = Self {
             original_name: None,
             name: TextInput::new(""),
+            color_idx: 0,
             max: TextInput::new(""),
             min: TextInput::new(""),
             cooldown: TextInput::new(""),
@@ -312,9 +342,11 @@ impl EditorState {
     pub fn edit(name: String, profile: Profile) -> Self {
         let (apps, groups) = load_picklists(&profile);
         let limits = profile.limits.clone();
+        let color_idx = palette_index(&profile.color);
         let mut s = Self {
             original_name: Some(name.clone()),
             name: TextInput::new(name),
+            color_idx,
             max: TextInput::new(fmt_opt_humantime(limits.max_duration)),
             min: TextInput::new(fmt_opt_humantime(limits.min_duration)),
             cooldown: TextInput::new(fmt_opt_humantime(limits.cooldown)),
@@ -407,7 +439,7 @@ impl EditorState {
             allow: self.snapshot.allow.clone(),
             hooks,
             limits,
-            color: self.snapshot.color.clone(),
+            color: palette_value(self.color_idx),
         };
         Ok((name, profile))
     }
@@ -558,17 +590,56 @@ impl Globals {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct App {
     pub screen: Screen,
     pub globals: Globals,
     pub should_quit: bool,
+    pub effect: Option<tachyonfx::Effect>,
+    pub last_effect_tick: Option<std::time::Instant>,
+}
+
+impl std::fmt::Debug for App {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("App")
+            .field("screen", &self.screen)
+            .field("globals", &self.globals)
+            .field("should_quit", &self.should_quit)
+            .finish()
+    }
 }
 
 impl App {
     pub fn new() -> Self {
         let _ = Config::load();
         Self::default()
+    }
+
+    pub fn trigger_enter_effect(&mut self) {
+        use tachyonfx::{fx, Interpolation, Motion};
+        self.effect = Some(fx::sweep_in(
+            Motion::LeftToRight,
+            12,
+            0,
+            ratatui::style::Color::Rgb(30, 40, 60),
+            tachyonfx::EffectTimer::from_ms(260, Interpolation::QuadOut),
+        ));
+        self.last_effect_tick = Some(std::time::Instant::now());
+    }
+
+    pub fn trigger_clamp_effect(&mut self) {
+        use tachyonfx::{fx, Interpolation};
+        self.effect = Some(fx::hsl_shift(
+            Some([0.0, -40.0, 0.0]),
+            None,
+            (220, Interpolation::SineInOut),
+        ));
+        self.last_effect_tick = Some(std::time::Instant::now());
+    }
+
+    fn set_screen(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.trigger_enter_effect();
     }
 
     pub async fn refresh(&mut self) {
@@ -658,7 +729,7 @@ impl App {
         let Screen::ModePicker(picker) = &mut self.screen else { return };
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.screen = Screen::Home(HomeState::default());
+                self.set_screen(Screen::Home(HomeState::default()));
             }
             KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
             KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
@@ -672,7 +743,7 @@ impl App {
     }
 
     fn open_editor_new(&mut self) {
-        self.screen = Screen::ModeEditor(Box::new(EditorState::new_mode()));
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::new_mode())));
     }
 
     fn open_editor_edit(&mut self) {
@@ -688,7 +759,7 @@ impl App {
             }
         };
         let profile = cfg.profiles.get(&mode.name).cloned().unwrap_or_default();
-        self.screen = Screen::ModeEditor(Box::new(EditorState::edit(mode.name.clone(), profile)));
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(mode.name.clone(), profile))));
     }
 
     async fn delete_current_mode(&mut self) {
@@ -755,6 +826,18 @@ impl App {
                     EditorField::Groups => {
                         ed.groups.handle(key);
                     }
+                    EditorField::Color => {
+                        let n = COLOR_PALETTE.len();
+                        match key.code {
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                ed.color_idx = (ed.color_idx + n - 1) % n;
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                ed.color_idx = (ed.color_idx + 1) % n;
+                            }
+                            _ => {}
+                        }
+                    }
                     _ => {
                         if let Some(input) = ed.input_mut(focus) {
                             input.handle(key);
@@ -805,18 +888,36 @@ impl App {
             .map(|c| c.general.default_duration)
             .unwrap_or(Duration::from_secs(25 * 60));
         let hard = cfg.as_ref().map(|c| c.general.hard_mode).unwrap_or(false);
-        self.screen = Screen::ModeConfirm(Box::new(ConfirmState::from_mode(mode, default_dur, hard)));
+        self.set_screen(Screen::ModeConfirm(Box::new(ConfirmState::from_mode(mode, default_dur, hard))));
     }
 
     async fn handle_confirm_key(&mut self, key: KeyEvent) {
-        let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.open_picker().await,
-            KeyCode::Left | KeyCode::Char('h') => confirm.dec(),
-            KeyCode::Right | KeyCode::Char('l') => confirm.inc(),
-            KeyCode::Char('H') => confirm.hard = !confirm.hard,
-            KeyCode::Enter | KeyCode::Char(' ') => self.start_from_confirm().await,
-            _ => {}
+        let mut clamped = false;
+        {
+            let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.open_picker().await;
+                    return;
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    confirm.dec();
+                    clamped = confirm.clamped;
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    confirm.inc();
+                    clamped = confirm.clamped;
+                }
+                KeyCode::Char('H') => confirm.hard = !confirm.hard,
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    self.start_from_confirm().await;
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if clamped {
+            self.trigger_clamp_effect();
         }
     }
 
@@ -835,7 +936,7 @@ impl App {
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
                 self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
-                self.screen = Screen::Home(HomeState::default());
+                self.set_screen(Screen::Home(HomeState::default()));
             }
             Ok(Response::Error { message }) => {
                 if let Screen::ModeConfirm(c) = &mut self.screen {
@@ -856,7 +957,7 @@ impl App {
     }
 
     async fn open_picker(&mut self) {
-        self.screen = Screen::ModePicker(PickerState { loading: true, ..Default::default() });
+        self.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
         self.refresh_picker().await;
     }
 
@@ -1010,7 +1111,13 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         }
         app.globals.frame = ticks;
         app.globals.tick_flash();
-        terminal.draw(|f| super::view::draw(f, &app))?;
+        let now = std::time::Instant::now();
+        let dt = app
+            .last_effect_tick
+            .map(|t| now.duration_since(t))
+            .unwrap_or(Duration::ZERO);
+        app.last_effect_tick = Some(now);
+        terminal.draw(|f| super::view::draw_with_effects(f, &mut app, dt))?;
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {

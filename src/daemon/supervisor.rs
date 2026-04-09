@@ -327,42 +327,20 @@ fn enforce_limits(
             )));
         }
     }
-    if limits.cooldown.is_some() || limits.daily_cap.is_some() {
-        let events = audit.read_all().unwrap_or_default();
-        let now = chrono::Utc::now();
-        if let Some(cooldown) = limits.cooldown {
-            if let Some(last) = events
-                .iter()
-                .rev()
-                .find(|e| e.kind == AuditKind::SessionCompleted && e.message == profile)
-            {
-                let elapsed = now.signed_duration_since(last.at);
-                let cooldown_chrono = chrono::Duration::from_std(cooldown)
-                    .unwrap_or_else(|_| chrono::Duration::zero());
-                if elapsed < cooldown_chrono {
-                    let remaining = cooldown_chrono - elapsed;
-                    return Err(Error::Config(format!(
-                        "profile `{profile}` cooldown active ({}s remaining)",
-                        remaining.num_seconds().max(0)
-                    )));
-                }
-            }
-        }
-        if let Some(cap) = limits.daily_cap {
-            let since = now - chrono::Duration::hours(24);
-            let started_today = events
-                .iter()
-                .filter(|e| {
-                    e.kind == AuditKind::SessionStarted && e.message == profile && e.at >= since
-                })
-                .count() as u32;
-            let approx_used = requested.saturating_mul(started_today);
-            if approx_used >= cap {
-                return Err(Error::Config(format!(
-                    "profile `{profile}` daily cap reached ({})",
-                    humantime::format_duration(cap)
-                )));
-            }
+    let events = audit.read_all().unwrap_or_default();
+    let stats = crate::audit::stats::mode_stats(&events, profile, limits, chrono::Utc::now());
+    if let Some(remaining) = stats.cooldown_remaining {
+        return Err(Error::Config(format!(
+            "profile `{profile}` cooldown active ({}s remaining)",
+            remaining.as_secs()
+        )));
+    }
+    if let (Some(cap), Some(remaining)) = (limits.daily_cap, stats.daily_cap_remaining) {
+        if remaining.is_zero() || duration > remaining {
+            return Err(Error::Config(format!(
+                "profile `{profile}` daily cap reached ({})",
+                humantime::format_duration(cap)
+            )));
         }
     }
     Ok(duration)

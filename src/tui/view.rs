@@ -23,6 +23,20 @@ const SKIN: Color = Color::Rgb(210, 180, 140);
 const GLOW: Color = Color::Rgb(190, 165, 110);
 const ALERT: Color = Color::Rgb(200, 90, 90);
 
+pub fn draw_with_effects(f: &mut Frame, app: &mut App, dt: std::time::Duration) {
+    draw(f, app);
+    if let Some(effect) = app.effect.as_mut() {
+        use tachyonfx::Shader;
+        if effect.running() {
+            use tachyonfx::EffectRenderer;
+            let area = f.area();
+            f.render_effect(effect, area, tachyonfx::Duration::from_millis(dt.as_millis() as u32));
+        } else {
+            app.effect = None;
+        }
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     match &app.screen {
         Screen::Home(home) => draw_home(f, app, home),
@@ -128,6 +142,7 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
 
     let scalar_fields = [
         EditorField::Name,
+        EditorField::Color,
         EditorField::Max,
         EditorField::Min,
         EditorField::Cooldown,
@@ -189,6 +204,10 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
         rows[0],
     );
 
+    if field == EditorField::Color {
+        draw_color_swatch(f, rows[1], editor, focused);
+        return;
+    }
     let input = match field {
         EditorField::Name => &editor.name,
         EditorField::Max => &editor.max,
@@ -207,6 +226,36 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
     };
     let buf = f.buffer_mut();
     input.render(rows[1], buf, style);
+}
+
+pub fn palette_color(key: &str) -> Color {
+    match key {
+        "blue" => Color::Rgb(110, 160, 230),
+        "cyan" => Color::Rgb(90, 200, 210),
+        "green" => Color::Rgb(120, 200, 130),
+        "amber" => Color::Rgb(220, 180, 90),
+        "violet" => Color::Rgb(180, 140, 220),
+        "red" => Color::Rgb(220, 110, 110),
+        _ => DIM,
+    }
+}
+
+fn draw_color_swatch(f: &mut Frame, area: Rect, editor: &EditorState, focused: bool) {
+    use crate::tui::app::COLOR_PALETTE;
+    let mut spans: Vec<Span> = Vec::new();
+    for (i, (key, label)) in COLOR_PALETTE.iter().enumerate() {
+        let is_sel = i == editor.color_idx;
+        let col = palette_color(key);
+        let mut style = Style::default().fg(col);
+        if is_sel {
+            style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
+        } else if !focused {
+            style = style.add_modifier(Modifier::DIM);
+        }
+        spans.push(Span::styled(format!(" {label} "), style));
+        spans.push(Span::raw(" "));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn draw_editor_aux(f: &mut Frame, area: Rect, editor: &EditorState) {
