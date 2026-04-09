@@ -1,7 +1,7 @@
 use std::{io, time::Duration};
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -39,7 +39,7 @@ impl MenuItem {
             MenuItem::Start => "Start session",
             MenuItem::Stop => "Stop session",
             MenuItem::Panic => "Panic escape",
-            MenuItem::Profiles => "Profiles",
+            MenuItem::Profiles => "Modes",
             MenuItem::Doctor => "Doctor",
             MenuItem::Quit => "Quit",
         }
@@ -47,10 +47,10 @@ impl MenuItem {
 
     pub fn hint(self) -> &'static str {
         match self {
-            MenuItem::Start => "begin a focus session with the default profile",
+            MenuItem::Start => "begin a focus session with the default mode",
             MenuItem::Stop => "end the active session (soft mode only)",
             MenuItem::Panic => "request a delayed hard-mode escape",
-            MenuItem::Profiles => "list configured profiles",
+            MenuItem::Profiles => "list configured modes",
             MenuItem::Doctor => "check environment and daemon health",
             MenuItem::Quit => "leave the TUI",
         }
@@ -58,30 +58,11 @@ impl MenuItem {
 }
 
 #[derive(Debug, Default)]
-pub struct App {
-    pub active: Option<Session>,
-    pub hard_mode: Option<HardModeInfo>,
-    pub daemon_running: bool,
+pub struct HomeState {
     pub selected: usize,
-    pub frame: u64,
-    pub flash: Option<String>,
-    pub profile_names: Vec<String>,
-    pub should_quit: bool,
 }
 
-impl App {
-    pub fn new() -> Self {
-        let profile_names = Config::load()
-            .ok()
-            .map(|c| c.profiles.keys().cloned().collect())
-            .unwrap_or_default();
-        Self { profile_names, ..Self::default() }
-    }
-
-    pub fn selected_item(&self) -> MenuItem {
-        MenuItem::ALL[self.selected]
-    }
-
+impl HomeState {
     pub fn move_up(&mut self) {
         if self.selected == 0 {
             self.selected = MenuItem::ALL.len() - 1;
@@ -94,36 +75,117 @@ impl App {
         self.selected = (self.selected + 1) % MenuItem::ALL.len();
     }
 
+    pub fn selected_item(&self) -> MenuItem {
+        MenuItem::ALL[self.selected]
+    }
+}
+
+#[derive(Debug)]
+pub enum Screen {
+    Home(HomeState),
+}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Screen::Home(HomeState::default())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Globals {
+    pub active: Option<Session>,
+    pub hard_mode: Option<HardModeInfo>,
+    pub daemon_running: bool,
+    pub profile_names: Vec<String>,
+    pub flash: Option<String>,
+    pub frame: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct App {
+    pub screen: Screen,
+    pub globals: Globals,
+    pub should_quit: bool,
+}
+
+impl App {
+    pub fn new() -> Self {
+        let profile_names = Config::load()
+            .ok()
+            .map(|c| c.profiles.keys().cloned().collect())
+            .unwrap_or_default();
+        Self {
+            globals: Globals { profile_names, ..Globals::default() },
+            ..Self::default()
+        }
+    }
+
     pub async fn refresh(&mut self) {
         match ipc::send(&Request::Status).await {
             Ok(Response::Status { active, hard_mode, .. }) => {
-                self.daemon_running = true;
-                self.active = active.map(|b| *b);
-                self.hard_mode = hard_mode.map(|b| *b);
+                self.globals.daemon_running = true;
+                self.globals.active = active.map(|b| *b);
+                self.globals.hard_mode = hard_mode.map(|b| *b);
             }
             _ => {
-                self.daemon_running = false;
-                self.active = None;
-                self.hard_mode = None;
+                self.globals.daemon_running = false;
+                self.globals.active = None;
+                self.globals.hard_mode = None;
             }
         }
     }
 
-    pub async fn activate(&mut self) {
-        match self.selected_item() {
+    pub async fn handle_key(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        match &mut self.screen {
+            Screen::Home(_) => self.handle_home_key(key).await,
+        }
+    }
+
+    #[allow(irrefutable_let_patterns)]
+    async fn handle_home_key(&mut self, key: KeyEvent) {
+        let Screen::Home(home) = &mut self.screen else { return };
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::Up | KeyCode::Char('k') => home.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => home.move_down(),
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate_home().await,
+            KeyCode::Char('s') => {
+                home.selected = 0;
+                self.activate_home().await;
+            }
+            KeyCode::Char('x') => {
+                home.selected = 1;
+                self.activate_home().await;
+            }
+            KeyCode::Char('p') => {
+                home.selected = 2;
+                self.activate_home().await;
+            }
+            _ => {}
+        }
+    }
+
+    #[allow(irrefutable_let_patterns)]
+    async fn activate_home(&mut self) {
+        let Screen::Home(home) = &self.screen else { return };
+        match home.selected_item() {
             MenuItem::Start => self.do_start().await,
             MenuItem::Stop => self.do_stop().await,
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => {
-                let msg = if self.profile_names.is_empty() {
-                    "no profiles — run `monk init`".to_string()
+                let msg = if self.globals.profile_names.is_empty() {
+                    "no modes — run `monk init`".to_string()
                 } else {
-                    format!("profiles: {}", self.profile_names.join(", "))
+                    format!("modes: {}", self.globals.profile_names.join(", "))
                 };
-                self.flash = Some(msg);
+                self.globals.flash = Some(msg);
             }
             MenuItem::Doctor => {
-                self.flash = Some("run `monk doctor` in a shell for the full report".into());
+                self.globals.flash =
+                    Some("run `monk doctor` in a shell for the full report".into());
             }
             MenuItem::Quit => self.should_quit = true,
         }
@@ -133,7 +195,7 @@ impl App {
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.flash = Some(format!("config error: {e}"));
+                self.globals.flash = Some(format!("config error: {e}"));
                 return;
             }
         };
@@ -145,37 +207,39 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.flash = Some(format!("started `{}`", s.profile));
+                self.globals.flash = Some(format!("started `{}`", s.profile));
             }
-            Ok(Response::Error { message }) => self.flash = Some(message),
-            Ok(_) => self.flash = Some("unexpected response".into()),
-            Err(e) => self.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.flash = Some(message),
+            Ok(_) => self.globals.flash = Some("unexpected response".into()),
+            Err(e) => self.globals.flash = Some(e.to_string()),
         }
     }
 
     async fn do_stop(&mut self) {
         match ipc::send(&Request::Stop { id: None }).await {
-            Ok(Response::Session(s)) => self.flash = Some(format!("stopped `{}`", s.profile)),
-            Ok(Response::HardModeActive(_)) => {
-                self.flash = Some("hard mode active — stop denied".into())
+            Ok(Response::Session(s)) => {
+                self.globals.flash = Some(format!("stopped `{}`", s.profile))
             }
-            Ok(Response::Error { message }) => self.flash = Some(message),
-            Ok(_) => self.flash = Some("nothing to stop".into()),
-            Err(e) => self.flash = Some(e.to_string()),
+            Ok(Response::HardModeActive(_)) => {
+                self.globals.flash = Some("hard mode active — stop denied".into())
+            }
+            Ok(Response::Error { message }) => self.globals.flash = Some(message),
+            Ok(_) => self.globals.flash = Some("nothing to stop".into()),
+            Err(e) => self.globals.flash = Some(e.to_string()),
         }
     }
 
     async fn do_panic(&mut self) {
         match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
-                self.flash = Some(match info.panic_releases_at {
+                self.globals.flash = Some(match info.panic_releases_at {
                     Some(at) => format!("panic release at {}", at.to_rfc3339()),
                     None => "panic cancelled".into(),
                 });
             }
-            Ok(Response::Error { message }) => self.flash = Some(message),
-            Ok(_) => self.flash = Some("no hard-mode session".into()),
-            Err(e) => self.flash = Some(e.to_string()),
+            Ok(Response::Error { message }) => self.globals.flash = Some(message),
+            Ok(_) => self.globals.flash = Some("no hard-mode session".into()),
+            Err(e) => self.globals.flash = Some(e.to_string()),
         }
     }
 }
@@ -203,32 +267,12 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         if ticks % 4 == 0 {
             app.refresh().await;
         }
-        app.frame = ticks;
+        app.globals.frame = ticks;
         terminal.draw(|f| super::view::draw(f, &app))?;
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-                        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                        KeyCode::Enter | KeyCode::Char(' ') => app.activate().await,
-                        KeyCode::Char('s') => {
-                            app.selected = 0;
-                            app.activate().await;
-                        }
-                        KeyCode::Char('x') => {
-                            app.selected = 1;
-                            app.activate().await;
-                        }
-                        KeyCode::Char('p') => {
-                            app.selected = 2;
-                            app.activate().await;
-                        }
-                        _ => {}
-                    }
-                }
+                app.handle_key(key).await;
             }
         }
 

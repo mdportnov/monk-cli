@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{App, MenuItem};
+use crate::tui::app::{App, HomeState, MenuItem, Screen};
 
 const ACCENT: Color = Color::Rgb(140, 180, 220);
 const DIM: Color = Color::Rgb(120, 120, 130);
@@ -17,6 +17,12 @@ const GLOW: Color = Color::Rgb(190, 165, 110);
 const ALERT: Color = Color::Rgb(200, 90, 90);
 
 pub fn draw(f: &mut Frame, app: &App) {
+    match &app.screen {
+        Screen::Home(home) => draw_home(f, app, home),
+    }
+}
+
+fn draw_home(f: &mut Frame, app: &App, home: &HomeState) {
     let area = f.area();
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -30,7 +36,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(outer[1]);
 
-    draw_menu(f, body[0], app);
+    draw_menu(f, body[0], app, home);
     draw_monk(f, body[1], app);
     draw_footer(f, outer[2], app);
 }
@@ -40,7 +46,7 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
         Span::styled("monk", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
         Span::styled("  silence · discipline · flow", Style::default().fg(DIM)),
     ];
-    if app.hard_mode.is_some() {
+    if app.globals.hard_mode.is_some() {
         spans.push(Span::raw("   "));
         spans.push(Span::styled(
             " HARD MODE ",
@@ -53,7 +59,7 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(p, area);
 }
 
-fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
+fn draw_menu(f: &mut Frame, area: Rect, app: &App, home: &HomeState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(8), Constraint::Length(5)])
@@ -62,7 +68,7 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = MenuItem::ALL
         .iter()
         .map(|m| {
-            let disabled = matches!(m, MenuItem::Stop) && app.hard_mode.is_some();
+            let disabled = matches!(m, MenuItem::Stop) && app.globals.hard_mode.is_some();
             let style = if disabled {
                 Style::default().fg(DIM).add_modifier(Modifier::CROSSED_OUT)
             } else {
@@ -86,10 +92,10 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
         .highlight_symbol("▶ ");
 
     let mut state = ListState::default();
-    state.select(Some(app.selected));
+    state.select(Some(home.selected));
     f.render_stateful_widget(list, chunks[0], &mut state);
 
-    let info_lines = build_info_lines(app);
+    let info_lines = build_info_lines(app, home);
     let info = Paragraph::new(info_lines)
         .wrap(Wrap { trim: true })
         .block(
@@ -102,10 +108,10 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(info, chunks[1]);
 }
 
-fn build_info_lines(app: &App) -> Vec<Line<'static>> {
+fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
 
-    let daemon = if app.daemon_running {
+    let daemon = if app.globals.daemon_running {
         Span::styled("running", Style::default().fg(ACCENT))
     } else {
         Span::styled("stopped", Style::default().fg(ALERT))
@@ -115,7 +121,7 @@ fn build_info_lines(app: &App) -> Vec<Line<'static>> {
         daemon,
     ]));
 
-    match &app.active {
+    match &app.globals.active {
         Some(s) => {
             let remaining = s.remaining();
             let mins = remaining.as_secs() / 60;
@@ -136,11 +142,11 @@ fn build_info_lines(app: &App) -> Vec<Line<'static>> {
         ])),
     }
 
-    if let Some(msg) = &app.flash {
+    if let Some(msg) = &app.globals.flash {
         lines.push(Line::from(Span::styled(msg.clone(), Style::default().fg(GLOW))));
     } else {
         lines.push(Line::from(Span::styled(
-            app.selected_item().hint(),
+            home.selected_item().hint(),
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         )));
     }
@@ -150,10 +156,10 @@ fn build_info_lines(app: &App) -> Vec<Line<'static>> {
 
 fn draw_monk(f: &mut Frame, area: Rect, app: &App) {
     let frames = monk_frames();
-    let idx = ((app.frame / 4) as usize) % frames.len();
+    let idx = ((app.globals.frame / 4) as usize) % frames.len();
     let art = frames[idx].trim_matches('\n');
 
-    let halo_on = (app.frame / 2) % 2 == 0;
+    let halo_on = (app.globals.frame / 2) % 2 == 0;
     let total_rows = art.lines().count();
 
     let mut lines: Vec<Line> = Vec::new();
@@ -181,7 +187,7 @@ fn draw_monk(f: &mut Frame, area: Rect, app: &App) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        breath_label(app.frame),
+        breath_label(app.globals.frame),
         Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
     )));
 
@@ -266,7 +272,7 @@ fn monk_frames() -> [&'static str; 4] {
 }
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
-    let help = if app.hard_mode.is_some() {
+    let help = if app.globals.hard_mode.is_some() {
         "↑/↓ move   ⏎ select   q quit   ·   stop disabled — use panic"
     } else {
         "↑/↓ move   ⏎ select   s start   x stop   p panic   q quit"
