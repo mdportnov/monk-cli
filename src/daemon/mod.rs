@@ -1,4 +1,5 @@
 mod pidfile;
+pub mod scheduler;
 mod server;
 mod service;
 mod supervisor;

@@ -1,0 +1,334 @@
+version = 1
+
+[[brands]]
+id = "instagram"
+name = "Instagram"
+category = "social"
+icon = "📷"
+aliases = ["ig", "insta"]
+domains = ["instagram.com", "www.instagram.com", "cdninstagram.com"]
+apps = { macos = ["com.burbn.instagram"], ios = ["com.burbn.instagram"], android = ["com.instagram.android"] }
+
+[[brands]]
+id = "facebook"
+name = "Facebook"
+category = "social"
+icon = "📘"
+aliases = ["fb", "meta"]
+domains = ["facebook.com", "www.facebook.com", "m.facebook.com", "mbasic.facebook.com", "fb.com", "fb.watch"]
+apps = { ios = ["com.facebook.Facebook"], android = ["com.facebook.katana"] }
+
+[[brands]]
+id = "twitter"
+name = "X (Twitter)"
+category = "social"
+icon = "🐦"
+aliases = ["x", "twitter"]
+domains = ["twitter.com", "x.com", "www.twitter.com", "www.x.com", "mobile.twitter.com", "t.co"]
+apps = { macos = ["com.atebits.Tweetie2"], ios = ["com.atebits.Tweetie2"], android = ["com.twitter.android"] }
+
+[[brands]]
+id = "tiktok"
+name = "TikTok"
+category = "social"
+icon = "🎵"
+aliases = ["tt"]
+domains = ["tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"]
+apps = { ios = ["com.zhiliaoapp.musically"], android = ["com.zhiliaoapp.musically"] }
+
+[[brands]]
+id = "reddit"
+name = "Reddit"
+category = "social"
+icon = "👽"
+aliases = []
+domains = ["reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "np.reddit.com", "i.redd.it", "redd.it", "sh.reddit.com"]
+apps = { ios = ["com.reddit.Reddit"], android = ["com.reddit.frontpage"] }
+
+[[brands]]
+id = "linkedin"
+name = "LinkedIn"
+category = "social"
+icon = "💼"
+aliases = []
+domains = ["linkedin.com", "www.linkedin.com", "lnkd.in"]
+apps = { ios = ["com.linkedin.LinkedIn"], android = ["com.linkedin.android"] }
+
+[[brands]]
+id = "snapchat"
+name = "Snapchat"
+category = "social"
+icon = "👻"
+aliases = ["snap"]
+domains = ["snapchat.com", "www.snapchat.com"]
+apps = { ios = ["com.toyopagroup.picaboo"], android = ["com.snapchat.android"] }
+
+[[brands]]
+id = "pinterest"
+name = "Pinterest"
+category = "social"
+icon = "📌"
+aliases = []
+domains = ["pinterest.com", "www.pinterest.com", "pin.it"]
+apps = { ios = ["pinterest"], android = ["com.pinterest"] }
+
+[[brands]]
+id = "threads"
+name = "Threads"
+category = "social"
+icon = "🧵"
+aliases = []
+domains = ["threads.net", "www.threads.net"]
+apps = { ios = ["com.burbn.barcelona"], android = ["com.instagram.barcelona"] }
+
+[[brands]]
+id = "bluesky"
+name = "Bluesky"
+category = "social"
+icon = "🦋"
+aliases = ["bsky"]
+domains = ["bsky.app", "bsky.social"]
+apps = { ios = ["xyz.blueskyweb.app"], android = ["xyz.blueskyweb.app"] }
+
+[[brands]]
+id = "discord"
+name = "Discord"
+category = "chat"
+icon = "💬"
+aliases = []
+domains = ["discord.com", "www.discord.com", "discord.gg", "discordapp.com"]
+apps = { macos = ["com.hnc.Discord"], windows = ["Discord"], linux = ["discord"], ios = ["com.hammerandchisel.discord"], android = ["com.discord"] }
+
+[[brands]]
+id = "slack"
+name = "Slack"
+category = "chat"
+icon = "💼"
+aliases = []
+domains = ["slack.com", "www.slack.com", "app.slack.com"]
+apps = { macos = ["com.tinyspeck.slackmacgap"], windows = ["slack"], linux = ["slack"], ios = ["com.tinyspeck.chatlyio"], android = ["com.Slack"] }
+
+[[brands]]
+id = "telegram"
+name = "Telegram"
+category = "chat"
+icon = "✈️"
+aliases = ["tg"]
+domains = ["telegram.org", "www.telegram.org", "web.telegram.org", "t.me", "telegram.me", "telegra.ph"]
+apps = { macos = ["ru.keepcoder.Telegram"], windows = ["Telegram"], linux = ["telegram-desktop"], ios = ["ph.telegra.Telegraph"], android = ["org.telegram.messenger"] }
+
+[[brands]]
+id = "whatsapp"
+name = "WhatsApp"
+category = "chat"
+icon = "📱"
+aliases = ["wa"]
+domains = ["whatsapp.com", "www.whatsapp.com", "web.whatsapp.com", "wa.me"]
+apps = { macos = ["net.whatsapp.WhatsApp"], windows = ["WhatsApp"], ios = ["net.whatsapp.WhatsApp"], android = ["com.whatsapp"] }
+
+[[brands]]
+id = "messenger"
+name = "Messenger"
+category = "chat"
+icon = "💬"
+aliases = []
+domains = ["messenger.com", "www.messenger.com", "m.me"]
+apps = { ios = ["com.facebook.Messenger"], android = ["com.facebook.orca"] }
+
+[[brands]]
+id = "youtube"
+name = "YouTube"
+category = "video"
+icon = "▶️"
+aliases = ["yt"]
+domains = ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "youtubekids.com", "music.youtube.com"]
+apps = { ios = ["com.google.ios.youtube"], android = ["com.google.android.youtube"] }
+
+[[brands]]
+id = "netflix"
+name = "Netflix"
+category = "video"
+icon = "🎬"
+aliases = []
+domains = ["netflix.com", "www.netflix.com"]
+apps = { macos = ["com.netflix.Netflix"], ios = ["com.netflix.Netflix"], android = ["com.netflix.mediaclient"] }
+
+[[brands]]
+id = "twitch"
+name = "Twitch"
+category = "video"
+icon = "🟣"
+aliases = []
+domains = ["twitch.tv", "www.twitch.tv", "m.twitch.tv"]
+apps = { ios = ["tv.twitch"], android = ["tv.twitch.android.app"] }
+
+[[brands]]
+id = "amazon"
+name = "Amazon"
+category = "shopping"
+icon = "📦"
+aliases = []
+domains = ["amazon.com", "www.amazon.com", "amazon.co.uk", "amazon.de", "amzn.to"]
+apps = { ios = ["com.amazon.Amazon"], android = ["com.amazon.mShop.android.shopping"] }
+
+[[brands]]
+id = "ebay"
+name = "eBay"
+category = "shopping"
+icon = "🛒"
+aliases = []
+domains = ["ebay.com", "www.ebay.com", "ebay.co.uk", "ebay.de"]
+apps = { ios = ["com.ebay.iphone"], android = ["com.ebay.mobile"] }
+
+[[brands]]
+id = "aliexpress"
+name = "AliExpress"
+category = "shopping"
+icon = "🛍"
+aliases = ["ali"]
+domains = ["aliexpress.com", "www.aliexpress.com", "aliexpress.ru", "ali.com"]
+apps = { ios = ["com.alibaba.iAliexpress"], android = ["com.alibaba.aliexpresshd"] }
+
+[[brands]]
+id = "chatgpt"
+name = "ChatGPT"
+category = "ai"
+icon = "🤖"
+aliases = ["openai", "gpt"]
+domains = ["chatgpt.com", "www.chatgpt.com", "chat.openai.com", "openai.com"]
+apps = { macos = ["com.openai.chat"], ios = ["com.openai.chat"], android = ["com.openai.chatgpt"] }
+
+[[brands]]
+id = "claude"
+name = "Claude"
+category = "ai"
+icon = "🤖"
+aliases = ["anthropic"]
+domains = ["claude.ai", "www.claude.ai", "anthropic.com"]
+apps = { macos = ["com.anthropic.claudefordesktop"], ios = ["com.anthropic.claude"], android = ["com.anthropic.claude"] }
+
+[[brands]]
+id = "gemini"
+name = "Gemini"
+category = "ai"
+icon = "💎"
+aliases = ["bard", "google_ai"]
+domains = ["gemini.google.com", "bard.google.com", "aistudio.google.com"]
+apps = { ios = ["com.google.Gemini"], android = ["com.google.android.apps.bard"] }
+
+[[brands]]
+id = "perplexity"
+name = "Perplexity"
+category = "ai"
+icon = "🔎"
+aliases = []
+domains = ["perplexity.ai", "www.perplexity.ai"]
+apps = { ios = ["ai.perplexity.app"], android = ["ai.perplexity.app.android"] }
+
+[[brands]]
+id = "midjourney"
+name = "Midjourney"
+category = "ai"
+icon = "🎨"
+aliases = ["mj"]
+domains = ["midjourney.com", "www.midjourney.com"]
+apps = {}
+
+[[brands]]
+id = "steam"
+name = "Steam"
+category = "games"
+icon = "🎮"
+aliases = ["valve"]
+domains = ["steampowered.com", "store.steampowered.com", "steamcommunity.com", "www.steampowered.com"]
+apps = { macos = ["com.valvesoftware.steam"], windows = ["Steam"], linux = ["steam"], ios = ["com.valvesoftware.Steam"], android = ["com.valvesoftware.android.steam.community"] }
+
+[[brands]]
+id = "epic_games"
+name = "Epic Games"
+category = "games"
+icon = "🎮"
+aliases = ["epic"]
+domains = ["epicgames.com", "www.epicgames.com", "store.epicgames.com", "fortnite.com"]
+apps = { macos = ["com.epicgames.EpicGamesLauncher"], windows = ["EpicGamesLauncher"], ios = ["com.epicgames.fortnite"] }
+
+[[brands]]
+id = "roblox"
+name = "Roblox"
+category = "games"
+icon = "🎮"
+aliases = []
+domains = ["roblox.com", "www.roblox.com"]
+apps = { ios = ["com.roblox.robloxmobile"], android = ["com.roblox.client"] }
+
+[[brands]]
+id = "hackernews"
+name = "Hacker News"
+category = "productivity_trap"
+icon = "🟧"
+aliases = ["hn", "yc"]
+domains = ["news.ycombinator.com", "ycombinator.com"]
+apps = {}
+
+[[brands]]
+id = "medium"
+name = "Medium"
+category = "productivity_trap"
+icon = "✍️"
+aliases = []
+domains = ["medium.com", "www.medium.com"]
+apps = { ios = ["com.medium.reader"], android = ["com.medium.reader"] }
+
+[[brands]]
+id = "stackoverflow"
+name = "Stack Overflow"
+category = "productivity_trap"
+icon = "📚"
+aliases = ["so"]
+domains = ["stackoverflow.com", "www.stackoverflow.com", "stackexchange.com"]
+apps = {}
+
+[[brands]]
+id = "tinder"
+name = "Tinder"
+category = "dating"
+icon = "💞"
+aliases = []
+domains = ["tinder.com", "www.tinder.com"]
+apps = { ios = ["com.cardify.tinder"], android = ["com.tinder"] }
+
+[[brands]]
+id = "bumble"
+name = "Bumble"
+category = "dating"
+icon = "🐝"
+aliases = []
+domains = ["bumble.com", "www.bumble.com"]
+apps = { ios = ["com.bumble.app"], android = ["com.bumble.app"] }
+
+[[brands]]
+id = "binance"
+name = "Binance"
+category = "crypto"
+icon = "🪙"
+aliases = []
+domains = ["binance.com", "www.binance.com", "accounts.binance.com"]
+apps = { ios = ["com.czzhao.binance"], android = ["com.binance.dev"] }
+
+[[brands]]
+id = "coinbase"
+name = "Coinbase"
+category = "crypto"
+icon = "🪙"
+aliases = []
+domains = ["coinbase.com", "www.coinbase.com", "pro.coinbase.com"]
+apps = { ios = ["com.vilcsak.bitcoins2"], android = ["com.coinbase.android"] }
+
+[[brands]]
+id = "tradingview"
+name = "TradingView"
+category = "crypto"
+icon = "📈"
+aliases = ["tv"]
+domains = ["tradingview.com", "www.tradingview.com"]
+apps = { ios = ["com.tradingview.tradingviewapp"], android = ["com.tradingview.tradingviewapp"] }

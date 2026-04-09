@@ -240,7 +240,7 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             Ok(d) => Response::ModeDetailData(Box::new(d)),
             Err(e) => Response::Error { message: e.to_string() },
         },
-        Request::SaveMode { name, profile } => match sup.save_mode(name, profile) {
+        Request::SaveMode { name, profile } => match sup.save_mode(name, *profile) {
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },
         },
@@ -262,6 +262,13 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },
         },
+        Request::NextScheduled => {
+            let (profile, at) = match sup.next_scheduled() {
+                Some((p, t)) => (Some(p), Some(t)),
+                None => (None, None),
+            };
+            Response::NextScheduled { profile, at }
+        }
         Request::Unknown => Response::Error { message: "unknown request kind".into() },
     }
 }

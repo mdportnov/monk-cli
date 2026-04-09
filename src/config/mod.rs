@@ -108,6 +108,8 @@ pub struct Profile {
     #[serde(default)]
     pub site_groups: Vec<String>,
     #[serde(default)]
+    pub brands: Vec<String>,
+    #[serde(default)]
     pub apps: Vec<String>,
     #[serde(default)]
     pub allow: Vec<String>,
@@ -117,6 +119,86 @@ pub struct Profile {
     pub limits: Limits,
     #[serde(default)]
     pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<Schedule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Schedule {
+    #[serde(default = "default_sched_enabled")]
+    pub enabled: bool,
+    pub days: Vec<Weekday>,
+    pub start: String,
+    pub end: String,
+    #[serde(default = "default_tz")]
+    pub tz: String,
+}
+
+fn default_sched_enabled() -> bool {
+    true
+}
+fn default_tz() -> String {
+    "local".into()
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum Weekday {
+    Mon,
+    Tue,
+    Wed,
+    Thu,
+    Fri,
+    Sat,
+    Sun,
+}
+
+impl Weekday {
+    pub fn bit(self) -> u8 {
+        1 << (self as u8)
+    }
+    pub fn from_chrono(w: chrono::Weekday) -> Self {
+        match w {
+            chrono::Weekday::Mon => Self::Mon,
+            chrono::Weekday::Tue => Self::Tue,
+            chrono::Weekday::Wed => Self::Wed,
+            chrono::Weekday::Thu => Self::Thu,
+            chrono::Weekday::Fri => Self::Fri,
+            chrono::Weekday::Sat => Self::Sat,
+            chrono::Weekday::Sun => Self::Sun,
+        }
+    }
+}
+
+impl Schedule {
+    pub fn mask(&self) -> u8 {
+        self.days.iter().fold(0u8, |m, d| m | d.bit())
+    }
+    pub fn parse_hhmm(s: &str) -> Result<(u32, u32)> {
+        let (h, m) = s
+            .split_once(':')
+            .ok_or_else(|| Error::Config(format!("invalid HH:MM `{s}`")))?;
+        let h: u32 = h.parse().map_err(|_| Error::Config(format!("invalid hour `{s}`")))?;
+        let m: u32 = m.parse().map_err(|_| Error::Config(format!("invalid minute `{s}`")))?;
+        if h > 23 || m > 59 {
+            return Err(Error::Config(format!("out of range `{s}`")));
+        }
+        Ok((h, m))
+    }
+    pub fn validate(&self) -> Result<()> {
+        if self.days.is_empty() {
+            return Err(Error::Config("schedule.days must not be empty".into()));
+        }
+        Self::parse_hhmm(&self.start)?;
+        Self::parse_hhmm(&self.end)?;
+        if self.tz != "local" {
+            self.tz
+                .parse::<chrono_tz::Tz>()
+                .map_err(|e| Error::Config(format!("bad tz `{}`: {e}", self.tz)))?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -213,6 +295,18 @@ impl Config {
                     return Err(Error::Config(format!("invalid host in profile `{name}`: {site}")));
                 }
             }
+            if let Some(sch) = &p.schedule {
+                sch.validate().map_err(|e| {
+                    Error::Config(format!("profile `{name}` schedule: {e}"))
+                })?;
+            }
+            for b in &p.brands {
+                if b.split_once(':').filter(|(ns, id)| !ns.is_empty() && !id.is_empty()).is_none() {
+                    return Err(Error::Config(format!(
+                        "profile `{name}` brand `{b}` must be `<namespace>:<id>`"
+                    )));
+                }
+            }
         }
         Ok(())
     }
@@ -254,5 +348,60 @@ impl Config {
 
     pub fn profile(&self, name: &str) -> Option<&Profile> {
         self.profiles.get(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schedule_roundtrip() {
+        let s = Schedule {
+            enabled: true,
+            days: vec![Weekday::Mon, Weekday::Wed, Weekday::Fri],
+            start: "09:00".into(),
+            end: "17:30".into(),
+            tz: "Europe/Berlin".into(),
+        };
+        let toml_str = toml::to_string(&s).unwrap();
+        let back: Schedule = toml::from_str(&toml_str).unwrap();
+        assert_eq!(s, back);
+        assert_eq!(back.mask(), 0b0010101);
+        back.validate().unwrap();
+    }
+
+    #[test]
+    fn schedule_rejects_empty_days() {
+        let s = Schedule {
+            enabled: true,
+            days: vec![],
+            start: "09:00".into(),
+            end: "10:00".into(),
+            tz: "local".into(),
+        };
+        assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn config_rejects_bad_brand_id() {
+        let mut cfg = Config::default();
+        let mut p = Profile::default();
+        p.brands.push("badformat".into());
+        cfg.profiles.insert("focus".into(), p);
+        cfg.general.default_profile = "focus".into();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn schedule_rejects_bad_time() {
+        let s = Schedule {
+            enabled: true,
+            days: vec![Weekday::Mon],
+            start: "25:00".into(),
+            end: "17:00".into(),
+            tz: "local".into(),
+        };
+        assert!(s.validate().is_err());
     }
 }

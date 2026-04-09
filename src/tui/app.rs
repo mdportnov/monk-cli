@@ -216,6 +216,7 @@ pub enum EditorField {
     Min,
     Cooldown,
     DailyCap,
+    Schedule,
     Sites,
     HookBefore,
     HookAfter,
@@ -224,13 +225,14 @@ pub enum EditorField {
 }
 
 impl EditorField {
-    pub const ORDER: [EditorField; 11] = [
+    pub const ORDER: [EditorField; 12] = [
         EditorField::Name,
         EditorField::Color,
         EditorField::Max,
         EditorField::Min,
         EditorField::Cooldown,
         EditorField::DailyCap,
+        EditorField::Schedule,
         EditorField::Sites,
         EditorField::HookBefore,
         EditorField::HookAfter,
@@ -246,6 +248,7 @@ impl EditorField {
             EditorField::Min => "min duration",
             EditorField::Cooldown => "cooldown",
             EditorField::DailyCap => "daily cap",
+            EditorField::Schedule => "schedule",
             EditorField::Sites => "custom sites",
             EditorField::HookBefore => "hook before",
             EditorField::HookAfter => "hook after",
@@ -262,6 +265,7 @@ impl EditorField {
             EditorField::Min => "shorter doesn't count as a session",
             EditorField::Cooldown => "protects against compulsive restart",
             EditorField::DailyCap => "daily focus budget — prevents burnout",
+            EditorField::Schedule => "auto-start: `mon-fri 09:00-17:00` or `daily 22:00-23:00 UTC`",
             EditorField::Sites => "comma-separated hosts to block",
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
@@ -304,6 +308,7 @@ pub struct EditorState {
     pub min: TextInput,
     pub cooldown: TextInput,
     pub daily_cap: TextInput,
+    pub schedule: TextInput,
     pub sites: TextInput,
     pub hook_before: TextInput,
     pub hook_after: TextInput,
@@ -326,6 +331,7 @@ impl EditorState {
             min: TextInput::new(""),
             cooldown: TextInput::new(""),
             daily_cap: TextInput::new(""),
+            schedule: TextInput::new(""),
             sites: TextInput::new(""),
             hook_before: TextInput::new(""),
             hook_after: TextInput::new(""),
@@ -352,6 +358,7 @@ impl EditorState {
             min: TextInput::new(fmt_opt_humantime(limits.min_duration)),
             cooldown: TextInput::new(fmt_opt_humantime(limits.cooldown)),
             daily_cap: TextInput::new(fmt_opt_humantime(limits.daily_cap)),
+            schedule: TextInput::new(format_schedule_spec(profile.schedule.as_ref())),
             sites: TextInput::new(profile.sites.join(", ")),
             hook_before: TextInput::new(profile.hooks.before.join(" && ")),
             hook_after: TextInput::new(profile.hooks.after.join(" && ")),
@@ -373,6 +380,7 @@ impl EditorState {
             EditorField::Min => Some(&mut self.min),
             EditorField::Cooldown => Some(&mut self.cooldown),
             EditorField::DailyCap => Some(&mut self.daily_cap),
+            EditorField::Schedule => Some(&mut self.schedule),
             EditorField::Sites => Some(&mut self.sites),
             EditorField::HookBefore => Some(&mut self.hook_before),
             EditorField::HookAfter => Some(&mut self.hook_after),
@@ -436,11 +444,13 @@ impl EditorState {
         let profile = Profile {
             sites,
             site_groups: self.groups.selected_ids(),
+            brands: self.snapshot.brands.clone(),
             apps: self.apps.selected_ids(),
             allow: self.snapshot.allow.clone(),
             hooks,
             limits,
             color: palette_value(self.color_idx),
+            schedule: parse_schedule_spec(&self.schedule.value).map_err(|e| e.to_string())?,
         };
         Ok((name, profile))
     }
@@ -494,6 +504,99 @@ fn profile_eq(a: &Profile, b: &Profile) -> bool {
         && a.limits.cooldown == b.limits.cooldown
         && a.limits.daily_cap == b.limits.daily_cap
         && a.color == b.color
+        && a.schedule == b.schedule
+}
+
+pub fn format_schedule_spec(s: Option<&crate::config::Schedule>) -> String {
+    let Some(s) = s else { return String::new() };
+    use crate::config::Weekday::*;
+    let order = [Mon, Tue, Wed, Thu, Fri, Sat, Sun];
+    let labels = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    let days: String = order
+        .iter()
+        .zip(labels.iter())
+        .filter(|(d, _)| s.days.contains(d))
+        .map(|(_, l)| *l)
+        .collect::<Vec<_>>()
+        .join(",");
+    let prefix = if s.enabled { "" } else { "off " };
+    let tz = if s.tz == "local" { String::new() } else { format!(" {}", s.tz) };
+    format!("{prefix}{days} {}-{}{tz}", s.start, s.end)
+}
+
+pub fn parse_schedule_spec(raw: &str) -> std::result::Result<Option<crate::config::Schedule>, String> {
+    use crate::config::{Schedule, Weekday};
+    let s = raw.trim();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    let mut tokens: Vec<&str> = s.split_whitespace().collect();
+    let enabled = if tokens.first().is_some_and(|t| t.eq_ignore_ascii_case("off")) {
+        tokens.remove(0);
+        false
+    } else {
+        true
+    };
+    if tokens.len() < 2 {
+        return Err("expected `<days> <start>-<end> [tz]`".into());
+    }
+    let days_tok = tokens.remove(0);
+    let window = tokens.remove(0);
+    let tz = tokens.first().map(|s| (*s).to_string()).unwrap_or_else(|| "local".into());
+
+    let (start, end) = window
+        .split_once('-')
+        .ok_or_else(|| "window must be HH:MM-HH:MM".to_string())?;
+    let parse_day = |t: &str| -> std::result::Result<Weekday, String> {
+        Ok(match t.to_ascii_lowercase().as_str() {
+            "mon" | "mo" => Weekday::Mon,
+            "tue" | "tu" => Weekday::Tue,
+            "wed" | "we" => Weekday::Wed,
+            "thu" | "th" => Weekday::Thu,
+            "fri" | "fr" => Weekday::Fri,
+            "sat" | "sa" => Weekday::Sat,
+            "sun" | "su" => Weekday::Sun,
+            other => return Err(format!("unknown day `{other}`")),
+        })
+    };
+    let order = [
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+        Weekday::Sat,
+        Weekday::Sun,
+    ];
+    let mut days: Vec<Weekday> = Vec::new();
+    let lower = days_tok.to_ascii_lowercase();
+    match lower.as_str() {
+        "daily" | "everyday" | "all" => days.extend(order),
+        "weekdays" | "workdays" => days.extend(&order[..5]),
+        "weekends" => days.extend(&order[5..]),
+        _ => {
+            for part in lower.split(',') {
+                if let Some((a, b)) = part.split_once('-') {
+                    let from = parse_day(a)?;
+                    let to = parse_day(b)?;
+                    let i = order.iter().position(|d| *d == from).unwrap();
+                    let j = order.iter().position(|d| *d == to).unwrap();
+                    if i <= j {
+                        days.extend(&order[i..=j]);
+                    } else {
+                        return Err("day range must be ascending".into());
+                    }
+                } else {
+                    days.push(parse_day(part)?);
+                }
+            }
+        }
+    }
+    days.sort_by_key(|d| order.iter().position(|x| x == d).unwrap());
+    days.dedup();
+    let sch = Schedule { enabled, days, start: start.into(), end: end.into(), tz };
+    sch.validate().map_err(|e| e.to_string())?;
+    Ok(Some(sch))
 }
 
 fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
@@ -711,6 +814,7 @@ pub struct Globals {
     pub active_profile_detail: Option<Profile>,
     pub help_open: bool,
     pub cached_modes: Vec<ModeSummary>,
+    pub next_scheduled: Option<(String, chrono::DateTime<chrono::Utc>)>,
 }
 
 impl Globals {
@@ -817,10 +921,22 @@ impl App {
             } else {
                 self.globals.active_profile_detail = None;
             }
+            if self.globals.active.is_none() {
+                if let Ok(Response::NextScheduled { profile: Some(p), at: Some(t) }) =
+                    ipc::send(&Request::NextScheduled).await
+                {
+                    self.globals.next_scheduled = Some((p, t));
+                } else {
+                    self.globals.next_scheduled = None;
+                }
+            } else {
+                self.globals.next_scheduled = None;
+            }
         } else {
             self.globals.active_mode = None;
             self.globals.active_profile_detail = None;
             self.globals.cached_modes.clear();
+            self.globals.next_scheduled = None;
         }
     }
 
@@ -1019,7 +1135,7 @@ impl App {
                 }
             }
         };
-        match ipc::send(&Request::SaveMode { name: name.clone(), profile }).await {
+        match ipc::send(&Request::SaveMode { name: name.clone(), profile: Box::new(profile) }).await {
             Ok(Response::Ok) => {
                 self.globals.set_flash(
                     crate::i18n::t!("tui.flash.saved", profile = name).to_string(),
@@ -1547,4 +1663,38 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod schedule_spec_tests {
+    use super::{format_schedule_spec, parse_schedule_spec};
+
+    #[test]
+    fn round_trip() {
+        for spec in [
+            "mon,tue,wed,thu,fri 09:00-17:00",
+            "sat,sun 10:00-12:00 UTC",
+            "fri 22:00-02:00",
+            "off mon,tue 09:00-10:00",
+        ] {
+            let parsed = parse_schedule_spec(spec).unwrap().unwrap();
+            let again = format_schedule_spec(Some(&parsed));
+            let reparsed = parse_schedule_spec(&again).unwrap().unwrap();
+            assert_eq!(parsed, reparsed, "round-trip drift on `{spec}` -> `{again}`");
+        }
+    }
+
+    #[test]
+    fn empty_is_none() {
+        assert!(parse_schedule_spec("").unwrap().is_none());
+        assert!(parse_schedule_spec("   ").unwrap().is_none());
+    }
+
+    #[test]
+    fn shorthands_expand() {
+        let s = parse_schedule_spec("weekdays 09:00-17:00").unwrap().unwrap();
+        assert_eq!(s.days.len(), 5);
+        let s = parse_schedule_spec("daily 06:00-07:00").unwrap().unwrap();
+        assert_eq!(s.days.len(), 7);
+    }
 }

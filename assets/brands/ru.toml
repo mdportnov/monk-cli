@@ -1,0 +1,163 @@
+version = 1
+
+[[brands]]
+id = "vk"
+name = "ВКонтакте"
+category = "social"
+icon = "🌐"
+aliases = ["vkontakte"]
+domains = ["vk.com", "www.vk.com", "m.vk.com", "vk.ru", "vkvideo.ru"]
+apps = { ios = ["com.vk.vkclient"], android = ["com.vkontakte.android"] }
+
+[[brands]]
+id = "ok"
+name = "Одноклассники"
+category = "social"
+icon = "🌐"
+aliases = ["odnoklassniki"]
+domains = ["ok.ru", "www.ok.ru", "m.ok.ru", "odnoklassniki.ru"]
+apps = { ios = ["ru.ok.app"], android = ["ru.ok.android"] }
+
+[[brands]]
+id = "dzen"
+name = "Дзен"
+category = "social"
+icon = "📰"
+aliases = ["yandex_zen"]
+domains = ["dzen.ru", "www.dzen.ru", "zen.yandex.ru"]
+apps = { ios = ["ru.yandex.zen"], android = ["com.yandex.zenkit"] }
+
+[[brands]]
+id = "pikabu"
+name = "Pikabu"
+category = "social"
+icon = "🐹"
+aliases = []
+domains = ["pikabu.ru", "www.pikabu.ru"]
+apps = { ios = ["ru.pikabu.app"], android = ["ru.pikabu.android"] }
+
+[[brands]]
+id = "rutube"
+name = "RuTube"
+category = "video"
+icon = "📺"
+aliases = []
+domains = ["rutube.ru", "www.rutube.ru"]
+apps = { ios = ["ru.rutube.app"], android = ["ru.rutube.app"] }
+
+[[brands]]
+id = "kinopoisk"
+name = "Кинопоиск"
+category = "video"
+icon = "🎬"
+aliases = []
+domains = ["kinopoisk.ru", "www.kinopoisk.ru", "hd.kinopoisk.ru"]
+apps = { ios = ["ru.kinopoisk"], android = ["ru.kinopoisk"] }
+
+[[brands]]
+id = "ivi"
+name = "ivi"
+category = "video"
+icon = "🎬"
+aliases = []
+domains = ["ivi.ru", "www.ivi.ru"]
+apps = { ios = ["ru.ivi.client"], android = ["ru.ivi.client"] }
+
+[[brands]]
+id = "wildberries"
+name = "Wildberries"
+category = "shopping"
+icon = "🛍"
+aliases = ["wb"]
+domains = ["wildberries.ru", "www.wildberries.ru", "wb.ru"]
+apps = { ios = ["ru.wildberries.ru"], android = ["com.wildberries.ru"] }
+
+[[brands]]
+id = "ozon"
+name = "Ozon"
+category = "shopping"
+icon = "📦"
+aliases = []
+domains = ["ozon.ru", "www.ozon.ru"]
+apps = { ios = ["ru.ozon.app.android"], android = ["ru.ozon.app.android"] }
+
+[[brands]]
+id = "yandex_market"
+name = "Яндекс.Маркет"
+category = "shopping"
+icon = "🛒"
+aliases = ["ya_market"]
+domains = ["market.yandex.ru", "pokupki.market.yandex.ru"]
+apps = { ios = ["ru.yandex.market"], android = ["ru.yandex.market"] }
+
+[[brands]]
+id = "avito"
+name = "Авито"
+category = "shopping"
+icon = "🛒"
+aliases = []
+domains = ["avito.ru", "www.avito.ru", "m.avito.ru"]
+apps = { ios = ["ru.avito"], android = ["com.avito.android"] }
+
+[[brands]]
+id = "habr"
+name = "Хабр"
+category = "productivity_trap"
+icon = "📖"
+aliases = []
+domains = ["habr.com", "www.habr.com", "habr.ru", "habrahabr.ru"]
+apps = {}
+
+[[brands]]
+id = "vc"
+name = "vc.ru"
+category = "productivity_trap"
+icon = "📰"
+aliases = []
+domains = ["vc.ru", "www.vc.ru"]
+apps = {}
+
+[[brands]]
+id = "dtf"
+name = "DTF"
+category = "productivity_trap"
+icon = "🎮"
+aliases = []
+domains = ["dtf.ru", "www.dtf.ru"]
+apps = {}
+
+[[brands]]
+id = "yandex_gpt"
+name = "YandexGPT / Алиса"
+category = "ai"
+icon = "🤖"
+aliases = ["alice"]
+domains = ["ya.ru", "yandex.ru", "alice.yandex.ru", "shedevrum.ai"]
+apps = { ios = ["ru.yandex.searchplugin"], android = ["ru.yandex.searchplugin"] }
+
+[[brands]]
+id = "gigachat"
+name = "GigaChat"
+category = "ai"
+icon = "🤖"
+aliases = ["sber_ai"]
+domains = ["developers.sber.ru", "gigachat.devices.sberbank.ru", "sber.ai"]
+apps = {}
+
+[[brands]]
+id = "fonbet"
+name = "Фонбет"
+category = "betting"
+icon = "🎰"
+aliases = []
+domains = ["fonbet.ru", "www.fonbet.ru"]
+apps = { android = ["ru.fonbet.sportbook.app"] }
+
+[[brands]]
+id = "winline"
+name = "Winline"
+category = "betting"
+icon = "🎰"
+aliases = []
+domains = ["winline.ru", "www.winline.ru"]
+apps = {}

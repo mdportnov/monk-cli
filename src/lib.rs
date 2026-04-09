@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod audit;
 pub mod blocker;
+pub mod brands;
 pub mod cli;
 pub mod clock;
 pub mod config;

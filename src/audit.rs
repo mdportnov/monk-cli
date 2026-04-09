@@ -32,6 +32,8 @@ pub enum AuditKind {
     ClockAnomaly,
     SessionReconstructed,
     HostsApplyFailed,
+    ScheduleFired,
+    ScheduleSkipped,
 }
 
 impl AuditKind {
@@ -52,6 +54,8 @@ impl AuditKind {
             Self::ClockAnomaly => "clock_anomaly",
             Self::SessionReconstructed => "session_reconstructed",
             Self::HostsApplyFailed => "hosts_apply_failed",
+            Self::ScheduleFired => "schedule_fired",
+            Self::ScheduleSkipped => "schedule_skipped",
         }
     }
 
@@ -72,6 +76,8 @@ impl AuditKind {
             "clock_anomaly" => Self::ClockAnomaly,
             "session_reconstructed" => Self::SessionReconstructed,
             "hosts_apply_failed" => Self::HostsApplyFailed,
+            "schedule_fired" => Self::ScheduleFired,
+            "schedule_skipped" => Self::ScheduleSkipped,
             _ => return None,
         })
     }

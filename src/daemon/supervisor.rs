@@ -42,7 +42,10 @@ pub struct Supervisor {
     last_tick_ms: Arc<AtomicU64>,
     active_profile: Arc<RwLock<Option<String>>>,
     last_tamper_at: Arc<Mutex<Option<std::time::Instant>>>,
+    last_fired_window: Arc<Mutex<Option<FiredWindow>>>,
 }
+
+type FiredWindow = (String, chrono::DateTime<chrono::Utc>);
 
 impl Supervisor {
     pub fn new(config: Config) -> Result<Self> {
@@ -56,6 +59,7 @@ impl Supervisor {
             last_tick_ms: Arc::new(AtomicU64::new(clock::monotonic_ms() as u64)),
             active_profile: Arc::new(RwLock::new(None)),
             last_tamper_at: Arc::new(Mutex::new(None)),
+            last_fired_window: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -113,6 +117,7 @@ impl Supervisor {
                 limits: p.limits.clone(),
                 stats: crate::audit::stats::mode_stats(&events, name, &p.limits, now),
                 is_default: name == &default,
+                has_schedule: p.schedule.as_ref().is_some_and(|s| s.enabled),
             })
             .collect()
     }
@@ -335,6 +340,7 @@ impl Supervisor {
     pub fn tick(&self) -> Result<()> {
         let Some((mut lock, kind)) = self.store.load()? else {
             *self.active_profile.write() = None;
+            self.check_schedules();
             return Ok(());
         };
 
@@ -430,6 +436,74 @@ impl Supervisor {
         *self.active_profile.write() = Some(lock.profile.clone());
         self.audit.append(AuditKind::DaemonRestarted, Some(lock.id), "lock restored");
         Ok(())
+    }
+
+    fn check_schedules(&self) {
+        use crate::daemon::scheduler;
+        let cfg = self.config.read().clone();
+        let now = chrono::Utc::now();
+        let mut candidates: Vec<(String, scheduler::Window)> = cfg
+            .profiles
+            .iter()
+            .filter_map(|(name, p)| {
+                let sch = p.schedule.as_ref()?;
+                let w = scheduler::current_or_next(sch, now)?;
+                if w.contains(now) {
+                    Some((name.clone(), w))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        let Some((name, w)) = candidates.into_iter().next() else {
+            return;
+        };
+        {
+            let last = self.last_fired_window.lock();
+            if last.as_ref().is_some_and(|(n, s)| n == &name && *s == w.start) {
+                return;
+            }
+        }
+        let remaining = w.remaining(now);
+        if remaining < std::time::Duration::from_secs(60) {
+            return;
+        }
+        let phrase = crate::session::lock::generate_phrase();
+        match self.start(name.clone(), remaining, false, Some("scheduled".into()), phrase) {
+            Ok(_) => {
+                *self.last_fired_window.lock() = Some((name.clone(), w.start));
+                self.audit.append_with(
+                    AuditKind::ScheduleFired,
+                    None,
+                    &name,
+                    serde_json::json!({
+                        "window_start": w.start.to_rfc3339(),
+                        "window_end": w.end.to_rfc3339(),
+                    }),
+                );
+            }
+            Err(e) => {
+                self.audit.append(AuditKind::ScheduleSkipped, None, &format!("{name}: {e}"));
+            }
+        }
+    }
+
+    pub fn next_scheduled(&self) -> Option<(String, chrono::DateTime<chrono::Utc>)> {
+        use crate::daemon::scheduler;
+        let cfg = self.config.read().clone();
+        let now = chrono::Utc::now();
+        cfg.profiles
+            .iter()
+            .filter_map(|(name, p)| {
+                let sch = p.schedule.as_ref()?;
+                let w = scheduler::current_or_next(sch, now)?;
+                if w.start <= now {
+                    return None;
+                }
+                Some((name.clone(), w.start))
+            })
+            .min_by_key(|(_, t)| *t)
     }
 
     fn finalize(&self, lock: &SessionLock, _state: SessionState) -> Result<()> {
@@ -583,11 +657,24 @@ fn build_block_set(profile: &Profile) -> Result<BlockSet> {
     for host in sites::expand_groups(&profile.site_groups)? {
         hosts.insert(host);
     }
+    let mut brand_apps: Vec<String> = Vec::new();
+    if !profile.brands.is_empty() {
+        let resolved = crate::brands::resolve(&profile.brands)?;
+        for d in resolved.domains {
+            hosts.insert(d);
+        }
+        brand_apps.extend(resolved.apps);
+        if !resolved.unknown.is_empty() {
+            tracing::warn!(unknown = ?resolved.unknown, "profile references unknown brands");
+        }
+    }
     let cache = match AppCache::load()? {
         Some(c) => c,
         None => apps::load_or_scan(false)?,
     };
-    let resolution = apps::resolve(&profile.apps, &cache);
+    let mut combined_apps: Vec<String> = profile.apps.clone();
+    combined_apps.extend(brand_apps);
+    let resolution = apps::resolve(&combined_apps, &cache);
     if !resolution.stale.is_empty() {
         tracing::warn!(stale = ?resolution.stale, "profile references uninstalled apps");
     }

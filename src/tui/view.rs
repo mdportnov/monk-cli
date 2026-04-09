@@ -175,6 +175,7 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
         EditorField::Min,
         EditorField::Cooldown,
         EditorField::DailyCap,
+        EditorField::Schedule,
         EditorField::Sites,
         EditorField::HookBefore,
         EditorField::HookAfter,
@@ -234,6 +235,7 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
         EditorField::Min => &editor.min,
         EditorField::Cooldown => &editor.cooldown,
         EditorField::DailyCap => &editor.daily_cap,
+        EditorField::Schedule => &editor.schedule,
         EditorField::Sites => &editor.sites,
         EditorField::HookBefore => &editor.hook_before,
         EditorField::HookAfter => &editor.hook_after,
@@ -439,6 +441,10 @@ fn build_contract_panel(confirm: &ConfirmState) -> Paragraph<'static> {
         lines.push(Line::from(""));
         lines.push(kv("sessions 14d", &detail.total_sessions_7d.to_string()));
         lines.push(kv("total 14d", &fmt_short(detail.total_duration_7d)));
+        if let Some(sch) = &detail.profile.schedule {
+            lines.push(Line::from(""));
+            lines.push(kv("schedule", &fmt_schedule(sch)));
+        }
     }
     Paragraph::new(lines).wrap(Wrap { trim: false }).block(picker_block(" contract "))
 }
@@ -666,6 +672,9 @@ fn render_mode_row(m: &ModeSummary) -> Line<'static> {
     if m.is_default {
         spans.push(Span::styled(" ·default", Style::default().fg(ACCENT)));
     }
+    if m.has_schedule {
+        spans.push(Span::styled(" ⏰", Style::default().fg(ACCENT)));
+    }
     Line::from(spans)
 }
 
@@ -769,6 +778,21 @@ fn dim_line(s: &str) -> Line<'static> {
     Line::from(Span::styled(s.to_string(), Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
 }
 
+pub fn fmt_schedule(s: &crate::config::Schedule) -> String {
+    use crate::config::Weekday::*;
+    let order = [Mon, Tue, Wed, Thu, Fri, Sat, Sun];
+    let labels = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    let days: String = order
+        .iter()
+        .zip(labels.iter())
+        .filter(|(d, _)| s.days.contains(d))
+        .map(|(_, l)| *l)
+        .collect::<Vec<_>>()
+        .join(",");
+    let suffix = if s.enabled { "" } else { " (off)" };
+    format!("{} {}–{}{}", days, s.start, s.end, suffix)
+}
+
 fn fmt_limit(d: Option<Duration>) -> String {
     match d {
         Some(v) => fmt_short(v),
@@ -818,6 +842,18 @@ fn draw_home(f: &mut Frame, app: &App, home: &HomeState) {
 fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     let Some(session) = &app.globals.active else {
         draw_monk(f, area, app);
+        if let Some((name, at)) = &app.globals.next_scheduled {
+            let remaining = (*at - chrono::Utc::now()).to_std().unwrap_or_default();
+            let text = format!("next  {}  in {}", name, fmt_short(remaining));
+            let line = Paragraph::new(Line::from(Span::styled(
+                text,
+                Style::default().fg(ACCENT).add_modifier(Modifier::ITALIC),
+            )))
+            .alignment(Alignment::Center);
+            let y = area.y + area.height.saturating_sub(2);
+            let bar = Rect { x: area.x + 1, y, width: area.width.saturating_sub(2), height: 1 };
+            f.render_widget(line, bar);
+        }
         return;
     };
     let block = Block::default()
@@ -1395,6 +1431,7 @@ mod snapshot_tests {
                 daily_cap_remaining: Some(Duration::from_secs(3 * 3600 + 15 * 60)),
             },
             is_default: true,
+            has_schedule: false,
         }
     }
 

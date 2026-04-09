@@ -33,13 +33,14 @@ pub enum Request {
     ListModes,
     ModeStats { name: String },
     ModeDetail { name: String, days: u32 },
-    SaveMode { name: String, profile: crate::config::Profile },
+    SaveMode { name: String, profile: Box<crate::config::Profile> },
     DeleteMode { name: String },
     GetGeneral,
     UpdateGeneral { general: crate::config::General },
     ResetAll,
     GetConfig,
     SaveConfig { config: Box<Config> },
+    NextScheduled,
     #[serde(other)]
     Unknown,
 }
@@ -54,6 +55,8 @@ pub struct ModeSummary {
     pub limits: Limits,
     pub stats: ModeStats,
     pub is_default: bool,
+    #[serde(default)]
+    pub has_schedule: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +93,7 @@ pub enum Response {
     ModeDetailData(Box<ModeDetailPayload>),
     General(crate::config::General),
     Config(Box<Config>),
+    NextScheduled { profile: Option<String>, at: Option<DateTime<Utc>> },
     Error { message: String },
     #[serde(other)]
     Unknown,

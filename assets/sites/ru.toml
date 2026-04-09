@@ -13,8 +13,13 @@ domains = [
     "fishki.net",
     "yaplakal.com",
     "drive2.ru",
+    "joyreactor.cc",
+    "lurkmore.to",
+    "anekdot.ru",
+    "ria.ru/comments",
+    "tabor.ru",
 ]
-extra_subdomains = { "vk.com" = ["vkvideo"] }
+extra_subdomains = { "vk.com" = ["vkvideo", "m", "new"] }
 
 [video]
 label = "Видео RU"
@@ -31,6 +36,13 @@ domains = [
     "kion.ru",
     "smotrim.ru",
     "nuum.ru",
+    "yappy.media",
+    "tnt-online.ru",
+    "ctc.ru",
+    "1tv.ru",
+    "ren.tv",
+    "ntv.ru",
+    "amediateka.ru",
 ]
 
 [news]
@@ -49,10 +61,22 @@ domains = [
     "iz.ru",
     "interfax.ru",
     "fontanka.ru",
+    "e1.ru",
+    "ura.news",
+    "regnum.ru",
+    "lifenews.ru",
+    "life.ru",
     "meduza.io",
     "novayagazeta.ru",
     "the-village.ru",
+    "republic.ru",
+    "znak.com",
+    "echo.msk.ru",
     "news.mail.ru",
+    "news.yandex.ru",
+    "sport-express.ru",
+    "championat.com",
+    "sports.ru",
 ]
 
 [chat]
@@ -62,6 +86,10 @@ domains = [
     "web.telegram.org",
     "tamtam.chat",
     "icq.com",
+    "max.ru",
+    "yandex.ru/chats",
+    "messenger.mail.ru",
+    "vk.com/im",
 ]
 
 [shopping]
@@ -81,6 +109,23 @@ domains = [
     "petrovich.ru",
     "leroymerlin.ru",
     "youla.ru",
+    "kazanexpress.ru",
+    "sbermegamarket.ru",
+    "wb.ru",
+    "yarmarka.com",
+    "joom.com",
+    "asos.ru",
+    "lichi.com",
+    "bonprix.ru",
+    "respublica.ru",
+    "labirint.ru",
+    "chitai-gorod.ru",
+    "book24.ru",
+    "auto.ru",
+    "drom.ru",
+    "cian.ru",
+    "domclick.ru",
+    "n1.ru",
 ]
 
 [games]
@@ -92,6 +137,12 @@ domains = [
     "stopgame.ru",
     "playground.ru",
     "kanobu.ru",
+    "gmbox.ru",
+    "shazoo.ru",
+    "dtf.ru/games",
+    "wargaming.net",
+    "worldoftanks.ru",
+    "warthunder.ru",
 ]
 
 [productivity_trap]
@@ -102,4 +153,89 @@ domains = [
     "dtf.ru",
     "tproger.ru",
     "adme.ru",
+    "4pda.to",
+    "ixbt.com",
+    "3dnews.ru",
+    "overclockers.ru",
+    "hi-tech.mail.ru",
+    "iphones.ru",
+    "lifehacker.ru",
+    "tjournal.ru",
+    "bash.im",
+    "anekdot.ru",
+    "lib.ru",
+    "samlib.ru",
+    "ficbook.net",
+]
+
+[ai]
+label = "AI RU"
+domains = [
+    "ya.ru/gpt",
+    "yandex.ru/gpt",
+    "alice.yandex.ru",
+    "shedevrum.ai",
+    "gigachat.devices.sberbank.ru",
+    "developers.sber.ru/gigachat",
+    "kandinsky.ai",
+    "sber.ai",
+    "writer.ru",
+    "vsegpt.ru",
+    "gerwin.io",
+    "rugpt.io",
+]
+
+[adult]
+label = "Adult RU"
+domains = [
+    "pornolab.net",
+    "porno365.icu",
+    "ebalovo.tv",
+    "porno-rip.org",
+    "incest.tv",
+    "rt.porn",
+]
+
+[dating]
+label = "Знакомства RU"
+domains = [
+    "mamba.ru",
+    "tabor.ru",
+    "loveplanet.ru",
+    "fotostrana.ru",
+    "teamo.ru",
+    "lovinga.ru",
+    "tinder.com",
+    "badoo.com",
+    "bumble.com",
+]
+
+[crypto]
+label = "Крипта RU"
+domains = [
+    "bestchange.ru",
+    "rbc.ru/crypto",
+    "forklog.com",
+    "bits.media",
+    "incrypted.com",
+    "garantex.io",
+    "binance.com",
+    "bybit.com",
+    "okx.com",
+    "tradingview.com",
+]
+
+[betting]
+label = "Ставки RU"
+domains = [
+    "fonbet.ru",
+    "winline.ru",
+    "marathonbet.ru",
+    "1xbet.com",
+    "1xstavka.ru",
+    "betcity.ru",
+    "leon.ru",
+    "olimp.bet",
+    "tennisi.bet",
+    "pari.ru",
 ]
