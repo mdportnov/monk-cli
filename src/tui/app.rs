@@ -797,7 +797,7 @@ impl App {
             }
         }
         if self.globals.daemon_running {
-            if let Ok(Response::Modes(modes)) = ipc::send(&Request::ListModes).await {
+            if let Ok(Response::Modes { modes }) = ipc::send(&Request::ListModes).await {
                 if let Some(session) = &self.globals.active {
                     self.globals.active_mode =
                         modes.iter().find(|m| m.name == session.profile).cloned();
@@ -1261,7 +1261,7 @@ impl App {
         let Screen::ModePicker(picker) = &mut self.screen else { return };
         picker.loading = false;
         match result {
-            Ok(Response::Modes(modes)) => {
+            Ok(Response::Modes { modes }) => {
                 picker.error = None;
                 picker.modes = modes;
                 if picker.selected >= picker.modes.len() {
@@ -1413,6 +1413,27 @@ impl App {
     }
 }
 
+#[cfg(unix)]
+#[allow(unsafe_code)]
+fn is_root() -> bool {
+    unsafe { libc::geteuid() == 0 }
+}
+#[cfg(not(unix))]
+fn is_root() -> bool {
+    false
+}
+
+fn hosts_writable() -> bool {
+    #[cfg(unix)]
+    {
+        std::fs::OpenOptions::new().append(true).open("/etc/hosts").is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 async fn ensure_daemon() {
     let expected = env!("CARGO_PKG_VERSION");
     match ipc::send(&Request::Ping).await {
@@ -1425,12 +1446,38 @@ async fn ensure_daemon() {
     }
     let Ok(exe) = std::env::current_exe() else { return };
     use std::process::{Command, Stdio};
-    let _ = Command::new(exe)
-        .args(["daemon", "run"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
+    let need_sudo = cfg!(unix) && !is_root() && !hosts_writable();
+    if need_sudo {
+        eprintln!("monk: elevating daemon via sudo to manage /etc/hosts…");
+        let user = std::env::var("USER").unwrap_or_default();
+        let home = std::env::var("HOME").unwrap_or_default();
+        let log = crate::paths::log_file()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "/tmp/monkd.log".into());
+        let shell = format!(
+            "nohup {exe:?} daemon run >>{log:?} 2>&1 &",
+            exe = exe,
+            log = log
+        );
+        let _ = Command::new("sudo")
+            .args([
+                "-E",
+                "env",
+                &format!("SUDO_USER={user}"),
+                &format!("HOME={home}"),
+                "sh",
+                "-c",
+                &shell,
+            ])
+            .status();
+    } else {
+        let _ = Command::new(&exe)
+            .args(["daemon", "run"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
     for _ in 0..20 {
         tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(ipc::send(&Request::Ping).await, Ok(Response::Pong { version }) if version == expected)

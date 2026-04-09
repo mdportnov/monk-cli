@@ -43,6 +43,14 @@ pub async fn run() -> Result<()> {
     let listener =
         ListenerOptions::new().name(name).create_tokio().map_err(|e| Error::Ipc(e.to_string()))?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(sock_path) = paths::ipc_socket() {
+            let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o666));
+        }
+    }
+
     let tick_sup = supervisor.clone();
     let tick_shutdown = shutdown.clone();
     let ticker = tokio::spawn(async move {
@@ -180,7 +188,7 @@ async fn handle(
             },
             Err(e) => Response::Error { message: e.to_string() },
         },
-        Request::List => Response::Sessions(sup.active().into_iter().collect()),
+        Request::List => Response::Sessions { sessions: sup.active().into_iter().collect() },
         Request::Shutdown => {
             if let Some(info) = sup.hard_info() {
                 Response::HardModeActive(Box::new(info))
@@ -192,7 +200,7 @@ async fn handle(
         Request::Pause { .. } | Request::Resume { .. } => {
             Response::Error { message: "not implemented".into() }
         }
-        Request::ListModes => Response::Modes(sup.list_modes()),
+        Request::ListModes => Response::Modes { modes: sup.list_modes() },
         Request::ModeStats { name } => match sup.mode_stats(&name) {
             Ok(s) => Response::ModeStatsData(s),
             Err(e) => Response::Error { message: e.to_string() },
