@@ -62,3 +62,32 @@ hard:
 panic:
   scheduled: "Panic scheduled. Session will release at {at}."
   cancelled: "Panic request cancelled."
+
+tui:
+  flash:
+    started: "started `{profile}`"
+    stopped: "stopped `{profile}`"
+    saved: "saved `{profile}`"
+    deleted: "deleted `{profile}`"
+    config_error: "config error: {message}"
+    no_slot: "no mode at slot {slot}"
+    hard_stop_denied: "hard mode active — stop denied"
+    nothing_to_stop: "nothing to stop"
+    no_hard_session: "no hard-mode session"
+    panic_release_at: "panic release at {at}"
+    panic_cancelled: "panic cancelled"
+    doctor_hint: "run `monk doctor` in a shell for the full report"
+    unexpected: "unexpected response"
+  menu:
+    start: "Start session"
+    stop: "Stop session"
+    panic: "Panic escape"
+    modes: "Modes"
+    doctor: "Doctor"
+    quit: "Quit"
+  help:
+    title: "help"
+    home: "home"
+    modes: "modes"
+    confirm: "confirm"
+    editor: "editor"

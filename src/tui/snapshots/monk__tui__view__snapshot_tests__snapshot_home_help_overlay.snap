@@ -6,12 +6,12 @@ expression: "render(&app, 90, 28)"
                                                                                           
 ──────────────────────────────────────────────────────────────────────────────────────────
 ╭ menu ──────────────────────────────────────────╮╭ companion ───────────────────────────╮
-│▶   Start session                               ││                    . * .             │
-│    Stop session                                ││                   *     *            │
-│    Panic escape                                ││                      ___             │
-│    Modes             ╭ help ────────────────────────────────────╮     /   \            │
-│    Doctor            │home                                      │   | -.- |            │
-│    Quit              │                                          │     \___/            │
+│▶   tui.menu.start                              ││                    . * .             │
+│    tui.menu.stop                               ││                   *     *            │
+│    tui.menu.panic                              ││                      ___             │
+│    tui.menu.modes    ╭ help ────────────────────────────────────╮     /   \            │
+│    tui.menu.doctor   │home                                      │   | -.- |            │
+│    tui.menu.quit     │                                          │     \___/            │
 │                      │  ↑/↓ · j/k    navigate menu              │   __|_|__            │
 │                      │  enter        activate item              │  /#######\           │
 │                      │  s · x · p    start · stop · panic       │/## \_/ ##\           │

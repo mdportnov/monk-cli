@@ -62,3 +62,32 @@ hard:
 panic:
   scheduled: "Выход запланирован. Сессия завершится в {at}."
   cancelled: "Запрос выхода отменён."
+
+tui:
+  flash:
+    started: "запущено `{profile}`"
+    stopped: "остановлено `{profile}`"
+    saved: "сохранено `{profile}`"
+    deleted: "удалено `{profile}`"
+    config_error: "ошибка конфига: {message}"
+    no_slot: "нет режима в слоте {slot}"
+    hard_stop_denied: "hard mode активен — остановка запрещена"
+    nothing_to_stop: "нечего останавливать"
+    no_hard_session: "нет hard-mode сессии"
+    panic_release_at: "panic выход в {at}"
+    panic_cancelled: "panic отменён"
+    doctor_hint: "выполните `monk doctor` в терминале для полного отчёта"
+    unexpected: "неожиданный ответ"
+  menu:
+    start: "Начать сессию"
+    stop: "Остановить"
+    panic: "Panic-выход"
+    modes: "Режимы"
+    doctor: "Диагностика"
+    quit: "Выход"
+  help:
+    title: "помощь"
+    home: "главная"
+    modes: "режимы"
+    confirm: "подтверждение"
+    editor: "редактор"

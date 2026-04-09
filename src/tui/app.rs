@@ -38,15 +38,16 @@ impl MenuItem {
         MenuItem::Quit,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            MenuItem::Start => "Start session",
-            MenuItem::Stop => "Stop session",
-            MenuItem::Panic => "Panic escape",
-            MenuItem::Profiles => "Modes",
-            MenuItem::Doctor => "Doctor",
-            MenuItem::Quit => "Quit",
-        }
+    pub fn label(self) -> String {
+        let key = match self {
+            MenuItem::Start => "tui.menu.start",
+            MenuItem::Stop => "tui.menu.stop",
+            MenuItem::Panic => "tui.menu.panic",
+            MenuItem::Profiles => "tui.menu.modes",
+            MenuItem::Doctor => "tui.menu.doctor",
+            MenuItem::Quit => "tui.menu.quit",
+        };
+        crate::i18n::t!(key).to_string()
     }
 
     pub fn hint(self) -> &'static str {
@@ -772,7 +773,7 @@ impl App {
         };
         match ipc::send(&Request::DeleteMode { name: name.clone() }).await {
             Ok(Response::Ok) => {
-                self.globals.set_flash(format!("deleted `{name}`"), FlashLevel::Success);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.deleted", profile = name).to_string(), FlashLevel::Success);
                 self.refresh_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -862,7 +863,7 @@ impl App {
         };
         match ipc::send(&Request::SaveMode { name: name.clone(), profile }).await {
             Ok(Response::Ok) => {
-                self.globals.set_flash(format!("saved `{name}`"), FlashLevel::Success);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.saved", profile = name).to_string(), FlashLevel::Success);
                 self.open_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -935,7 +936,7 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
                 self.set_screen(Screen::Home(HomeState::default()));
             }
             Ok(Response::Error { message }) => {
@@ -987,7 +988,7 @@ impl App {
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => self.open_picker().await,
             MenuItem::Doctor => {
-                self.globals.set_flash("run `monk doctor` in a shell for the full report", FlashLevel::Info);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.doctor_hint").to_string(), FlashLevel::Info);
             }
             MenuItem::Quit => self.should_quit = true,
         }
@@ -995,13 +996,13 @@ impl App {
 
     async fn quick_start(&mut self, idx: usize) {
         let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
-            self.globals.set_flash(format!("no mode at slot {}", idx + 1), FlashLevel::Error);
+            self.globals.set_flash(crate::i18n::t!("tui.flash.no_slot", slot = (idx + 1)).to_string(), FlashLevel::Error);
             return;
         };
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.set_flash(format!("config error: {e}"), FlashLevel::Error);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.config_error", message = e).to_string(), FlashLevel::Error);
                 return;
             }
         };
@@ -1024,10 +1025,10 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash("unexpected response", FlashLevel::Error),
+            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1036,7 +1037,7 @@ impl App {
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.set_flash(format!("config error: {e}"), FlashLevel::Error);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.config_error", message = e).to_string(), FlashLevel::Error);
                 return;
             }
         };
@@ -1048,10 +1049,10 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(format!("started `{}`", s.profile), FlashLevel::Success);
+                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash("unexpected response", FlashLevel::Error),
+            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1059,13 +1060,13 @@ impl App {
     async fn do_stop(&mut self) {
         match ipc::send(&Request::Stop { id: None }).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(format!("stopped `{}`", s.profile), FlashLevel::Success)
+                self.globals.set_flash(crate::i18n::t!("tui.flash.stopped", profile = s.profile).to_string(), FlashLevel::Success)
             }
             Ok(Response::HardModeActive(_)) => {
-                self.globals.set_flash("hard mode active — stop denied", FlashLevel::Error)
+                self.globals.set_flash(crate::i18n::t!("tui.flash.hard_stop_denied").to_string(), FlashLevel::Error)
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash("nothing to stop", FlashLevel::Warn),
+            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.nothing_to_stop").to_string(), FlashLevel::Warn),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1080,7 +1081,7 @@ impl App {
                 self.globals.set_flash(msg, FlashLevel::Success);
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash("no hard-mode session", FlashLevel::Warn),
+            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.no_hard_session").to_string(), FlashLevel::Warn),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
