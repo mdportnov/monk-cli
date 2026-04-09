@@ -344,10 +344,11 @@ impl Supervisor {
             None => match self.reconstruct_from_audit()? {
                 Some(lock) => {
                     self.store.save(&lock)?;
-                    self.audit.append(
+                    self.audit.append_with(
                         AuditKind::SessionReconstructed,
                         Some(lock.id),
                         &lock.profile,
+                        session_claim(&lock),
                     );
                     Some((lock, crate::session::LoadKind::Valid))
                 }
@@ -388,9 +389,7 @@ impl Supervisor {
         for e in &events {
             match e.kind {
                 AuditKind::SessionStarted => last_start = Some(e),
-                AuditKind::SessionCompleted
-                | AuditKind::SessionPanicked
-                | AuditKind::SessionReconstructed => {
+                AuditKind::SessionCompleted | AuditKind::SessionPanicked => {
                     if let Some(start) = last_start {
                         if e.session_id == start.session_id {
                             last_start = None;
@@ -416,6 +415,34 @@ impl Supervisor {
         let boot_ms = extra.get("boot_ms").and_then(|v| v.as_u64()).unwrap_or(0) as u128;
         let reason =
             extra.get("reason").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
+        let claim_mac =
+            extra.get("mac").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        if claim_mac.is_empty() {
+            tracing::warn!("audit claim missing mac; refusing to reconstruct");
+            return Ok(None);
+        }
+
+        let original = SessionLock {
+            schema_version: crate::session::LOCK_SCHEMA,
+            id,
+            profile: profile.clone(),
+            started_at: start.at,
+            started_at_boot_ms: boot_ms,
+            boot_id: boot_id.clone(),
+            duration_ms: u128::from(duration_ms),
+            progressed_ms: 0,
+            hard_mode,
+            panic_requested_at: None,
+            panic_delay_ms: u128::from(panic_delay_ms),
+            panic_phrase: panic_phrase.clone(),
+            reason: reason.clone(),
+            penalty_applied_ms: 0,
+            mac: claim_mac,
+        };
+        if !original.verify() {
+            tracing::warn!(id = %id, "audit claim mac mismatch; refusing to reconstruct");
+            return Ok(None);
+        }
 
         let now = chrono::Utc::now();
         let elapsed = now.signed_duration_since(start.at).num_milliseconds().max(0) as u128;
@@ -424,21 +451,9 @@ impl Supervisor {
         }
 
         let mut lock = SessionLock {
-            schema_version: crate::session::LOCK_SCHEMA,
-            id,
-            profile,
-            started_at: start.at,
-            started_at_boot_ms: boot_ms,
-            boot_id,
-            duration_ms: u128::from(duration_ms),
             progressed_ms: elapsed,
-            hard_mode,
-            panic_requested_at: None,
-            panic_delay_ms: u128::from(panic_delay_ms),
-            panic_phrase,
-            reason,
-            penalty_applied_ms: 0,
             mac: String::new(),
+            ..original
         };
         lock.reseal();
         tracing::warn!(id = %lock.id, "session lock reconstructed from audit trail");
