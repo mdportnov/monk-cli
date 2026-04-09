@@ -46,8 +46,7 @@ impl Blocker for NoopBlocker {
 
 pub fn select_site_blocker() -> Box<dyn Blocker> {
     let hosts = hosts_path();
-    let writable =
-        fs_err::OpenOptions::new().append(true).open(&hosts).is_ok();
+    let writable = fs_err::OpenOptions::new().write(true).open(&hosts).is_ok();
     if writable {
         tracing::info!(backend = "hosts", "selected site blocker backend");
         Box::<HostsBlocker>::default()
