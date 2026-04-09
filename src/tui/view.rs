@@ -427,8 +427,118 @@ fn draw_home(f: &mut Frame, app: &App, home: &HomeState) {
         .split(outer[1]);
 
     draw_menu(f, body[0], app, home);
-    draw_monk(f, body[1], app);
+    if app.globals.active.is_some() {
+        draw_session_card(f, body[1], app);
+    } else {
+        draw_monk(f, body[1], app);
+    }
     draw_footer(f, outer[2], app);
+}
+
+fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
+    let Some(session) = &app.globals.active else {
+        draw_monk(f, area, app);
+        return;
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(DIM))
+        .title(Span::styled(" session ", Style::default().fg(ACCENT)));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(4),
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Min(2),
+        ])
+        .split(inner);
+
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled("mode  ", Style::default().fg(DIM)),
+        Span::styled(
+            session.profile.clone(),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        if app.globals.hard_mode.is_some() {
+            Span::styled("  HARD", Style::default().fg(ALERT).add_modifier(Modifier::BOLD))
+        } else {
+            Span::raw("")
+        },
+    ]))
+    .alignment(Alignment::Center);
+    f.render_widget(title, layout[0]);
+
+    let remaining = session.remaining();
+    let secs = remaining.as_secs();
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    let timer = format!("{h:02}:{m:02}:{s:02}");
+    let big = BigText::builder()
+        .pixel_size(PixelSize::Quadrant)
+        .style(Style::default().fg(GLOW))
+        .alignment(Alignment::Center)
+        .lines(vec![Line::from(timer)])
+        .build();
+    f.render_widget(big, layout[1]);
+
+    let total = session.duration.as_secs().max(1);
+    let elapsed = total.saturating_sub(secs);
+    let pct = ((elapsed as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u16;
+    let gauge = ratatui::widgets::Gauge::default()
+        .gauge_style(Style::default().fg(ACCENT))
+        .percent(pct)
+        .label(Span::styled(
+            format!("{pct}%"),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ));
+    f.render_widget(gauge, layout[2]);
+
+    let mut info_lines: Vec<Line> = Vec::new();
+    if let Some(mode) = &app.globals.active_mode {
+        if let Some(cap) = mode.limits.daily_cap {
+            let used = mode.stats.used_24h;
+            info_lines.push(Line::from(vec![
+                Span::styled("today  ", Style::default().fg(DIM)),
+                Span::styled(
+                    format!("{} / {}", fmt_short(used), fmt_short(cap)),
+                    Style::default().fg(TEXT),
+                ),
+            ]));
+        }
+        if let Some(cd) = mode.limits.cooldown {
+            info_lines.push(Line::from(vec![
+                Span::styled("cooldown  ", Style::default().fg(DIM)),
+                Span::styled(fmt_short(cd), Style::default().fg(TEXT)),
+            ]));
+        }
+    }
+    if info_lines.is_empty() {
+        info_lines.push(Line::from(Span::styled(
+            "no limits configured",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    let info = Paragraph::new(info_lines).alignment(Alignment::Center);
+    f.render_widget(info, layout[3]);
+
+    let action = if app.globals.hard_mode.is_some() {
+        "p  panic — delayed release"
+    } else {
+        "x  stop   ·   p  panic"
+    };
+    let actions = Paragraph::new(Span::styled(
+        action,
+        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(actions, layout[4]);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {

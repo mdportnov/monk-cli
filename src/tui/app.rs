@@ -223,6 +223,7 @@ pub struct Globals {
     pub daemon_running: bool,
     pub flash: Option<String>,
     pub frame: u64,
+    pub active_mode: Option<ModeSummary>,
 }
 
 #[derive(Debug, Default)]
@@ -249,7 +250,24 @@ impl App {
                 self.globals.daemon_running = false;
                 self.globals.active = None;
                 self.globals.hard_mode = None;
+                self.globals.active_mode = None;
             }
+        }
+        if let Some(session) = &self.globals.active {
+            if self
+                .globals
+                .active_mode
+                .as_ref()
+                .map(|m| m.name != session.profile)
+                .unwrap_or(true)
+            {
+                if let Ok(Response::Modes(modes)) = ipc::send(&Request::ListModes).await {
+                    self.globals.active_mode =
+                        modes.into_iter().find(|m| m.name == session.profile);
+                }
+            }
+        } else {
+            self.globals.active_mode = None;
         }
     }
 
