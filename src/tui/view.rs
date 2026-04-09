@@ -8,9 +8,11 @@ use ratatui::{
 
 use std::time::Duration;
 
+use tui_big_text::{BigText, PixelSize};
+
 use crate::{
     ipc::ModeSummary,
-    tui::app::{App, HomeState, MenuItem, PickerState, Screen},
+    tui::app::{App, ConfirmState, HomeState, MenuItem, PickerState, Screen},
 };
 
 const ACCENT: Color = Color::Rgb(140, 180, 220);
@@ -25,6 +27,170 @@ pub fn draw(f: &mut Frame, app: &App) {
     match &app.screen {
         Screen::Home(home) => draw_home(f, app, home),
         Screen::ModePicker(picker) => draw_picker(f, app, picker),
+        Screen::ModeConfirm(confirm) => draw_confirm(f, app, confirm.as_ref()),
+    }
+}
+
+fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
+    let area = f.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+        .split(area);
+
+    draw_header(f, outer[0], app);
+
+    let body = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(8),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Min(4),
+        ])
+        .split(outer[1]);
+
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled("start  ", Style::default().fg(DIM)),
+        Span::styled(
+            confirm.mode.name.clone(),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .alignment(Alignment::Center);
+    f.render_widget(title, body[0]);
+
+    let secs = confirm.duration.as_secs();
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    let timer_text = format!("{h:02}:{m:02}:{s:02}");
+    let big = BigText::builder()
+        .pixel_size(PixelSize::Quadrant)
+        .style(Style::default().fg(if confirm.clamped { ALERT } else { GLOW }))
+        .alignment(Alignment::Center)
+        .lines(vec![Line::from(timer_text)])
+        .build();
+    f.render_widget(big, body[1]);
+
+    draw_duration_slider(f, body[2], confirm);
+
+    let hints = Paragraph::new(build_confirm_status(confirm))
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+    f.render_widget(hints, body[3]);
+
+    let details = draw_confirm_details(confirm);
+    f.render_widget(details, body[4]);
+
+    let help = if confirm.blocked_reason().is_some() {
+        "←/→ duration   esc back   ·   start blocked"
+    } else {
+        "←/→ duration   shift+H hard   ⏎ start   esc back"
+    };
+    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
+    f.render_widget(footer, outer[2]);
+}
+
+fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
+    let width = area.width.saturating_sub(20).max(10) as usize;
+    let frac = confirm.slider_fraction();
+    let pos = ((width as f32) * frac).round() as usize;
+    let mut bar = String::with_capacity(width);
+    for i in 0..width {
+        if i == pos {
+            bar.push('●');
+        } else {
+            bar.push('─');
+        }
+    }
+    let line = Line::from(vec![
+        Span::styled(format!("  {:>5}  ", fmt_short(ConfirmState::MIN_BOUND)), Style::default().fg(DIM)),
+        Span::styled(bar, Style::default().fg(ACCENT)),
+        Span::styled(format!("  {:<5}", fmt_short(confirm.effective_max())), Style::default().fg(DIM)),
+    ]);
+    f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+}
+
+fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+    if confirm.clamped {
+        lines.push(Line::from(Span::styled(
+            format!("clamped to mode max ({})", fmt_short(confirm.effective_max())),
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+        )));
+    }
+    if let Some(reason) = confirm.blocked_reason() {
+        lines.push(Line::from(Span::styled(
+            reason,
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+        )));
+    } else if let Some(err) = &confirm.error {
+        lines.push(Line::from(Span::styled(
+            err.clone(),
+            Style::default().fg(ALERT),
+        )));
+    } else if confirm.hard {
+        lines.push(Line::from(Span::styled(
+            "hard mode — cannot stop early, panic phrase only",
+            Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "soft mode — stop anytime",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    lines
+}
+
+fn draw_confirm_details(confirm: &ConfirmState) -> Paragraph<'static> {
+    let limits = confirm.limits();
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            "contract",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
+        kv("max", &fmt_limit(limits.max_duration)),
+        kv("min", &fmt_limit(limits.min_duration)),
+        kv("cooldown", &fmt_limit(limits.cooldown)),
+        kv("daily cap", &fmt_limit(limits.daily_cap)),
+        Line::from(""),
+        kv("used today", &fmt_short(confirm.mode.stats.used_24h)),
+        kv(
+            "blocks",
+            &format!(
+                "{} apps · {} sites · {} groups",
+                confirm.mode.blocked_apps, confirm.mode.blocked_sites, confirm.mode.blocked_groups
+            ),
+        ),
+    ];
+    if let Some(rem) = confirm.mode.stats.daily_cap_remaining {
+        lines.push(kv("budget left", &fmt_short(rem)));
+    }
+    Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(picker_block(" contract "))
+}
+
+pub fn fmt_short(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs == 0 {
+        return "0".into();
+    }
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h > 0 && m > 0 {
+        format!("{h}h{m:02}")
+    } else if h > 0 {
+        format!("{h}h")
+    } else if m > 0 {
+        format!("{m}m")
+    } else {
+        format!("{secs}s")
     }
 }
 
@@ -146,24 +312,6 @@ fn format_usage(m: &ModeSummary) -> String {
                 format!("{} today", fmt_short(m.stats.used_24h))
             }
         }
-    }
-}
-
-fn fmt_short(d: Duration) -> String {
-    let secs = d.as_secs();
-    if secs == 0 {
-        return "0".into();
-    }
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    if h > 0 && m > 0 {
-        format!("{h}h{m:02}")
-    } else if h > 0 {
-        format!("{h}h")
-    } else if m > 0 {
-        format!("{m}m")
-    } else {
-        format!("{secs}s")
     }
 }
 

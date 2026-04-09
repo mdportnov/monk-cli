@@ -8,7 +8,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    config::Config,
+    config::{Config, Limits},
     ipc::{self, HardModeInfo, ModeSummary, Request, Response},
     session::Session,
     Result,
@@ -113,9 +113,101 @@ impl PickerState {
 }
 
 #[derive(Debug)]
+pub struct ConfirmState {
+    pub mode: ModeSummary,
+    pub duration: Duration,
+    pub requested: Duration,
+    pub hard: bool,
+    pub clamped: bool,
+    pub error: Option<String>,
+}
+
+impl ConfirmState {
+    pub const STEP: Duration = Duration::from_secs(5 * 60);
+    pub const MIN_BOUND: Duration = Duration::from_secs(5 * 60);
+    pub const MAX_BOUND: Duration = Duration::from_secs(8 * 3600);
+
+    pub fn from_mode(mode: ModeSummary, default: Duration, hard_default: bool) -> Self {
+        let mut state = Self {
+            requested: default,
+            duration: default,
+            hard: hard_default,
+            clamped: false,
+            error: None,
+            mode,
+        };
+        state.reclamp();
+        state
+    }
+
+    pub fn reclamp(&mut self) {
+        let mut d = self.requested.max(Self::MIN_BOUND).min(Self::MAX_BOUND);
+        let ceiling = self.effective_max();
+        let mut clamped = false;
+        if d > ceiling {
+            d = ceiling;
+            clamped = true;
+        }
+        if let Some(min) = self.mode.limits.min_duration {
+            if d < min {
+                d = min;
+            }
+        }
+        self.duration = d;
+        self.clamped = clamped;
+    }
+
+    pub fn effective_max(&self) -> Duration {
+        self.mode.limits.max_duration.unwrap_or(Self::MAX_BOUND)
+    }
+
+    pub fn inc(&mut self) {
+        self.requested = self.requested.saturating_add(Self::STEP);
+        self.reclamp();
+    }
+
+    pub fn dec(&mut self) {
+        self.requested = self
+            .requested
+            .checked_sub(Self::STEP)
+            .unwrap_or(Self::MIN_BOUND);
+        self.reclamp();
+    }
+
+    pub fn blocked_reason(&self) -> Option<String> {
+        if let Some(rem) = self.mode.stats.cooldown_remaining {
+            return Some(format!("cooldown — available in {}", super::view::fmt_short(rem)));
+        }
+        if let (Some(_cap), Some(rem)) =
+            (self.mode.limits.daily_cap, self.mode.stats.daily_cap_remaining)
+        {
+            if rem.is_zero() {
+                return Some("daily cap reached — budget restores tomorrow".into());
+            }
+        }
+        None
+    }
+
+    pub fn slider_fraction(&self) -> f32 {
+        let max = self.effective_max().as_secs() as f32;
+        let min = Self::MIN_BOUND.as_secs() as f32;
+        let cur = self.duration.as_secs() as f32;
+        if max <= min {
+            return 1.0;
+        }
+        ((cur - min) / (max - min)).clamp(0.0, 1.0)
+    }
+
+    pub fn limits(&self) -> &Limits {
+        &self.mode.limits
+    }
+}
+
+#[derive(Debug)]
 pub enum Screen {
     Home(HomeState),
     ModePicker(PickerState),
+    ModeConfirm(Box<ConfirmState>),
 }
 
 impl Default for Screen {
@@ -168,6 +260,7 @@ impl App {
         match &self.screen {
             Screen::Home(_) => self.handle_home_key(key).await,
             Screen::ModePicker(_) => self.handle_picker_key(key).await,
+            Screen::ModeConfirm(_) => self.handle_confirm_key(key).await,
         }
     }
 
@@ -205,7 +298,67 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
             KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
             KeyCode::Char('r') => self.refresh_picker().await,
+            KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker(),
             _ => {}
+        }
+    }
+
+    fn open_confirm_from_picker(&mut self) {
+        let Screen::ModePicker(picker) = &self.screen else { return };
+        let Some(mode) = picker.current().cloned() else { return };
+        let cfg = Config::load().ok();
+        let default_dur = cfg
+            .as_ref()
+            .map(|c| c.general.default_duration)
+            .unwrap_or(Duration::from_secs(25 * 60));
+        let hard = cfg.as_ref().map(|c| c.general.hard_mode).unwrap_or(false);
+        self.screen = Screen::ModeConfirm(Box::new(ConfirmState::from_mode(mode, default_dur, hard)));
+    }
+
+    async fn handle_confirm_key(&mut self, key: KeyEvent) {
+        let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.open_picker().await,
+            KeyCode::Left | KeyCode::Char('h') => confirm.dec(),
+            KeyCode::Right | KeyCode::Char('l') => confirm.inc(),
+            KeyCode::Char('H') => confirm.hard = !confirm.hard,
+            KeyCode::Enter | KeyCode::Char(' ') => self.start_from_confirm().await,
+            _ => {}
+        }
+    }
+
+    async fn start_from_confirm(&mut self) {
+        let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
+        if let Some(reason) = confirm.blocked_reason() {
+            confirm.error = Some(reason);
+            return;
+        }
+        let req = Request::Start {
+            profile: confirm.mode.name.clone(),
+            duration: confirm.duration,
+            hard_mode: confirm.hard,
+            reason: None,
+        };
+        match ipc::send(&req).await {
+            Ok(Response::Session(s)) => {
+                self.globals.flash = Some(format!("started `{}`", s.profile));
+                self.screen = Screen::Home(HomeState::default());
+            }
+            Ok(Response::Error { message }) => {
+                if let Screen::ModeConfirm(c) = &mut self.screen {
+                    c.error = Some(message);
+                }
+            }
+            Ok(_) => {
+                if let Screen::ModeConfirm(c) = &mut self.screen {
+                    c.error = Some("unexpected response".into());
+                }
+            }
+            Err(e) => {
+                if let Screen::ModeConfirm(c) = &mut self.screen {
+                    c.error = Some(e.to_string());
+                }
+            }
         }
     }
 
