@@ -1458,10 +1458,17 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
                     Status::Info => ACCENT,
                     Status::Skipped => DIM,
                 };
-                ListItem::new(Line::from(vec![
+                let mut lines = vec![Line::from(vec![
                     Span::styled(format!(" {} ", c.status.icon()), Style::default().fg(color)),
                     Span::styled(c.title.clone(), Style::default().fg(TEXT)),
-                ]))
+                ])];
+                if !c.purpose.is_empty() {
+                    lines.push(Line::from(Span::styled(
+                        format!("     {}", c.purpose),
+                        Style::default().fg(DIM),
+                    )));
+                }
+                ListItem::new(lines)
             })
             .collect();
         let list = List::new(items)
@@ -1489,6 +1496,12 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
                 c.title.clone(),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )));
+            if !c.purpose.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    c.purpose.to_string(),
+                    Style::default().fg(DIM),
+                )));
+            }
             lines.push(Line::from(Span::styled(
                 format!("status: {}", c.status.label()),
                 Style::default().fg(color),
@@ -1512,6 +1525,22 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
                     format!("hint: {hint}"),
                     Style::default().fg(GLOW),
                 )));
+            }
+            if !c.actions.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "actions:",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )));
+                for a in &c.actions {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("  [{}] ", a.key),
+                            Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(a.label.to_string(), Style::default().fg(TEXT)),
+                    ]));
+                }
             }
         }
         let detail = Paragraph::new(lines)

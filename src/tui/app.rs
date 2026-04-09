@@ -1370,6 +1370,32 @@ impl App {
                 }
             }
             KeyCode::Char('r') => self.open_doctor().await,
+            KeyCode::Char(c) => {
+                let action = if let Screen::Doctor(st) = &self.screen {
+                    st.current().and_then(|ch| ch.actions.iter().find(|a| a.key == c).copied())
+                } else {
+                    None
+                };
+                if let Some(action) = action {
+                    let kind = action.kind;
+                    match kind.run() {
+                        Ok(msg) => self.globals.set_flash(msg, FlashLevel::Success),
+                        Err(e) => self.globals.set_flash(e, FlashLevel::Error),
+                    }
+                    use crate::doctor::ActionKind;
+                    if matches!(kind, ActionKind::StartDaemon | ActionKind::StopDaemon) {
+                        for _ in 0..20 {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            let want_up = matches!(kind, ActionKind::StartDaemon);
+                            let up = ipc::send(&Request::Ping).await.is_ok();
+                            if up == want_up {
+                                break;
+                            }
+                        }
+                    }
+                    self.open_doctor().await;
+                }
+            }
             _ => {}
         }
     }

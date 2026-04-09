@@ -56,10 +56,119 @@ impl Status {
 pub struct Check {
     pub id: &'static str,
     pub title: String,
+    pub purpose: &'static str,
     pub status: Status,
     pub detail: String,
     pub hint: Option<String>,
     pub extras: Vec<String>,
+    pub actions: Vec<Action>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionKind {
+    StartDaemon,
+    StopDaemon,
+    OpenConfig,
+    OpenLog,
+    OpenDataDir,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Action {
+    pub key: char,
+    pub label: &'static str,
+    pub kind: ActionKind,
+}
+
+impl ActionKind {
+    pub fn run(self) -> std::result::Result<String, String> {
+        match self {
+            ActionKind::StartDaemon => start_daemon(),
+            ActionKind::StopDaemon => stop_daemon(),
+            ActionKind::OpenConfig => open_path_action(paths::config_file()),
+            ActionKind::OpenLog => open_path_action(paths::log_file()),
+            ActionKind::OpenDataDir => open_path_action(paths::data_dir()),
+        }
+    }
+}
+
+fn start_daemon() -> std::result::Result<String, String> {
+    if let Ok(pf) = crate::daemon::PidFile::new() {
+        if let Ok(Some(pid)) = pf.is_alive() {
+            return Err(format!("daemon already running (pid {pid})"));
+        }
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    use std::process::{Command, Stdio};
+    Command::new(exe)
+        .args(["daemon", "run"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("spawn failed: {e}"))?;
+    Ok("spawned `monk daemon run` in background".into())
+}
+
+fn stop_daemon() -> std::result::Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let out = std::process::Command::new(exe)
+        .args(["daemon", "stop"])
+        .output()
+        .map_err(|e| format!("spawn failed: {e}"))?;
+    if out.status.success() {
+        Ok("daemon stop requested".into())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(if err.is_empty() {
+            format!("monk daemon stop exited with {}", out.status)
+        } else {
+            err
+        })
+    }
+}
+
+fn open_path_action(p: crate::Result<std::path::PathBuf>) -> std::result::Result<String, String> {
+    let path = p.map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Err(format!("path does not exist: {}", path.display()));
+    }
+    let cmd = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    let status = std::process::Command::new(cmd)
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("{cmd}: {e}"))?;
+    if !status.success() {
+        return Err(format!("{cmd} exited with {status}"));
+    }
+    Ok(format!("opened {}", path.display()))
+}
+
+pub fn purpose_for(id: &str) -> &'static str {
+    match id {
+        "version" => "build identity — confirms which binary you're running",
+        "platform" => "host os/arch — gates backend selection",
+        "privileges" => "root access — required by hosts, resolver_dir, systemd_resolved, and :80",
+        "path.config" => "where monk stores your profiles and general settings",
+        "path.data" => "where monk stores audit logs and mode stats",
+        "path.log" => "rolling log file for daemon output",
+        "path.socket" => "unix socket for cli↔daemon ipc",
+        "config" => "parses config.toml and reports profile count",
+        "daemon" => "pidfile inspection — is monkd actually alive?",
+        "ipc" => "round-trip ping to monkd over the socket",
+        "hard_mode" => "is an unescapable session currently locking the machine?",
+        "blocker.backends" => "which site blockers are available on this host",
+        "dns_server" => "local dns responder on 127.0.0.1:53535 (answers blocked domains)",
+        "block_page" => "http server on :80 that renders the blocked-site placeholder",
+        "log" => "tail of the daemon log for quick triage",
+        _ => "",
+    }
 }
 
 impl Check {
@@ -67,10 +176,12 @@ impl Check {
         Self {
             id,
             title: title.into(),
+            purpose: purpose_for(id),
             status,
             detail: detail.into(),
             hint: None,
             extras: Vec::new(),
+            actions: Vec::new(),
         }
     }
 
@@ -81,6 +192,11 @@ impl Check {
 
     fn with_extras(mut self, extras: Vec<String>) -> Self {
         self.extras = extras;
+        self
+    }
+
+    fn with_actions(mut self, actions: Vec<Action>) -> Self {
+        self.actions = actions;
         self
     }
 }
@@ -181,8 +297,13 @@ fn check_privileges() -> Check {
 }
 
 fn check_paths() -> Vec<Check> {
-    fn describe(id: &'static str, title: &'static str, res: crate::Result<std::path::PathBuf>) -> Check {
-        match res {
+    fn describe(
+        id: &'static str,
+        title: &'static str,
+        res: crate::Result<std::path::PathBuf>,
+        action: Option<Action>,
+    ) -> Check {
+        let check = match res {
             Ok(p) => {
                 let exists = p.exists();
                 let status = if exists { Status::Ok } else { Status::Info };
@@ -194,13 +315,33 @@ fn check_paths() -> Vec<Check> {
                 Check::new(id, title, status, detail)
             }
             Err(e) => Check::new(id, title, Status::Fail, format!("resolve failed: {e}")),
+        };
+        if let Some(a) = action {
+            check.with_actions(vec![a])
+        } else {
+            check
         }
     }
     vec![
-        describe("path.config", "config file", paths::config_file()),
-        describe("path.data", "data dir", paths::data_dir()),
-        describe("path.log", "log file", paths::log_file()),
-        describe("path.socket", "ipc socket", paths::ipc_socket()),
+        describe(
+            "path.config",
+            "config file",
+            paths::config_file(),
+            Some(Action { key: 'o', label: "open config", kind: ActionKind::OpenConfig }),
+        ),
+        describe(
+            "path.data",
+            "data dir",
+            paths::data_dir(),
+            Some(Action { key: 'o', label: "open data dir", kind: ActionKind::OpenDataDir }),
+        ),
+        describe(
+            "path.log",
+            "log file",
+            paths::log_file(),
+            Some(Action { key: 'o', label: "open log", kind: ActionKind::OpenLog }),
+        ),
+        describe("path.socket", "ipc socket", paths::ipc_socket(), None),
     ]
 }
 
@@ -227,6 +368,8 @@ fn check_config() -> Check {
 }
 
 fn check_pidfile() -> Check {
+    let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
+    let stop = Action { key: 'x', label: "stop daemon", kind: ActionKind::StopDaemon };
     match PidFile::new() {
         Ok(p) => match p.is_alive() {
             Ok(Some(pid)) => Check::new(
@@ -234,16 +377,20 @@ fn check_pidfile() -> Check {
                 "daemon",
                 Status::Ok,
                 format!("running (pid {pid})"),
-            ),
+            )
+            .with_actions(vec![stop]),
             Ok(None) => Check::new("daemon", "daemon", Status::Warn, "not running")
-                .with_hint("start it with `monk daemon` (or `sudo monk daemon`)"),
-            Err(e) => Check::new("daemon", "daemon", Status::Fail, format!("pidfile read: {e}")),
+                .with_hint("start it with `monk daemon` (or `sudo monk daemon`)")
+                .with_actions(vec![start]),
+            Err(e) => Check::new("daemon", "daemon", Status::Fail, format!("pidfile read: {e}"))
+                .with_actions(vec![start]),
         },
         Err(e) => Check::new("daemon", "daemon", Status::Fail, format!("pidfile init: {e}")),
     }
 }
 
 async fn check_ipc() -> Check {
+    let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     match ipc::send(&Request::Ping).await {
         Ok(Response::Pong { version }) => Check::new(
             "ipc",
@@ -253,7 +400,8 @@ async fn check_ipc() -> Check {
         ),
         Ok(other) => Check::new("ipc", "ipc", Status::Warn, format!("unexpected: {other:?}")),
         Err(e) => Check::new("ipc", "ipc", Status::Fail, format!("send failed: {e}"))
-            .with_hint("daemon may be down or socket path mismatched"),
+            .with_hint("daemon may be down or socket path mismatched")
+            .with_actions(vec![start]),
     }
 }
 
@@ -360,6 +508,7 @@ async fn check_dns_server() -> Check {
     query.extend_from_slice(&1u16.to_be_bytes());
     query.extend_from_slice(&1u16.to_be_bytes());
 
+    let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     if let Err(e) = socket.send_to(&query, addr).await {
         return Check::new(
             "dns_server",
@@ -367,7 +516,8 @@ async fn check_dns_server() -> Check {
             Status::Fail,
             format!("send to 127.0.0.1:{} failed: {e}", dns_server::PORT),
         )
-        .with_hint("daemon not running? the dns server starts with `monk daemon`");
+        .with_hint("daemon not running? the dns server starts with `monk daemon`")
+        .with_actions(vec![start]);
     }
 
     let mut buf = [0u8; 512];
@@ -390,7 +540,8 @@ async fn check_dns_server() -> Check {
         },
         Ok(Err(e)) => Check::new("dns_server", "dns server", Status::Fail, format!("recv failed: {e}")),
         Err(_) => Check::new("dns_server", "dns server", Status::Fail, "timeout waiting for reply")
-            .with_hint("daemon may be down or another process owns the port"),
+            .with_hint("daemon may be down or another process owns the port")
+            .with_actions(vec![start]),
     }
 }
 
@@ -454,6 +605,7 @@ fn skip_name(buf: &[u8], mut i: usize) -> std::result::Result<usize, &'static st
 async fn check_block_page() -> Check {
     use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, time::timeout};
 
+    let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     let fut = async {
         let mut stream = TcpStream::connect(("127.0.0.1", 80)).await?;
         stream
@@ -491,9 +643,11 @@ async fn check_block_page() -> Check {
             };
             Check::new("block_page", "block page", Status::Warn, format!("{detail}: {e}"))
                 .with_hint(hint)
+                .with_actions(vec![start])
         }
         Err(_) => Check::new("block_page", "block page", Status::Warn, "timeout")
-            .with_hint("port 80 may be owned by a non-responsive process"),
+            .with_hint("port 80 may be owned by a non-responsive process")
+            .with_actions(vec![start]),
     }
 }
 
@@ -504,14 +658,17 @@ fn check_log_tail() -> Check {
     if !path.exists() {
         return Check::new("log", "recent log", Status::Info, "no log file yet");
     }
+    let open = Action { key: 'o', label: "open log", kind: ActionKind::OpenLog };
     match fs_err::read_to_string(&path) {
         Ok(s) => {
             let lines: Vec<String> = s.lines().rev().take(8).map(|l| l.to_string()).collect();
             let lines: Vec<String> = lines.into_iter().rev().collect();
             Check::new("log", "recent log", Status::Info, path.display().to_string())
                 .with_extras(lines)
+                .with_actions(vec![open])
         }
-        Err(e) => Check::new("log", "recent log", Status::Warn, format!("read failed: {e}")),
+        Err(e) => Check::new("log", "recent log", Status::Warn, format!("read failed: {e}"))
+            .with_actions(vec![open]),
     }
 }
 
