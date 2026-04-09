@@ -1075,8 +1075,8 @@ impl App {
         match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
-                    Some(at) => format!("panic release at {}", at.to_rfc3339()),
-                    None => "panic cancelled".into(),
+                    Some(at) => crate::i18n::t!("tui.flash.panic_release_at", at = at.to_rfc3339()).to_string(),
+                    None => crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
                 };
                 self.globals.set_flash(msg, FlashLevel::Success);
             }
