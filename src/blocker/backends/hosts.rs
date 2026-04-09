@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use crate::{
-    blocker::{hosts_path, BlockSet, Blocker},
+    blocker::{
+        backends::{atomic_write, BlockerBackend, ProbeResult},
+        hosts_path, BlockSet, Blocker,
+    },
     Error, Result,
 };
 
@@ -30,13 +33,7 @@ impl HostsBlocker {
     }
 
     fn write(&self, contents: &str) -> Result<()> {
-        fs_err::write(&self.path, contents).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                Error::Permission(format!("cannot write {}", self.path.display()))
-            } else {
-                Error::Io(e)
-            }
-        })
+        atomic_write(&self.path, contents.as_bytes())
     }
 
     fn strip_block(raw: &str) -> String {
@@ -85,6 +82,7 @@ impl Blocker for HostsBlocker {
     fn name(&self) -> &'static str {
         "hosts"
     }
+
     fn apply(&mut self, set: &BlockSet) -> Result<()> {
         if set.sites.is_empty() {
             return Ok(());
@@ -101,11 +99,37 @@ impl Blocker for HostsBlocker {
     }
 
     fn revert(&mut self) -> Result<()> {
-        let current = self.read()?;
+        let current = match self.read() {
+            Ok(c) => c,
+            Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                self.backup = None;
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        };
         let cleaned = Self::strip_block(&current);
         self.write(cleaned.trim_end())?;
         self.backup = None;
         Ok(())
+    }
+}
+
+impl BlockerBackend for HostsBlocker {
+    fn probe() -> ProbeResult {
+        let path = hosts_path();
+        match fs_err::OpenOptions::new().write(true).open(&path) {
+            Ok(_) => ProbeResult::Available {
+                priority: 10,
+                detail: path.display().to_string(),
+            },
+            Err(e) => ProbeResult::Unavailable {
+                reason: format!("{} not writable: {e}", path.display()),
+            },
+        }
+    }
+
+    fn build() -> Result<Self> {
+        Ok(Self::default())
     }
 }
 
@@ -132,5 +156,14 @@ mod tests {
         let reverted = fs_err::read_to_string(&p).unwrap();
         assert!(!reverted.contains("x.com"));
         assert!(reverted.contains("localhost"));
+    }
+
+    #[test]
+    fn conformance() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("hosts");
+        fs_err::write(&p, "127.0.0.1 localhost\n").unwrap();
+        let mut b = HostsBlocker::with_path(p);
+        crate::blocker::backends::assert_conformance(&mut b);
     }
 }

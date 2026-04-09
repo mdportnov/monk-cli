@@ -812,6 +812,57 @@ pub enum Screen {
     ModeConfirm(Box<ConfirmState>),
     ModeEditor(Box<EditorState>),
     Settings(Box<SettingsState>),
+    Doctor(Box<DoctorState>),
+}
+
+#[derive(Debug, Default)]
+pub struct DoctorState {
+    pub loading: bool,
+    pub report: Option<crate::doctor::Report>,
+    pub order: Vec<usize>,
+    pub selected: usize,
+}
+
+impl DoctorState {
+    pub fn set_report(&mut self, report: crate::doctor::Report) {
+        self.order = report.display_order();
+        self.report = Some(report);
+        self.selected = 0;
+    }
+
+    pub fn move_up(&mut self) {
+        if self.order.is_empty() {
+            return;
+        }
+        if self.selected == 0 {
+            self.selected = self.order.len() - 1;
+        } else {
+            self.selected -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.order.is_empty() {
+            return;
+        }
+        self.selected = (self.selected + 1) % self.order.len();
+    }
+
+    pub fn jump_to_first_failure(&mut self) {
+        let Some(r) = &self.report else { return };
+        for (pos, &idx) in self.order.iter().enumerate() {
+            if r.checks[idx].status == crate::doctor::Status::Fail {
+                self.selected = pos;
+                return;
+            }
+        }
+    }
+
+    pub fn current(&self) -> Option<&crate::doctor::Check> {
+        let r = self.report.as_ref()?;
+        let idx = *self.order.get(self.selected)?;
+        r.checks.get(idx)
+    }
 }
 
 impl Default for Screen {
@@ -983,7 +1034,10 @@ impl App {
             return;
         }
         if matches!(key.code, KeyCode::Char('?'))
-            && !matches!(self.screen, Screen::ModeEditor(_) | Screen::Settings(_))
+            && !matches!(
+                self.screen,
+                Screen::ModeEditor(_) | Screen::Settings(_) | Screen::Doctor(_)
+            )
         {
             self.globals.help_open = true;
             return;
@@ -994,6 +1048,7 @@ impl App {
             Screen::ModeConfirm(_) => self.handle_confirm_key(key).await,
             Screen::ModeEditor(_) => self.handle_editor_key(key).await,
             Screen::Settings(_) => self.handle_settings_key(key).await,
+            Screen::Doctor(_) => self.handle_doctor_key(key).await,
         }
     }
 
@@ -1278,6 +1333,47 @@ impl App {
         }
     }
 
+    async fn open_doctor(&mut self) {
+        if !matches!(self.screen, Screen::Doctor(_)) {
+            self.set_screen(Screen::Doctor(Box::new(DoctorState {
+                loading: true,
+                ..Default::default()
+            })));
+        } else if let Screen::Doctor(st) = &mut self.screen {
+            st.loading = true;
+        }
+        let report = crate::doctor::run().await;
+        if let Screen::Doctor(st) = &mut self.screen {
+            st.loading = false;
+            st.set_report(report);
+        }
+    }
+
+    async fn handle_doctor_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
+                self.set_screen(Screen::Home(HomeState::default()));
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Screen::Doctor(st) = &mut self.screen {
+                    st.move_up();
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Screen::Doctor(st) = &mut self.screen {
+                    st.move_down();
+                }
+            }
+            KeyCode::Char('f') => {
+                if let Screen::Doctor(st) = &mut self.screen {
+                    st.jump_to_first_failure();
+                }
+            }
+            KeyCode::Char('r') => self.open_doctor().await,
+            _ => {}
+        }
+    }
+
     async fn open_settings(&mut self) {
         match ipc::send(&Request::GetGeneral).await {
             Ok(Response::General(g)) => {
@@ -1447,12 +1543,7 @@ impl App {
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => self.open_picker().await,
             MenuItem::Settings => self.open_settings().await,
-            MenuItem::Doctor => {
-                self.globals.set_flash(
-                    crate::i18n::t!("tui.flash.doctor_hint").to_string(),
-                    FlashLevel::Info,
-                );
-            }
+            MenuItem::Doctor => self.open_doctor().await,
             MenuItem::Quit => self.should_quit = true,
         }
     }

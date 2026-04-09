@@ -478,43 +478,24 @@ pub async fn config_import(file: &std::path::Path) -> Result<()> {
 }
 
 pub async fn doctor() -> Result<()> {
-    use crate::{blocker, daemon::PidFile, paths};
-
-    println!("monk v{}", env!("CARGO_PKG_VERSION"));
-    println!("os: {} ({})", std::env::consts::OS, std::env::consts::ARCH);
-    println!("config: {}", paths::config_file()?.display());
-    println!("data:   {}", paths::data_dir()?.display());
-    println!("socket: {}", paths::ipc_socket()?.display());
-
-    let hosts = blocker::hosts_path();
-    let writable = fs_err::OpenOptions::new().append(true).open(&hosts).is_ok();
-    println!(
-        "hosts:  {} ({})",
-        hosts.display(),
-        if writable { "writable" } else { "read-only — needs elevated privileges" }
-    );
-
-    let pid = PidFile::new()?;
-    match pid.is_alive()? {
-        Some(pid) => println!("daemon: running (pid {pid})"),
-        None => println!("daemon: not running"),
-    }
-
-    match Config::load() {
-        Ok(cfg) => println!("profiles: {}", cfg.profiles.len()),
-        Err(e) => println!("config: error — {e}"),
-    }
-
-    match ipc::send(&Request::Status).await {
-        Ok(Response::Status { hard_mode: Some(h), .. }) => {
-            println!("hard mode: on ({} remaining)", humantime::format_duration(h.remaining));
-            if let Some(at) = h.panic_releases_at {
-                println!("panic releases at: {}", at.to_rfc3339());
-            }
+    let report = crate::doctor::run().await;
+    for c in &report.checks {
+        println!("{} [{}] {} — {}", c.status.icon(), c.status.label(), c.title, c.detail);
+        for extra in &c.extras {
+            println!("      {extra}");
         }
-        Ok(Response::Status { hard_mode: None, .. }) => println!("hard mode: off"),
-        _ => {}
+        if let Some(hint) = &c.hint {
+            println!("      hint: {hint}");
+        }
     }
-
+    let (ok, warn, fail) = report.summary();
+    println!();
+    println!(
+        "summary: {ok} ok · {warn} warn · {fail} fail (took {:.0?})",
+        report.duration
+    );
+    if report.has_failures() {
+        std::process::exit(1);
+    }
     Ok(())
 }

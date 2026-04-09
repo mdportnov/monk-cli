@@ -13,8 +13,8 @@ use tui_big_text::{BigText, PixelSize};
 use crate::{
     ipc::ModeSummary,
     tui::app::{
-        App, ConfirmState, EditorField, EditorState, HomeState, MenuItem, PickerState, Screen,
-        SettingsField, SettingsState, LOCALES,
+        App, ConfirmState, DoctorState, EditorField, EditorState, HomeState, MenuItem,
+        PickerState, Screen, SettingsField, SettingsState, LOCALES,
     },
 };
 
@@ -47,6 +47,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::ModeConfirm(confirm) => draw_confirm(f, app, confirm.as_ref()),
         Screen::ModeEditor(editor) => draw_editor(f, app, editor.as_ref()),
         Screen::Settings(st) => draw_settings(f, app, st.as_ref()),
+        Screen::Doctor(st) => draw_doctor(f, app, st.as_ref()),
     }
     if app.globals.help_open {
         draw_help_overlay(f, app);
@@ -115,6 +116,17 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  ←/→             cycle locale"),
             Line::from("  ctrl+s          save"),
             Line::from("  esc             cancel"),
+        ],
+        Screen::Doctor(_) => vec![
+            Line::from(Span::styled(
+                "doctor",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("  ↑/↓ · j/k    navigate checks"),
+            Line::from("  f            jump to first failure"),
+            Line::from("  r            rerun"),
+            Line::from("  esc · q      back to home"),
         ],
     };
     let width = 44.min(area.width.saturating_sub(4));
@@ -1399,6 +1411,133 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);
+}
+
+fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
+    use crate::doctor::Status;
+
+    let area = f.area();
+    let outer = Block::default()
+        .title(" doctor ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT));
+    let inner = outer.inner(area);
+    f.render_widget(outer, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(inner);
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(chunks[0]);
+
+    if st.report.is_none() && st.loading {
+        let p = Paragraph::new("running checks…")
+            .style(Style::default().fg(DIM))
+            .alignment(Alignment::Center);
+        f.render_widget(p, body[0]);
+    } else if st.report.is_none() {
+        let p = Paragraph::new("no report")
+            .style(Style::default().fg(DIM))
+            .alignment(Alignment::Center);
+        f.render_widget(p, body[0]);
+    } else if let Some(report) = &st.report {
+        let items: Vec<ListItem> = st
+            .order
+            .iter()
+            .filter_map(|&i| report.checks.get(i))
+            .map(|c| {
+                let color = match c.status {
+                    Status::Ok => Color::Rgb(120, 190, 120),
+                    Status::Warn => GLOW,
+                    Status::Fail => ALERT,
+                    Status::Info => ACCENT,
+                    Status::Skipped => DIM,
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!(" {} ", c.status.icon()), Style::default().fg(color)),
+                    Span::styled(c.title.clone(), Style::default().fg(TEXT)),
+                ]))
+            })
+            .collect();
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::RIGHT)
+                    .border_style(Style::default().fg(DIM)),
+            )
+            .highlight_style(Style::default().bg(Color::Rgb(40, 50, 65)).add_modifier(Modifier::BOLD))
+            .highlight_symbol("▶ ");
+        let mut state = ListState::default();
+        state.select(Some(st.selected));
+        f.render_stateful_widget(list, body[0], &mut state);
+
+        let mut lines: Vec<Line> = Vec::new();
+        if let Some(c) = st.current() {
+            let color = match c.status {
+                Status::Ok => Color::Rgb(120, 190, 120),
+                Status::Warn => GLOW,
+                Status::Fail => ALERT,
+                Status::Info => ACCENT,
+                Status::Skipped => DIM,
+            };
+            lines.push(Line::from(Span::styled(
+                c.title.clone(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(Span::styled(
+                format!("status: {}", c.status.label()),
+                Style::default().fg(color),
+            )));
+            lines.push(Line::from(""));
+            for line in c.detail.lines() {
+                lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
+            }
+            if !c.extras.is_empty() {
+                lines.push(Line::from(""));
+                for extra in &c.extras {
+                    lines.push(Line::from(Span::styled(
+                        extra.clone(),
+                        Style::default().fg(DIM),
+                    )));
+                }
+            }
+            if let Some(hint) = &c.hint {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("hint: {hint}"),
+                    Style::default().fg(GLOW),
+                )));
+            }
+        }
+        let detail = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::NONE));
+        let detail_area = Rect {
+            x: body[1].x + 1,
+            y: body[1].y,
+            width: body[1].width.saturating_sub(1),
+            height: body[1].height,
+        };
+        f.render_widget(detail, detail_area);
+    }
+
+    let footer = if let Some(report) = &st.report {
+        let (ok, warn, fail) = report.summary();
+        let tail = if st.loading { "   ·   rerunning…" } else { "" };
+        format!(
+            "{ok} ok · {warn} warn · {fail} fail   ·   ↑/↓ nav · f first fail · r rerun · esc back{tail}"
+        )
+    } else {
+        "running…".to_string()
+    };
+    let p = Paragraph::new(Span::styled(footer, Style::default().fg(DIM)))
+        .alignment(Alignment::Center);
+    f.render_widget(p, chunks[1]);
 }
 
 #[cfg(test)]

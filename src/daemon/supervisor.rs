@@ -50,6 +50,7 @@ type FiredWindow = (String, chrono::DateTime<chrono::Utc>);
 
 impl Supervisor {
     pub fn new(config: Config) -> Result<Self> {
+        blocker::cleanup_all_backends();
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             config_write: Arc::new(Mutex::new(())),

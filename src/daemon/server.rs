@@ -66,6 +66,7 @@ pub async fn run() -> Result<()> {
         }
     });
 
+    crate::blocker::dns_server::spawn(shutdown.clone());
     super::block_page::spawn(supervisor.clone(), shutdown.clone());
 
     tracing::info!("monkd listening");
