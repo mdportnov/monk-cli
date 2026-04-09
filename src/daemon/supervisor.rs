@@ -103,6 +103,37 @@ impl Supervisor {
         Ok(())
     }
 
+    pub fn get_general(&self) -> crate::config::General {
+        self.config.read().general.clone()
+    }
+
+    pub fn update_general(&self, general: crate::config::General) -> Result<()> {
+        let mut cfg = self.config.read().clone();
+        cfg.general = general;
+        cfg.validate()?;
+        cfg.save()?;
+        *self.config.write() = cfg;
+        Ok(())
+    }
+
+    pub fn reset_all(&self) -> Result<()> {
+        if self.store.load()?.is_some() {
+            return Err(Error::Config("cannot reset while a session is active".into()));
+        }
+        let cfg_path = crate::paths::config_file()?;
+        if cfg_path.exists() {
+            std::fs::remove_file(&cfg_path).ok();
+        }
+        let audit_path = crate::paths::data_dir()?.join(crate::audit::AUDIT_FILE);
+        if audit_path.exists() {
+            std::fs::remove_file(&audit_path).ok();
+        }
+        let fresh = crate::config::Config::default();
+        fresh.save()?;
+        *self.config.write() = fresh;
+        Ok(())
+    }
+
     pub fn delete_mode(&self, name: &str) -> Result<()> {
         let mut cfg = self.config.read().clone();
         if cfg.profiles.remove(name).is_none() {

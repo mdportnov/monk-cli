@@ -78,11 +78,14 @@ tui:
     panic_cancelled: "panic отменён"
     doctor_hint: "выполните `monk doctor` в терминале для полного отчёта"
     unexpected: "неожиданный ответ"
+    settings_saved: "настройки сохранены"
+    reset_done: "все данные стёрты — перезапустите для онбординга"
   menu:
     start: "Начать сессию"
     stop: "Остановить"
     panic: "Panic-выход"
     modes: "Режимы"
+    settings: "Настройки"
     doctor: "Диагностика"
     quit: "Выход"
   help:

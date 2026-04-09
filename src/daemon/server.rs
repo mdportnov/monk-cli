@@ -203,6 +203,15 @@ async fn handle(
             Ok(()) => Response::Ok,
             Err(e) => Response::Error { message: e.to_string() },
         },
+        Request::GetGeneral => Response::General(sup.get_general()),
+        Request::UpdateGeneral { general } => match sup.update_general(general) {
+            Ok(()) => Response::Ok,
+            Err(e) => Response::Error { message: e.to_string() },
+        },
+        Request::ResetAll => match sup.reset_all() {
+            Ok(()) => Response::Ok,
+            Err(e) => Response::Error { message: e.to_string() },
+        },
     };
 
     let payload = serde_json::to_vec(&resp)?;

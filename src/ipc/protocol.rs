@@ -22,6 +22,9 @@ pub enum Request {
     ModeStats { name: String },
     SaveMode { name: String, profile: crate::config::Profile },
     DeleteMode { name: String },
+    GetGeneral,
+    UpdateGeneral { general: crate::config::General },
+    ResetAll,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,5 +61,6 @@ pub enum Response {
     HardModeActive(Box<HardModeInfo>),
     Modes(Vec<ModeSummary>),
     ModeStatsData(ModeStats),
+    General(crate::config::General),
     Error { message: String },
 }

@@ -10,9 +10,9 @@ expression: "render(&app, 90, 28)"
 │    Stop session                                ││                   *     *            │
 │    Panic escape                                ││                      ___             │
 │    Modes             ╭ help ────────────────────────────────────╮     /   \            │
-│    Doctor            │home                                      │   | -.- |            │
-│    Quit              │                                          │     \___/            │
-│                      │  ↑/↓ · j/k    navigate menu              │   __|_|__            │
+│    Settings          │home                                      │   | -.- |            │
+│    Doctor            │                                          │     \___/            │
+│    Quit              │  ↑/↓ · j/k    navigate menu              │   __|_|__            │
 │                      │  enter        activate item              │  /#######\           │
 │                      │  s · x · p    start · stop · panic       │/## \_/ ##\           │
 │                      │  m            open modes picker          │###########|          │

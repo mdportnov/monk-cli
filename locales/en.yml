@@ -78,11 +78,14 @@ tui:
     panic_cancelled: "panic cancelled"
     doctor_hint: "run `monk doctor` in a shell for the full report"
     unexpected: "unexpected response"
+    settings_saved: "settings saved"
+    reset_done: "all data wiped — restart to re-run onboarding"
   menu:
     start: "Start session"
     stop: "Stop session"
     panic: "Panic escape"
     modes: "Modes"
+    settings: "Settings"
     doctor: "Doctor"
     quit: "Quit"
   help:

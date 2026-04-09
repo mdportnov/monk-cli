@@ -24,16 +24,18 @@ pub enum MenuItem {
     Stop,
     Panic,
     Profiles,
+    Settings,
     Doctor,
     Quit,
 }
 
 impl MenuItem {
-    pub const ALL: [MenuItem; 6] = [
+    pub const ALL: [MenuItem; 7] = [
         MenuItem::Start,
         MenuItem::Stop,
         MenuItem::Panic,
         MenuItem::Profiles,
+        MenuItem::Settings,
         MenuItem::Doctor,
         MenuItem::Quit,
     ];
@@ -44,6 +46,7 @@ impl MenuItem {
             MenuItem::Stop => "tui.menu.stop",
             MenuItem::Panic => "tui.menu.panic",
             MenuItem::Profiles => "tui.menu.modes",
+            MenuItem::Settings => "tui.menu.settings",
             MenuItem::Doctor => "tui.menu.doctor",
             MenuItem::Quit => "tui.menu.quit",
         };
@@ -56,6 +59,7 @@ impl MenuItem {
             MenuItem::Stop => "end the active session (soft mode only)",
             MenuItem::Panic => "request a delayed hard-mode escape",
             MenuItem::Profiles => "list configured modes",
+            MenuItem::Settings => "general settings and data reset",
             MenuItem::Doctor => "check environment and daemon health",
             MenuItem::Quit => "leave the TUI",
         }
@@ -527,12 +531,157 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsField {
+    DefaultProfile,
+    DefaultDuration,
+    HardMode,
+    Autostart,
+    Locale,
+    PanicDelay,
+    TamperPenalty,
+    Reset,
+}
+
+impl SettingsField {
+    pub const ORDER: [SettingsField; 8] = [
+        SettingsField::DefaultProfile,
+        SettingsField::DefaultDuration,
+        SettingsField::HardMode,
+        SettingsField::Autostart,
+        SettingsField::Locale,
+        SettingsField::PanicDelay,
+        SettingsField::TamperPenalty,
+        SettingsField::Reset,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsField::DefaultProfile => "default profile",
+            SettingsField::DefaultDuration => "default duration",
+            SettingsField::HardMode => "hard mode by default",
+            SettingsField::Autostart => "autostart at login",
+            SettingsField::Locale => "locale",
+            SettingsField::PanicDelay => "panic delay",
+            SettingsField::TamperPenalty => "tamper penalty",
+            SettingsField::Reset => "reset all data",
+        }
+    }
+
+    pub fn help(self) -> &'static str {
+        match self {
+            SettingsField::DefaultProfile => "mode used when you press Start",
+            SettingsField::DefaultDuration => "e.g. 25m, 50m, 1h30m",
+            SettingsField::HardMode => "space to toggle",
+            SettingsField::Autostart => "space to toggle",
+            SettingsField::Locale => "← → en / ru",
+            SettingsField::PanicDelay => "delay before panic releases hard-mode",
+            SettingsField::TamperPenalty => "time added to session on tamper",
+            SettingsField::Reset => "enter to wipe config and audit log",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SettingsState {
+    pub original: crate::config::General,
+    pub default_profile: TextInput,
+    pub default_duration: TextInput,
+    pub hard_mode: bool,
+    pub autostart: bool,
+    pub locale_idx: usize,
+    pub panic_delay: TextInput,
+    pub tamper_penalty: TextInput,
+    pub focus: SettingsField,
+    pub error: Option<String>,
+    pub confirm_reset: bool,
+}
+
+pub const LOCALES: &[&str] = &["en", "ru"];
+
+impl SettingsState {
+    pub fn from_general(g: crate::config::General) -> Self {
+        let locale_idx = g
+            .locale
+            .as_deref()
+            .and_then(|l| LOCALES.iter().position(|x| *x == l))
+            .unwrap_or(0);
+        let mut s = Self {
+            default_profile: TextInput::new(g.default_profile.clone()),
+            default_duration: TextInput::new(humantime::format_duration(g.default_duration).to_string()),
+            hard_mode: g.hard_mode,
+            autostart: g.autostart,
+            locale_idx,
+            panic_delay: TextInput::new(humantime::format_duration(g.panic_delay).to_string()),
+            tamper_penalty: TextInput::new(humantime::format_duration(g.tamper_penalty).to_string()),
+            focus: SettingsField::DefaultProfile,
+            error: None,
+            confirm_reset: false,
+            original: g,
+        };
+        s.sync_focus();
+        s
+    }
+
+    pub fn input_mut(&mut self, f: SettingsField) -> Option<&mut TextInput> {
+        match f {
+            SettingsField::DefaultProfile => Some(&mut self.default_profile),
+            SettingsField::DefaultDuration => Some(&mut self.default_duration),
+            SettingsField::PanicDelay => Some(&mut self.panic_delay),
+            SettingsField::TamperPenalty => Some(&mut self.tamper_penalty),
+            _ => None,
+        }
+    }
+
+    pub fn next_field(&mut self) {
+        let idx = SettingsField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
+        self.focus = SettingsField::ORDER[(idx + 1) % SettingsField::ORDER.len()];
+        self.sync_focus();
+    }
+
+    pub fn prev_field(&mut self) {
+        let idx = SettingsField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
+        self.focus = SettingsField::ORDER
+            [(idx + SettingsField::ORDER.len() - 1) % SettingsField::ORDER.len()];
+        self.sync_focus();
+    }
+
+    fn sync_focus(&mut self) {
+        let focus = self.focus;
+        for f in SettingsField::ORDER {
+            let is = f == focus;
+            if let Some(inp) = self.input_mut(f) {
+                inp.focused = is;
+            }
+        }
+    }
+
+    pub fn build(&self) -> std::result::Result<crate::config::General, String> {
+        let mut g = self.original.clone();
+        g.default_profile = self.default_profile.value.trim().to_string();
+        if g.default_profile.is_empty() {
+            return Err("default profile is required".into());
+        }
+        g.default_duration = humantime::parse_duration(self.default_duration.value.trim())
+            .map_err(|e| format!("default duration: {e}"))?;
+        g.panic_delay = humantime::parse_duration(self.panic_delay.value.trim())
+            .map_err(|e| format!("panic delay: {e}"))?;
+        g.tamper_penalty = humantime::parse_duration(self.tamper_penalty.value.trim())
+            .map_err(|e| format!("tamper penalty: {e}"))?;
+        g.hard_mode = self.hard_mode;
+        g.autostart = self.autostart;
+        g.locale = Some(LOCALES[self.locale_idx].to_string());
+        Ok(g)
+    }
+}
+
 #[derive(Debug)]
 pub enum Screen {
     Home(HomeState),
     ModePicker(PickerState),
     ModeConfirm(Box<ConfirmState>),
     ModeEditor(Box<EditorState>),
+    Settings(Box<SettingsState>),
 }
 
 impl Default for Screen {
@@ -684,7 +833,7 @@ impl App {
             return;
         }
         if matches!(key.code, KeyCode::Char('?'))
-            && !matches!(self.screen, Screen::ModeEditor(_))
+            && !matches!(self.screen, Screen::ModeEditor(_) | Screen::Settings(_))
         {
             self.globals.help_open = true;
             return;
@@ -694,6 +843,7 @@ impl App {
             Screen::ModePicker(_) => self.handle_picker_key(key).await,
             Screen::ModeConfirm(_) => self.handle_confirm_key(key).await,
             Screen::ModeEditor(_) => self.handle_editor_key(key).await,
+            Screen::Settings(_) => self.handle_settings_key(key).await,
         }
     }
 
@@ -957,6 +1107,144 @@ impl App {
         }
     }
 
+    async fn open_settings(&mut self) {
+        match ipc::send(&Request::GetGeneral).await {
+            Ok(Response::General(g)) => {
+                self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(g))));
+            }
+            Ok(Response::Error { message }) => {
+                self.globals.set_flash(message, FlashLevel::Error);
+            }
+            Ok(_) => {
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.unexpected").to_string(),
+                    FlashLevel::Error,
+                );
+            }
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Error),
+        }
+    }
+
+    async fn handle_settings_key(&mut self, key: KeyEvent) {
+        let Screen::Settings(st) = &mut self.screen else { return };
+        if st.confirm_reset {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    st.confirm_reset = false;
+                    self.reset_all().await;
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    st.confirm_reset = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
+            self.save_settings().await;
+            return;
+        }
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.set_screen(Screen::Home(HomeState::default()));
+            }
+            KeyCode::Tab | KeyCode::Down => st.next_field(),
+            KeyCode::BackTab | KeyCode::Up => st.prev_field(),
+            _ => {
+                let focus = st.focus;
+                match focus {
+                    SettingsField::HardMode => {
+                        if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
+                            st.hard_mode = !st.hard_mode;
+                        }
+                    }
+                    SettingsField::Autostart => {
+                        if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
+                            st.autostart = !st.autostart;
+                        }
+                    }
+                    SettingsField::Locale => {
+                        let n = LOCALES.len();
+                        match key.code {
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                st.locale_idx = (st.locale_idx + n - 1) % n;
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                st.locale_idx = (st.locale_idx + 1) % n;
+                            }
+                            _ => {}
+                        }
+                    }
+                    SettingsField::Reset => {
+                        if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
+                            st.confirm_reset = true;
+                        }
+                    }
+                    _ => {
+                        if let Some(input) = st.input_mut(focus) {
+                            input.handle(key);
+                        }
+                    }
+                }
+                st.error = None;
+            }
+        }
+    }
+
+    async fn save_settings(&mut self) {
+        let general = {
+            let Screen::Settings(st) = &mut self.screen else { return };
+            match st.build() {
+                Ok(g) => g,
+                Err(e) => {
+                    st.error = Some(e);
+                    return;
+                }
+            }
+        };
+        let new_locale = general.locale.clone();
+        match ipc::send(&Request::UpdateGeneral { general }).await {
+            Ok(Response::Ok) => {
+                if let Some(l) = new_locale {
+                    crate::i18n::set(&l);
+                }
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.settings_saved").to_string(),
+                    FlashLevel::Success,
+                );
+                self.set_screen(Screen::Home(HomeState::default()));
+            }
+            Ok(Response::Error { message }) => {
+                if let Screen::Settings(st) = &mut self.screen {
+                    st.error = Some(message);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if let Screen::Settings(st) = &mut self.screen {
+                    st.error = Some(e.to_string());
+                }
+            }
+        }
+    }
+
+    async fn reset_all(&mut self) {
+        match ipc::send(&Request::ResetAll).await {
+            Ok(Response::Ok) => {
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.reset_done").to_string(),
+                    FlashLevel::Warn,
+                );
+                self.set_screen(Screen::Home(HomeState::default()));
+            }
+            Ok(Response::Error { message }) => {
+                self.globals.set_flash(message, FlashLevel::Error);
+            }
+            Ok(_) => {}
+            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Error),
+        }
+    }
+
     async fn open_picker(&mut self) {
         self.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
         self.refresh_picker().await;
@@ -987,6 +1275,7 @@ impl App {
             MenuItem::Stop => self.do_stop().await,
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => self.open_picker().await,
+            MenuItem::Settings => self.open_settings().await,
             MenuItem::Doctor => {
                 self.globals.set_flash(crate::i18n::t!("tui.flash.doctor_hint").to_string(), FlashLevel::Info);
             }

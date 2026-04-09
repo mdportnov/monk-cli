@@ -12,7 +12,10 @@ use tui_big_text::{BigText, PixelSize};
 
 use crate::{
     ipc::ModeSummary,
-    tui::app::{App, ConfirmState, EditorField, EditorState, HomeState, MenuItem, PickerState, Screen},
+    tui::app::{
+        App, ConfirmState, EditorField, EditorState, HomeState, MenuItem, PickerState, Screen,
+        SettingsField, SettingsState, LOCALES,
+    },
 };
 
 const ACCENT: Color = Color::Rgb(140, 180, 220);
@@ -43,6 +46,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::ModePicker(picker) => draw_picker(f, app, picker),
         Screen::ModeConfirm(confirm) => draw_confirm(f, app, confirm.as_ref()),
         Screen::ModeEditor(editor) => draw_editor(f, app, editor.as_ref()),
+        Screen::Settings(st) => draw_settings(f, app, st.as_ref()),
     }
     if app.globals.help_open {
         draw_help_overlay(f, app);
@@ -86,6 +90,15 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  tab/shift-tab   next / prev field"),
             Line::from("  ctrl+s          save"),
             Line::from("  space           toggle app/group"),
+            Line::from("  esc             cancel"),
+        ],
+        Screen::Settings(_) => vec![
+            Line::from(Span::styled("settings", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  tab/shift-tab   next / prev field"),
+            Line::from("  space           toggle on/off"),
+            Line::from("  ←/→             cycle locale"),
+            Line::from("  ctrl+s          save"),
             Line::from("  esc             cancel"),
         ],
     };
@@ -1020,6 +1033,136 @@ fn monk_frames() -> [&'static str; 4] {
        ~~~~~~~
 "#,
     ]
+}
+
+fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
+    let area = f.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+        .split(area);
+
+    draw_header(f, outer[0], app);
+
+    let block = picker_block(" settings ");
+    let inner = block.inner(outer[1]);
+    f.render_widget(block, outer[1]);
+
+    let fields = SettingsField::ORDER;
+    let mut constraints: Vec<Constraint> =
+        fields.iter().map(|_| Constraint::Length(2)).collect();
+    constraints.push(Constraint::Length(3));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    for (i, field) in fields.iter().enumerate() {
+        draw_settings_field(f, rows[i], st, *field);
+    }
+
+    let status_row = rows[fields.len()];
+    let mut lines: Vec<Line> = Vec::new();
+    if st.confirm_reset {
+        lines.push(Line::from(Span::styled(
+            "wipe config and audit log?   y  yes   n  cancel",
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+        )));
+    } else if let Some(err) = &st.error {
+        lines.push(Line::from(Span::styled(
+            err.clone(),
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            st.focus.help(),
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), status_row);
+
+    let help = "tab/shift-tab fields   ctrl+s save   esc cancel";
+    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
+    f.render_widget(footer, outer[2]);
+}
+
+fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: SettingsField) {
+    let focused = st.focus == field;
+    let label_style = if field == SettingsField::Reset {
+        if focused {
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(ALERT)
+        }
+    } else if focused {
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(DIM)
+    };
+    let prefix = if focused { "▶ " } else { "  " };
+    let label = format!("{prefix}{:<22}", field.label());
+    let rows = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(label.len() as u16 + 1), Constraint::Min(5)])
+        .split(area);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(label, label_style))),
+        rows[0],
+    );
+
+    let value_style = if focused {
+        Style::default().fg(TEXT)
+    } else {
+        Style::default().fg(DIM)
+    };
+
+    match field {
+        SettingsField::DefaultProfile => {
+            st.default_profile.render(rows[1], f.buffer_mut(), value_style);
+        }
+        SettingsField::DefaultDuration => {
+            st.default_duration.render(rows[1], f.buffer_mut(), value_style);
+        }
+        SettingsField::PanicDelay => {
+            st.panic_delay.render(rows[1], f.buffer_mut(), value_style);
+        }
+        SettingsField::TamperPenalty => {
+            st.tamper_penalty.render(rows[1], f.buffer_mut(), value_style);
+        }
+        SettingsField::HardMode => {
+            let text = if st.hard_mode { "[x] on" } else { "[ ] off" };
+            f.render_widget(Paragraph::new(Span::styled(text, value_style)), rows[1]);
+        }
+        SettingsField::Autostart => {
+            let text = if st.autostart { "[x] on" } else { "[ ] off" };
+            f.render_widget(Paragraph::new(Span::styled(text, value_style)), rows[1]);
+        }
+        SettingsField::Locale => {
+            let mut spans: Vec<Span> = Vec::new();
+            for (i, l) in LOCALES.iter().enumerate() {
+                let mut style = value_style;
+                if i == st.locale_idx {
+                    style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
+                }
+                spans.push(Span::styled(format!(" {l} "), style));
+                spans.push(Span::raw(" "));
+            }
+            f.render_widget(Paragraph::new(Line::from(spans)), rows[1]);
+        }
+        SettingsField::Reset => {
+            let style = if focused {
+                Style::default().fg(ALERT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(ALERT)
+            };
+            f.render_widget(
+                Paragraph::new(Span::styled("⟲ wipe all data", style)),
+                rows[1],
+            );
+        }
+    }
 }
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
