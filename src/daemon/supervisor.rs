@@ -23,25 +23,42 @@ use crate::{
 #[derive(Debug)]
 pub struct Supervisor {
     config: Arc<RwLock<Config>>,
+    config_write: Arc<Mutex<()>>,
     hosts: Arc<Mutex<Box<dyn Blocker>>>,
     procs: Arc<Mutex<ProcessGuard>>,
     store: Arc<LockStore>,
     audit: Arc<AuditLog>,
     last_tick_ms: Arc<AtomicU64>,
     active_profile: Arc<RwLock<Option<String>>>,
+    last_tamper_at: Arc<Mutex<Option<std::time::Instant>>>,
 }
 
 impl Supervisor {
     pub fn new(config: Config) -> Result<Self> {
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
+            config_write: Arc::new(Mutex::new(())),
             hosts: Arc::new(Mutex::new(blocker::select_site_blocker())),
             procs: Arc::new(Mutex::new(ProcessGuard::new())),
             store: Arc::new(LockStore::new()?),
             audit: Arc::new(AuditLog::new()?),
             last_tick_ms: Arc::new(AtomicU64::new(clock::monotonic_ms() as u64)),
             active_profile: Arc::new(RwLock::new(None)),
+            last_tamper_at: Arc::new(Mutex::new(None)),
         })
+    }
+
+    fn with_write<F>(&self, mutate: F) -> Result<()>
+    where
+        F: FnOnce(&mut Config) -> Result<()>,
+    {
+        let _guard = self.config_write.lock();
+        let mut next = self.config.read().clone();
+        mutate(&mut next)?;
+        next.validate()?;
+        next.save()?;
+        *self.config.write() = next;
+        Ok(())
     }
 
     pub fn config(&self) -> Config {
@@ -49,13 +66,11 @@ impl Supervisor {
     }
 
     pub fn get_config(&self) -> Config {
-        if let Ok(fresh) = Config::load() {
-            *self.config.write() = fresh;
-        }
         self.config.read().clone()
     }
 
     pub fn save_config(&self, cfg: Config) -> Result<()> {
+        let _guard = self.config_write.lock();
         cfg.validate()?;
         cfg.save()?;
         *self.config.write() = cfg;
@@ -72,9 +87,6 @@ impl Supervisor {
     }
 
     pub fn list_modes(&self) -> Vec<crate::ipc::ModeSummary> {
-        if let Ok(fresh) = Config::load() {
-            *self.config.write() = fresh;
-        }
         let cfg = self.config.read().clone();
         let events = self.audit.read_all().unwrap_or_default();
         let now = chrono::Utc::now();
@@ -95,9 +107,6 @@ impl Supervisor {
     }
 
     pub fn mode_stats(&self, name: &str) -> Result<crate::audit::stats::ModeStats> {
-        if let Ok(fresh) = Config::load() {
-            *self.config.write() = fresh;
-        }
         let cfg = self.config.read().clone();
         let profile =
             cfg.profile(name).ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?;
@@ -109,31 +118,25 @@ impl Supervisor {
         if name.is_empty() {
             return Err(Error::Config("mode name cannot be empty".into()));
         }
-        let mut cfg = self.config.read().clone();
-        cfg.profiles.insert(name, profile);
-        cfg.validate()?;
-        cfg.save()?;
-        *self.config.write() = cfg;
-        Ok(())
+        self.with_write(|cfg| {
+            cfg.profiles.insert(name, profile);
+            Ok(())
+        })
     }
 
     pub fn get_general(&self) -> crate::config::General {
-        if let Ok(fresh) = Config::load() {
-            *self.config.write() = fresh;
-        }
         self.config.read().general.clone()
     }
 
     pub fn update_general(&self, general: crate::config::General) -> Result<()> {
-        let mut cfg = self.config.read().clone();
-        cfg.general = general;
-        cfg.validate()?;
-        cfg.save()?;
-        *self.config.write() = cfg;
-        Ok(())
+        self.with_write(|cfg| {
+            cfg.general = general;
+            Ok(())
+        })
     }
 
     pub fn reset_all(&self) -> Result<()> {
+        let _guard = self.config_write.lock();
         if self.store.load()?.is_some() {
             return Err(Error::Config("cannot reset while a session is active".into()));
         }
@@ -161,16 +164,16 @@ impl Supervisor {
     }
 
     pub fn delete_mode(&self, name: &str) -> Result<()> {
-        let mut cfg = self.config.read().clone();
-        if cfg.profiles.remove(name).is_none() {
-            return Err(Error::Config(format!("mode `{name}` not found")));
-        }
-        if cfg.general.default_profile == name {
-            cfg.general.default_profile = cfg.profiles.keys().next().cloned().unwrap_or_default();
-        }
-        cfg.save()?;
-        *self.config.write() = cfg;
-        Ok(())
+        self.with_write(|cfg| {
+            if cfg.profiles.remove(name).is_none() {
+                return Err(Error::Config(format!("mode `{name}` not found")));
+            }
+            if cfg.general.default_profile == name {
+                cfg.general.default_profile =
+                    cfg.profiles.keys().next().cloned().unwrap_or_default();
+            }
+            Ok(())
+        })
     }
 
     pub fn hard_info(&self) -> Option<HardModeInfo> {
@@ -202,9 +205,6 @@ impl Supervisor {
             }
         }
 
-        if let Ok(fresh) = Config::load() {
-            *self.config.write() = fresh;
-        }
         let cfg = self.config.read().clone();
         let profile_def = cfg
             .profile(&profile)
@@ -461,6 +461,15 @@ impl Supervisor {
     }
 
     fn handle_tamper(&self, lock: &mut SessionLock) {
+        let now = std::time::Instant::now();
+        let mut last = self.last_tamper_at.lock();
+        if let Some(prev) = *last {
+            if now.duration_since(prev) < Duration::from_secs(60) {
+                return;
+            }
+        }
+        *last = Some(now);
+        drop(last);
         let penalty = self.config.read().general.tamper_penalty;
         lock.apply_penalty(penalty);
         self.audit.append(
