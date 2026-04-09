@@ -147,9 +147,7 @@ mod humantime_serde_opt {
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
         let raw = Option::<String>::deserialize(d)?;
         match raw {
-            Some(s) => humantime::parse_duration(&s)
-                .map(Some)
-                .map_err(serde::de::Error::custom),
+            Some(s) => humantime::parse_duration(&s).map(Some).map_err(serde::de::Error::custom),
             None => Ok(None),
         }
     }

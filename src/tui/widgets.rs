@@ -91,11 +91,7 @@ impl TextInput {
     }
 
     fn char_to_byte(&self, idx: usize) -> usize {
-        self.value
-            .char_indices()
-            .nth(idx)
-            .map(|(b, _)| b)
-            .unwrap_or(self.value.len())
+        self.value.char_indices().nth(idx).map(|(b, _)| b).unwrap_or(self.value.len())
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, style: Style) {
@@ -103,10 +99,7 @@ impl TextInput {
         let chars: Vec<char> = self.value.chars().collect();
         for (i, ch) in chars.iter().enumerate() {
             if self.focused && i == self.cursor {
-                spans.push(Span::styled(
-                    ch.to_string(),
-                    style.add_modifier(Modifier::REVERSED),
-                ));
+                spans.push(Span::styled(ch.to_string(), style.add_modifier(Modifier::REVERSED)));
             } else {
                 spans.push(Span::styled(ch.to_string(), style));
             }

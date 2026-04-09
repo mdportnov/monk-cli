@@ -10,11 +10,13 @@ use tokio::{
     sync::Notify,
 };
 
+#[cfg(not(windows))]
+use crate::paths;
 use crate::{
     config::Config,
     daemon::{PidFile, Supervisor},
     ipc::{Request, Response},
-    paths, Error, Result,
+    Error, Result,
 };
 
 pub async fn run() -> Result<()> {

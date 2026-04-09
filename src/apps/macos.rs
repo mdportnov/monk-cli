@@ -32,7 +32,9 @@ fn walk_bundles(dir: &Path, depth: usize, out: &mut Vec<InstalledApp>) {
             if let Some(app) = parse_bundle(&path) {
                 out.push(app);
             }
-        } else if path.is_dir() && !path.file_name().and_then(|n| n.to_str()).unwrap_or("").starts_with('.') {
+        } else if path.is_dir()
+            && !path.file_name().and_then(|n| n.to_str()).unwrap_or("").starts_with('.')
+        {
             walk_bundles(&path, depth + 1, out);
         }
     }

@@ -79,16 +79,10 @@ impl Supervisor {
 
     pub fn mode_stats(&self, name: &str) -> Result<crate::audit::stats::ModeStats> {
         let cfg = self.config.read().clone();
-        let profile = cfg
-            .profile(name)
-            .ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?;
+        let profile =
+            cfg.profile(name).ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?;
         let events = self.audit.read_all().unwrap_or_default();
-        Ok(crate::audit::stats::mode_stats(
-            &events,
-            name,
-            &profile.limits,
-            chrono::Utc::now(),
-        ))
+        Ok(crate::audit::stats::mode_stats(&events, name, &profile.limits, chrono::Utc::now()))
     }
 
     pub fn save_mode(&self, name: String, profile: Profile) -> Result<()> {
@@ -280,11 +274,7 @@ impl Supervisor {
                     if let Err(e) = hosts.apply(&set) {
                         tracing::warn!(?e, "hosts reapply failed");
                     } else {
-                        self.audit.append(
-                            AuditKind::HostsRepaired,
-                            Some(lock.id),
-                            "hosts ensured",
-                        );
+                        self.audit.append(AuditKind::HostsRepaired, Some(lock.id), "hosts ensured");
                     }
                     drop(hosts);
                     let _ = self.procs.lock().kill_matching(&set.apps);
@@ -378,12 +368,8 @@ fn enforce_limits(
 }
 
 fn build_block_set(profile: &Profile) -> Result<BlockSet> {
-    let mut hosts: std::collections::BTreeSet<String> = profile
-        .sites
-        .iter()
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut hosts: std::collections::BTreeSet<String> =
+        profile.sites.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect();
     for host in sites::expand_groups(&profile.site_groups)? {
         hosts.insert(host);
     }

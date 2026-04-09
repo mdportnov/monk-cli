@@ -60,8 +60,8 @@ pub fn expand_groups(qualified_ids: &[String]) -> Result<Vec<String>> {
 }
 
 fn load_namespace(namespace: &str, raw: &str) -> Result<Vec<SiteGroup>> {
-    let parsed: RawRegistry =
-        toml::from_str(raw).map_err(|e| Error::Config(format!("site registry `{namespace}`: {e}")))?;
+    let parsed: RawRegistry = toml::from_str(raw)
+        .map_err(|e| Error::Config(format!("site registry `{namespace}`: {e}")))?;
     let mut groups = Vec::new();
     for (id, cat) in parsed.categories {
         let mut hosts: BTreeSet<String> = BTreeSet::new();

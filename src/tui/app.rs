@@ -173,10 +173,7 @@ impl ConfirmState {
     }
 
     pub fn dec(&mut self) {
-        self.requested = self
-            .requested
-            .checked_sub(Self::STEP)
-            .unwrap_or(Self::MIN_BOUND);
+        self.requested = self.requested.checked_sub(Self::STEP).unwrap_or(Self::MIN_BOUND);
         self.reclamp();
     }
 
@@ -476,16 +473,11 @@ fn parse_opt_humantime(input: &TextInput) -> std::result::Result<Option<Duration
     if raw.is_empty() {
         return Ok(None);
     }
-    humantime::parse_duration(raw)
-        .map(Some)
-        .map_err(|e| format!("invalid duration: {e}"))
+    humantime::parse_duration(raw).map(Some).map_err(|e| format!("invalid duration: {e}"))
 }
 
 fn split_cmds(raw: &str) -> Vec<String> {
-    raw.split("&&")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    raw.split("&&").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
 fn profile_eq(a: &Profile, b: &Profile) -> bool {
@@ -508,7 +500,10 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
             cache
                 .apps
                 .into_iter()
-                .map(|a| MultiSelectItem { id: a.id.clone(), label: format!("{} [{}]", a.label, a.id) })
+                .map(|a| MultiSelectItem {
+                    id: a.id.clone(),
+                    label: format!("{} [{}]", a.label, a.id),
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -598,19 +593,20 @@ pub const LOCALES: &[&str] = &["en", "ru"];
 
 impl SettingsState {
     pub fn from_general(g: crate::config::General) -> Self {
-        let locale_idx = g
-            .locale
-            .as_deref()
-            .and_then(|l| LOCALES.iter().position(|x| *x == l))
-            .unwrap_or(0);
+        let locale_idx =
+            g.locale.as_deref().and_then(|l| LOCALES.iter().position(|x| *x == l)).unwrap_or(0);
         let mut s = Self {
             default_profile: TextInput::new(g.default_profile.clone()),
-            default_duration: TextInput::new(humantime::format_duration(g.default_duration).to_string()),
+            default_duration: TextInput::new(
+                humantime::format_duration(g.default_duration).to_string(),
+            ),
             hard_mode: g.hard_mode,
             autostart: g.autostart,
             locale_idx,
             panic_delay: TextInput::new(humantime::format_duration(g.panic_delay).to_string()),
-            tamper_penalty: TextInput::new(humantime::format_duration(g.tamper_penalty).to_string()),
+            tamper_penalty: TextInput::new(
+                humantime::format_duration(g.tamper_penalty).to_string(),
+            ),
             focus: SettingsField::DefaultProfile,
             error: None,
             confirm_reset: false,
@@ -776,11 +772,8 @@ impl App {
 
     pub fn trigger_clamp_effect(&mut self) {
         use tachyonfx::{fx, Interpolation};
-        self.effect = Some(fx::hsl_shift(
-            Some([0.0, -40.0, 0.0]),
-            None,
-            (220, Interpolation::SineInOut),
-        ));
+        self.effect =
+            Some(fx::hsl_shift(Some([0.0, -40.0, 0.0]), None, (220, Interpolation::SineInOut)));
         self.last_effect_tick = Some(std::time::Instant::now());
     }
 
@@ -907,7 +900,10 @@ impl App {
             }
         };
         let profile = cfg.profiles.get(&mode.name).cloned().unwrap_or_default();
-        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(mode.name.clone(), profile))));
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(
+            mode.name.clone(),
+            profile,
+        ))));
     }
 
     async fn delete_current_mode(&mut self) {
@@ -920,7 +916,10 @@ impl App {
         };
         match ipc::send(&Request::DeleteMode { name: name.clone() }).await {
             Ok(Response::Ok) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.deleted", profile = name).to_string(), FlashLevel::Success);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.deleted", profile = name).to_string(),
+                    FlashLevel::Success,
+                );
                 self.refresh_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -1010,7 +1009,10 @@ impl App {
         };
         match ipc::send(&Request::SaveMode { name: name.clone(), profile }).await {
             Ok(Response::Ok) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.saved", profile = name).to_string(), FlashLevel::Success);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.saved", profile = name).to_string(),
+                    FlashLevel::Success,
+                );
                 self.open_picker().await;
             }
             Ok(Response::Error { message }) => {
@@ -1036,7 +1038,11 @@ impl App {
             .map(|c| c.general.default_duration)
             .unwrap_or(Duration::from_secs(25 * 60));
         let hard = cfg.as_ref().map(|c| c.general.hard_mode).unwrap_or(false);
-        self.set_screen(Screen::ModeConfirm(Box::new(ConfirmState::from_mode(mode, default_dur, hard))));
+        self.set_screen(Screen::ModeConfirm(Box::new(ConfirmState::from_mode(
+            mode,
+            default_dur,
+            hard,
+        ))));
     }
 
     async fn handle_confirm_key(&mut self, key: KeyEvent) {
@@ -1083,7 +1089,10 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(),
+                    FlashLevel::Success,
+                );
                 self.set_screen(Screen::Home(HomeState::default()));
             }
             Ok(Response::Error { message }) => {
@@ -1274,7 +1283,10 @@ impl App {
             MenuItem::Profiles => self.open_picker().await,
             MenuItem::Settings => self.open_settings().await,
             MenuItem::Doctor => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.doctor_hint").to_string(), FlashLevel::Info);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.doctor_hint").to_string(),
+                    FlashLevel::Info,
+                );
             }
             MenuItem::Quit => self.should_quit = true,
         }
@@ -1282,13 +1294,19 @@ impl App {
 
     async fn quick_start(&mut self, idx: usize) {
         let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
-            self.globals.set_flash(crate::i18n::t!("tui.flash.no_slot", slot = (idx + 1)).to_string(), FlashLevel::Error);
+            self.globals.set_flash(
+                crate::i18n::t!("tui.flash.no_slot", slot = (idx + 1)).to_string(),
+                FlashLevel::Error,
+            );
             return;
         };
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.config_error", message = e).to_string(), FlashLevel::Error);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.config_error", message = e).to_string(),
+                    FlashLevel::Error,
+                );
                 return;
             }
         };
@@ -1311,10 +1329,15 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(),
+                    FlashLevel::Success,
+                );
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
+            Ok(_) => self
+                .globals
+                .set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1323,7 +1346,10 @@ impl App {
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.config_error", message = e).to_string(), FlashLevel::Error);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.config_error", message = e).to_string(),
+                    FlashLevel::Error,
+                );
                 return;
             }
         };
@@ -1335,24 +1361,34 @@ impl App {
         };
         match ipc::send(&req).await {
             Ok(Response::Session(s)) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(), FlashLevel::Success);
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(),
+                    FlashLevel::Success,
+                );
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
+            Ok(_) => self
+                .globals
+                .set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
 
     async fn do_stop(&mut self) {
         match ipc::send(&Request::Stop { id: None }).await {
-            Ok(Response::Session(s)) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.stopped", profile = s.profile).to_string(), FlashLevel::Success)
-            }
-            Ok(Response::HardModeActive(_)) => {
-                self.globals.set_flash(crate::i18n::t!("tui.flash.hard_stop_denied").to_string(), FlashLevel::Error)
-            }
+            Ok(Response::Session(s)) => self.globals.set_flash(
+                crate::i18n::t!("tui.flash.stopped", profile = s.profile).to_string(),
+                FlashLevel::Success,
+            ),
+            Ok(Response::HardModeActive(_)) => self.globals.set_flash(
+                crate::i18n::t!("tui.flash.hard_stop_denied").to_string(),
+                FlashLevel::Error,
+            ),
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.nothing_to_stop").to_string(), FlashLevel::Warn),
+            Ok(_) => self.globals.set_flash(
+                crate::i18n::t!("tui.flash.nothing_to_stop").to_string(),
+                FlashLevel::Warn,
+            ),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1361,13 +1397,17 @@ impl App {
         match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
-                    Some(at) => crate::i18n::t!("tui.flash.panic_release_at", at = at.to_rfc3339()).to_string(),
+                    Some(at) => crate::i18n::t!("tui.flash.panic_release_at", at = at.to_rfc3339())
+                        .to_string(),
                     None => crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
                 };
                 self.globals.set_flash(msg, FlashLevel::Success);
             }
             Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self.globals.set_flash(crate::i18n::t!("tui.flash.no_hard_session").to_string(), FlashLevel::Warn),
+            Ok(_) => self.globals.set_flash(
+                crate::i18n::t!("tui.flash.no_hard_session").to_string(),
+                FlashLevel::Warn,
+            ),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
     }
@@ -1424,10 +1464,7 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         }
         app.globals.frame = now.duration_since(start).as_millis() as u64 / 200;
         app.globals.tick_flash();
-        let dt = app
-            .last_effect_tick
-            .map(|t| now.duration_since(t))
-            .unwrap_or(Duration::ZERO);
+        let dt = app.last_effect_tick.map(|t| now.duration_since(t)).unwrap_or(Duration::ZERO);
         app.last_effect_tick = Some(now);
         terminal.draw(|f| super::view::draw_with_effects(f, &mut app, dt))?;
 

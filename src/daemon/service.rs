@@ -1,6 +1,9 @@
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::PathBuf;
 
-use crate::{paths, Error, Result};
+#[cfg(target_os = "macos")]
+use crate::paths;
+use crate::{Error, Result};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ServiceAction {
@@ -85,7 +88,7 @@ fn uninstall() -> Result<String> {
     Ok("removed scheduled task `monkd`".into())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 fn dirs_home() -> Result<PathBuf> {
     directories::BaseDirs::new()
         .map(|d| d.home_dir().to_path_buf())

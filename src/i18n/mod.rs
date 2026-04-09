@@ -90,16 +90,8 @@ fn parse(yaml: &str) -> HashMap<String, String> {
         if v.is_empty() {
             stack.push((indent, k.to_string()));
         } else {
-            let prefix = stack
-                .iter()
-                .map(|(_, s)| s.as_str())
-                .collect::<Vec<_>>()
-                .join(".");
-            let full = if prefix.is_empty() {
-                k.to_string()
-            } else {
-                format!("{prefix}.{k}")
-            };
+            let prefix = stack.iter().map(|(_, s)| s.as_str()).collect::<Vec<_>>().join(".");
+            let full = if prefix.is_empty() { k.to_string() } else { format!("{prefix}.{k}") };
             out.insert(full, unquote(v));
         }
     }

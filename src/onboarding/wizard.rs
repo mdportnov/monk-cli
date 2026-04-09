@@ -238,11 +238,10 @@ fn pick_apps_for_presets(cache: &crate::apps::AppCache) -> Result<Vec<String>> {
         .iter()
         .map(|a| Row { id: a.id.clone(), display: format!("{} [{}]", a.label, a.id) })
         .collect();
-    let chosen =
-        MultiSelect::new("Select apps to block during focus sessions", rows.clone())
-            .with_page_size(15)
-            .prompt()
-            .map_err(prompt_err)?;
+    let chosen = MultiSelect::new("Select apps to block during focus sessions", rows.clone())
+        .with_page_size(15)
+        .prompt()
+        .map_err(prompt_err)?;
     Ok(chosen.into_iter().map(|r| r.id).collect())
 }
 

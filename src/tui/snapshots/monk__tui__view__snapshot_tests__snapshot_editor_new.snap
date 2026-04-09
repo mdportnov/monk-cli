@@ -6,28 +6,28 @@ expression: "render(&app, 100, 30)"
                                                                                                     
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ edit mode ──────────────────────────────────────────╮╭ blocked apps ─────────────────────────────╮
-│▶ name                                               ││▶  [ ] 1Password [com.1password.1password] │
-│                                                     ││   [ ] Activity Monitor [com.apple.Activity│
-│  color           —   blue   cyan   green   amber   v││   [ ] Air [com.jetbrains.air]             │
-│                                                     ││   [ ] AirPort Utility [com.apple.airport.a│
-│  max duration                                       ││   [ ] Akiflow [com.akiflow.akiflow]       │
-│                                                     ││   [ ] App Store [com.apple.AppStore]      │
-│  min duration                                       ││   [ ] Apps [com.apple.apps.launcher]      │
-│                                                     ││   [ ] Arc [company.thebrowser.Browser]    │
-│  cooldown                                           ││   [ ] Astrill [com.astrill.astrill]       │
-│                                                     ││   [ ] Audio MIDI Setup [com.apple.audio.Au│
-│  daily cap                                          ││   [ ] Automator [com.apple.Automator]     │
-│                                                     ││   [ ] Bluetooth File Exchange [com.apple.B│
+│▶ name                                               ││                                           │
+│                                                     ││                                           │
+│  color           —   blue   cyan   green   amber   v││                                           │
+│                                                     ││                                           │
+│  max duration                                       ││                                           │
+│                                                     ││                                           │
+│  min duration                                       ││                                           │
+│                                                     ││                                           │
+│  cooldown                                           ││                                           │
+│                                                     ││                                           │
+│  daily cap                                          ││                                           │
+│                                                     ││                                           │
 │  custom sites                                       │╰───────────────────────────────────────────╯
 │                                                     │╭ site groups ──────────────────────────────╮
-│  hook before                                        ││▶  [ ] global.adult (21 hosts)             │
-│                                                     ││   [ ] global.chat (18 hosts)              │
-│  hook after                                         ││   [ ] global.games (18 hosts)             │
-│                                                     ││   [ ] global.news (27 hosts)              │
-│mode identifier (1-30 chars)                         ││   [ ] global.shopping (15 hosts)          │
-│● unsaved changes                                    ││   [ ] global.social (34 hosts)            │
-│                                                     ││   [ ] global.video (24 hosts)             │
-│                                                     ││   [ ] ru.games (6 hosts)                  │
+│  hook before                                        ││                                           │
+│                                                     ││                                           │
+│  hook after                                         ││                                           │
+│                                                     ││                                           │
+│mode identifier (1-30 chars)                         ││                                           │
+│● unsaved changes                                    ││                                           │
+│                                                     ││                                           │
+│                                                     ││                                           │
 ╰─────────────────────────────────────────────────────╯╰───────────────────────────────────────────╯
 ────────────────────────────────────────────────────────────────────────────────────────────────────
                            tab/shift-tab fields   ctrl+s save   esc cancel

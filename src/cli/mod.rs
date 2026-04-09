@@ -262,9 +262,7 @@ fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Res
     ) {
         return Ok(());
     }
-    let already = crate::config::Config::load()
-        .map(|c| c.general.initialized)
-        .unwrap_or(false);
+    let already = crate::config::Config::load().map(|c| c.general.initialized).unwrap_or(false);
     if already {
         return Ok(());
     }
@@ -272,9 +270,7 @@ fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Res
         eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
         return Ok(());
     }
-    let opts = crate::onboarding::Options {
-        locale: locale.map(|s| s.to_string()),
-        ..Default::default()
-    };
+    let opts =
+        crate::onboarding::Options { locale: locale.map(|s| s.to_string()), ..Default::default() };
     crate::onboarding::run(opts)
 }

@@ -11,7 +11,9 @@ use interprocess::local_socket::{GenericFilePath, ToFsName};
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::{paths, Error, Result};
+#[cfg(not(windows))]
+use crate::paths;
+use crate::{Error, Result};
 
 fn socket_name() -> Result<interprocess::local_socket::Name<'static>> {
     #[cfg(windows)]

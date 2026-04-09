@@ -57,7 +57,10 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
     let area = f.area();
     let lines: Vec<Line> = match &app.screen {
         Screen::Home(_) => vec![
-            Line::from(Span::styled("home", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "home",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from("  ↑/↓ · j/k    navigate menu"),
             Line::from("  enter        activate item"),
@@ -68,7 +71,10 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  q · esc      quit"),
         ],
         Screen::ModePicker(_) => vec![
-            Line::from(Span::styled("modes", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "modes",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from("  ↑/↓ · j/k    navigate"),
             Line::from("  enter        configure & start"),
@@ -77,7 +83,10 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  esc · q      back to home"),
         ],
         Screen::ModeConfirm(_) => vec![
-            Line::from(Span::styled("confirm", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "confirm",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from("  ←/→ · h/l    adjust duration (5m steps)"),
             Line::from("  shift+h      toggle hard mode"),
@@ -85,7 +94,10 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  esc · q      back to picker"),
         ],
         Screen::ModeEditor(_) => vec![
-            Line::from(Span::styled("editor", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "editor",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from("  tab/shift-tab   next / prev field"),
             Line::from("  ctrl+s          save"),
@@ -93,7 +105,10 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  esc             cancel"),
         ],
         Screen::Settings(_) => vec![
-            Line::from(Span::styled("settings", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "settings",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from("  tab/shift-tab   next / prev field"),
             Line::from("  space           toggle on/off"),
@@ -167,10 +182,8 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
     let mut constraints: Vec<Constraint> =
         scalar_fields.iter().map(|_| Constraint::Length(2)).collect();
     constraints.push(Constraint::Length(3));
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner);
+    let rows =
+        Layout::default().direction(Direction::Vertical).constraints(constraints).split(inner);
 
     for (i, field) in scalar_fields.iter().enumerate() {
         draw_editor_field(f, rows[i], editor, *field);
@@ -190,10 +203,7 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
         )));
     }
     if editor.is_dirty() {
-        lines.push(Line::from(Span::styled(
-            "● unsaved changes",
-            Style::default().fg(GLOW),
-        )));
+        lines.push(Line::from(Span::styled("● unsaved changes", Style::default().fg(GLOW))));
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), status_row);
 }
@@ -212,10 +222,7 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
         .constraints([Constraint::Length(label.len() as u16 + 1), Constraint::Min(5)])
         .split(area);
 
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(label, label_style))),
-        rows[0],
-    );
+    f.render_widget(Paragraph::new(Line::from(Span::styled(label, label_style))), rows[0]);
 
     if field == EditorField::Color {
         draw_color_swatch(f, rows[1], editor, focused);
@@ -232,11 +239,7 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
         EditorField::HookAfter => &editor.hook_after,
         _ => return,
     };
-    let style = if focused {
-        Style::default().fg(TEXT)
-    } else {
-        Style::default().fg(DIM)
-    };
+    let style = if focused { Style::default().fg(TEXT) } else { Style::default().fg(DIM) };
     let buf = f.buffer_mut();
     input.render(rows[1], buf, style);
 }
@@ -363,9 +366,15 @@ fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
         }
     }
     let line = Line::from(vec![
-        Span::styled(format!("  {:>5}  ", fmt_short(ConfirmState::MIN_BOUND)), Style::default().fg(DIM)),
+        Span::styled(
+            format!("  {:>5}  ", fmt_short(ConfirmState::MIN_BOUND)),
+            Style::default().fg(DIM),
+        ),
         Span::styled(bar, Style::default().fg(ACCENT)),
-        Span::styled(format!("  {:<5}", fmt_short(confirm.effective_max())), Style::default().fg(DIM)),
+        Span::styled(
+            format!("  {:<5}", fmt_short(confirm.effective_max())),
+            Style::default().fg(DIM),
+        ),
     ]);
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
@@ -384,10 +393,7 @@ fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
             Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
         )));
     } else if let Some(err) = &confirm.error {
-        lines.push(Line::from(Span::styled(
-            err.clone(),
-            Style::default().fg(ALERT),
-        )));
+        lines.push(Line::from(Span::styled(err.clone(), Style::default().fg(ALERT))));
     } else if confirm.hard {
         lines.push(Line::from(Span::styled(
             "hard mode — cannot stop early, panic phrase only",
@@ -426,9 +432,7 @@ fn draw_confirm_details(confirm: &ConfirmState) -> Paragraph<'static> {
     if let Some(rem) = confirm.mode.stats.daily_cap_remaining {
         lines.push(kv("budget left", &fmt_short(rem)));
     }
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .block(picker_block(" contract "))
+    Paragraph::new(lines).wrap(Wrap { trim: false }).block(picker_block(" contract "))
 }
 
 pub fn fmt_short(d: Duration) -> String {
@@ -497,18 +501,13 @@ fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )),
         ];
-        let p = Paragraph::new(lines)
-            .alignment(Alignment::Center)
-            .block(picker_block(" modes "));
+        let p = Paragraph::new(lines).alignment(Alignment::Center).block(picker_block(" modes "));
         f.render_widget(p, area);
         return;
     }
 
-    let items: Vec<ListItem> = picker
-        .modes
-        .iter()
-        .map(|m| ListItem::new(render_mode_row(m)))
-        .collect();
+    let items: Vec<ListItem> =
+        picker.modes.iter().map(|m| ListItem::new(render_mode_row(m))).collect();
 
     let list = List::new(items)
         .block(picker_block(" modes "))
@@ -638,10 +637,7 @@ fn kv(key: &str, value: &str) -> Line<'static> {
 }
 
 fn dim_line(s: &str) -> Line<'static> {
-    Line::from(Span::styled(
-        s.to_string(),
-        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-    ))
+    Line::from(Span::styled(s.to_string(), Style::default().fg(DIM).add_modifier(Modifier::ITALIC)))
 }
 
 fn fmt_limit(d: Option<Duration>) -> String {
@@ -841,9 +837,7 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App, home: &HomeState) {
                 .border_style(Style::default().fg(DIM))
                 .title(Span::styled(" menu ", Style::default().fg(ACCENT))),
         )
-        .highlight_style(
-            Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD))
         .highlight_symbol("▶ ");
 
     let mut state = ListState::default();
@@ -851,15 +845,13 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App, home: &HomeState) {
     f.render_stateful_widget(list, chunks[0], &mut state);
 
     let info_lines = build_info_lines(app, home);
-    let info = Paragraph::new(info_lines)
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(DIM))
-                .title(Span::styled(" status ", Style::default().fg(ACCENT))),
-        );
+    let info = Paragraph::new(info_lines).wrap(Wrap { trim: true }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(DIM))
+            .title(Span::styled(" status ", Style::default().fg(ACCENT))),
+    );
     f.render_widget(info, chunks[1]);
 }
 
@@ -871,10 +863,7 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
     } else {
         Span::styled("stopped", Style::default().fg(ALERT))
     };
-    lines.push(Line::from(vec![
-        Span::styled("daemon  ", Style::default().fg(DIM)),
-        daemon,
-    ]));
+    lines.push(Line::from(vec![Span::styled("daemon  ", Style::default().fg(DIM)), daemon]));
 
     match &app.globals.active {
         Some(s) => {
@@ -1053,13 +1042,10 @@ fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
     f.render_widget(block, outer[1]);
 
     let fields = SettingsField::ORDER;
-    let mut constraints: Vec<Constraint> =
-        fields.iter().map(|_| Constraint::Length(2)).collect();
+    let mut constraints: Vec<Constraint> = fields.iter().map(|_| Constraint::Length(2)).collect();
     constraints.push(Constraint::Length(3));
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner);
+    let rows =
+        Layout::default().direction(Direction::Vertical).constraints(constraints).split(inner);
 
     for (i, field) in fields.iter().enumerate() {
         draw_settings_field(f, rows[i], st, *field);
@@ -1111,16 +1097,9 @@ fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: Set
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(label.len() as u16 + 1), Constraint::Min(5)])
         .split(area);
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(label, label_style))),
-        rows[0],
-    );
+    f.render_widget(Paragraph::new(Line::from(Span::styled(label, label_style))), rows[0]);
 
-    let value_style = if focused {
-        Style::default().fg(TEXT)
-    } else {
-        Style::default().fg(DIM)
-    };
+    let value_style = if focused { Style::default().fg(TEXT) } else { Style::default().fg(DIM) };
 
     match field {
         SettingsField::DefaultProfile => {
@@ -1161,10 +1140,7 @@ fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: Set
             } else {
                 Style::default().fg(ALERT)
             };
-            f.render_widget(
-                Paragraph::new(Span::styled("⟲ wipe all data", style)),
-                rows[1],
-            );
+            f.render_widget(Paragraph::new(Span::styled("⟲ wipe all data", style)), rows[1]);
         }
     }
 }
@@ -1231,14 +1207,15 @@ mod snapshot_tests {
     }
 
     fn base_app() -> App {
-        let mut app = App::default();
-        app.globals = Globals {
-            daemon_running: true,
-            frame: 0,
-            cached_modes: vec![sample_mode("deepwork"), sample_mode("reading")],
+        App {
+            globals: Globals {
+                daemon_running: true,
+                frame: 0,
+                cached_modes: vec![sample_mode("deepwork"), sample_mode("reading")],
+                ..Default::default()
+            },
             ..Default::default()
-        };
-        app
+        }
     }
 
     #[test]
@@ -1265,23 +1242,16 @@ mod snapshot_tests {
     fn snapshot_picker() {
         let mut app = base_app();
         let modes = app.globals.cached_modes.clone();
-        app.screen = Screen::ModePicker(PickerState {
-            modes,
-            selected: 0,
-            loading: false,
-            error: None,
-        });
+        app.screen =
+            Screen::ModePicker(PickerState { modes, selected: 0, loading: false, error: None });
         insta::assert_snapshot!(render(&app, 100, 30));
     }
 
     #[test]
     fn snapshot_confirm() {
         let mut app = base_app();
-        let confirm = ConfirmState::from_mode(
-            sample_mode("deepwork"),
-            Duration::from_secs(50 * 60),
-            false,
-        );
+        let confirm =
+            ConfirmState::from_mode(sample_mode("deepwork"), Duration::from_secs(50 * 60), false);
         app.screen = Screen::ModeConfirm(Box::new(confirm));
         insta::assert_snapshot!(render(&app, 100, 30));
     }
@@ -1289,7 +1259,10 @@ mod snapshot_tests {
     #[test]
     fn snapshot_editor_new() {
         let mut app = base_app();
-        app.screen = Screen::ModeEditor(Box::new(EditorState::new_mode()));
+        let mut editor = EditorState::new_mode();
+        editor.apps.items.clear();
+        editor.groups.items.clear();
+        app.screen = Screen::ModeEditor(Box::new(editor));
         insta::assert_snapshot!(render(&app, 100, 30));
     }
 
@@ -1298,11 +1271,8 @@ mod snapshot_tests {
         for level in [FlashLevel::Info, FlashLevel::Success, FlashLevel::Warn, FlashLevel::Error] {
             let mut app = base_app();
             app.screen = Screen::Home(HomeState::default());
-            app.globals.flash = Some(Flash {
-                message: format!("{level:?} message"),
-                level,
-                expires_at: 100,
-            });
+            app.globals.flash =
+                Some(Flash { message: format!("{level:?} message"), level, expires_at: 100 });
             let _ = render(&app, 90, 24);
         }
     }

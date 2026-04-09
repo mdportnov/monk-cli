@@ -68,13 +68,8 @@ impl AuditLog {
         message: &str,
         extra: serde_json::Value,
     ) {
-        let event = AuditEvent {
-            at: Utc::now(),
-            kind,
-            session_id,
-            message: message.to_string(),
-            extra,
-        };
+        let event =
+            AuditEvent { at: Utc::now(), kind, session_id, message: message.to_string(), extra };
         if let Err(e) = self.write(&event) {
             tracing::warn!(?e, "audit write failed");
         }
@@ -162,15 +157,13 @@ pub mod stats {
             }
             _ => None,
         };
-        let daily_cap_remaining = limits
-            .daily_cap
-            .map(|cap| cap.saturating_sub(used_24h));
+        let daily_cap_remaining = limits.daily_cap.map(|cap| cap.saturating_sub(used_24h));
         ModeStats { used_24h, last_completed_at, cooldown_remaining, daily_cap_remaining }
     }
 
     pub(crate) mod dur_ms {
-        use std::time::Duration;
         use serde::{Deserialize, Deserializer, Serializer};
+        use std::time::Duration;
         pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
             s.serialize_u64(d.as_millis() as u64)
         }
@@ -180,20 +173,15 @@ pub mod stats {
     }
 
     pub(crate) mod dur_ms_opt {
-        use std::time::Duration;
         use serde::{Deserialize, Deserializer, Serializer};
-        pub fn serialize<S: Serializer>(
-            d: &Option<Duration>,
-            s: S,
-        ) -> Result<S::Ok, S::Error> {
+        use std::time::Duration;
+        pub fn serialize<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
             match d {
                 Some(v) => s.serialize_u64(v.as_millis() as u64),
                 None => s.serialize_none(),
             }
         }
-        pub fn deserialize<'de, D: Deserializer<'de>>(
-            d: D,
-        ) -> Result<Option<Duration>, D::Error> {
+        pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
             Ok(Option::<u64>::deserialize(d)?.map(Duration::from_millis))
         }
     }

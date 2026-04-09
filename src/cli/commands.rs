@@ -140,11 +140,7 @@ pub fn profiles() -> Result<()> {
 
 pub fn apps_list(refresh: bool) -> Result<()> {
     let cache = crate::apps::load_or_scan(refresh)?;
-    println!(
-        "scanned {} — {} apps",
-        cache.scanned_at.to_rfc3339(),
-        cache.apps.len()
-    );
+    println!("scanned {} — {} apps", cache.scanned_at.to_rfc3339(), cache.apps.len());
     for app in &cache.apps {
         println!("  {} [{}] -> {}", app.label, app.id, app.exec_path.display());
     }
@@ -250,9 +246,7 @@ pub fn profile_edit(name: &str, add: Vec<String>, remove: Vec<String>) -> Result
     }
 
     if !std::io::stdin().is_terminal() {
-        return Err(Error::Other(
-            "profile edit requires a TTY (or use --add/--remove)".into(),
-        ));
+        return Err(Error::Other("profile edit requires a TTY (or use --add/--remove)".into()));
     }
 
     let cache = crate::apps::load_or_scan(false)?;
@@ -292,19 +286,11 @@ fn pick_apps(
     let mut rows: Vec<Row> = cache
         .apps
         .iter()
-        .map(|a| Row {
-            id: a.id.clone(),
-            display: format!("{} [{}]", a.label, a.id),
-            stale: false,
-        })
+        .map(|a| Row { id: a.id.clone(), display: format!("{} [{}]", a.label, a.id), stale: false })
         .collect();
     for id in &profile.apps {
         if !cache.apps.iter().any(|a| &a.id == id) {
-            rows.push(Row {
-                id: id.clone(),
-                display: format!("[removed] {id}"),
-                stale: true,
-            });
+            rows.push(Row { id: id.clone(), display: format!("[removed] {id}"), stale: true });
         }
     }
 
@@ -315,7 +301,8 @@ fn pick_apps(
         .map(|(i, _)| i)
         .collect();
 
-    let prompt = "Select apps to block (space to toggle, enter to confirm). Stale entries marked [removed]";
+    let prompt =
+        "Select apps to block (space to toggle, enter to confirm). Stale entries marked [removed]";
     let chosen = MultiSelect::new(prompt, rows)
         .with_default(&default_indices)
         .with_page_size(15)
@@ -343,12 +330,7 @@ fn pick_site_groups(profile: &crate::config::Profile) -> Result<Vec<String>> {
         .iter()
         .map(|g| Row {
             id: g.qualified(),
-            display: format!(
-                "{:<20} {} ({} hosts)",
-                g.qualified(),
-                g.label,
-                g.hosts.len()
-            ),
+            display: format!("{:<20} {} ({} hosts)", g.qualified(), g.label, g.hosts.len()),
         })
         .collect();
     let default_indices: Vec<usize> = rows
@@ -373,11 +355,7 @@ fn pick_custom_sites(profile: &crate::config::Profile) -> Result<Vec<String>> {
         .with_default(&current)
         .prompt()
         .map_err(|e| Error::Other(e.to_string()))?;
-    Ok(raw
-        .split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .collect())
+    Ok(raw.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
 }
 
 pub fn stats() -> Result<()> {

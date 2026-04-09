@@ -34,10 +34,7 @@ pub struct InstalledApp {
 
 impl InstalledApp {
     pub fn exec_basename(&self) -> String {
-        self.exec_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_lowercase())
-            .unwrap_or_default()
+        self.exec_path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()
     }
 }
 
