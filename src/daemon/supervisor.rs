@@ -141,9 +141,18 @@ impl Supervisor {
         if cfg_path.exists() {
             std::fs::remove_file(&cfg_path).ok();
         }
-        let audit_path = crate::paths::data_dir()?.join(crate::audit::AUDIT_FILE);
-        if audit_path.exists() {
-            std::fs::remove_file(&audit_path).ok();
+        let data_dir = crate::paths::data_dir()?;
+        for name in [
+            crate::audit::AUDIT_FILE,
+            "audit.sqlite3-wal",
+            "audit.sqlite3-shm",
+            crate::audit::LEGACY_AUDIT_FILE,
+            "audit.log.bak",
+        ] {
+            let p = data_dir.join(name);
+            if p.exists() {
+                std::fs::remove_file(&p).ok();
+            }
         }
         let fresh = crate::config::Config::default();
         fresh.save()?;
