@@ -49,12 +49,12 @@ fn walk_lnks(dir: &Path, out: &mut Vec<InstalledApp>) {
 }
 
 fn parse_lnk(path: &Path) -> Option<InstalledApp> {
-    let shortcut = lnk::ShellLink::open(path).ok()?;
-    let target = shortcut
+    let shortcut = lnk::ShellLink::open(path, encoding_rs::WINDOWS_1252).ok()?;
+    let target: String = shortcut
         .link_info()
         .as_ref()
-        .and_then(|info| info.local_base_path().clone())
-        .or_else(|| shortcut.string_data().relative_path().clone())?;
+        .and_then(|info| info.local_base_path().as_deref().map(String::from))
+        .or_else(|| shortcut.string_data().relative_path().as_deref().map(String::from))?;
     let exec_path = PathBuf::from(&target);
     if exec_path.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("exe"))
         != Some(true)

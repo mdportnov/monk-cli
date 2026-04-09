@@ -1457,6 +1457,7 @@ dependencies = [
  "clap_complete",
  "crossterm 0.28.1",
  "directories",
+ "encoding_rs",
  "fs-err",
  "futures",
  "hex",
