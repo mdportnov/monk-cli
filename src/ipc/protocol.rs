@@ -53,7 +53,7 @@ pub struct HardModeInfo {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
     Ok,
-    Pong,
+    Pong { version: String },
     Session(Box<Session>),
     Sessions(Vec<Session>),
     Status { active: Option<Box<Session>>, hard_mode: Option<Box<HardModeInfo>>, pid: u32 },

@@ -58,6 +58,9 @@ impl Supervisor {
     }
 
     pub fn list_modes(&self) -> Vec<crate::ipc::ModeSummary> {
+        if let Ok(fresh) = Config::load() {
+            *self.config.write() = fresh;
+        }
         let cfg = self.config.read().clone();
         let events = self.audit.read_all().unwrap_or_default();
         let now = chrono::Utc::now();
@@ -78,6 +81,9 @@ impl Supervisor {
     }
 
     pub fn mode_stats(&self, name: &str) -> Result<crate::audit::stats::ModeStats> {
+        if let Ok(fresh) = Config::load() {
+            *self.config.write() = fresh;
+        }
         let cfg = self.config.read().clone();
         let profile =
             cfg.profile(name).ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?;
@@ -98,6 +104,9 @@ impl Supervisor {
     }
 
     pub fn get_general(&self) -> crate::config::General {
+        if let Ok(fresh) = Config::load() {
+            *self.config.write() = fresh;
+        }
         self.config.read().general.clone()
     }
 
@@ -133,6 +142,9 @@ impl Supervisor {
         if cfg.profiles.remove(name).is_none() {
             return Err(Error::Config(format!("mode `{name}` not found")));
         }
+        if cfg.general.default_profile == name {
+            cfg.general.default_profile = cfg.profiles.keys().next().cloned().unwrap_or_default();
+        }
         cfg.save()?;
         *self.config.write() = cfg;
         Ok(())
@@ -167,6 +179,9 @@ impl Supervisor {
             }
         }
 
+        if let Ok(fresh) = Config::load() {
+            *self.config.write() = fresh;
+        }
         let cfg = self.config.read().clone();
         let profile_def = cfg
             .profile(&profile)

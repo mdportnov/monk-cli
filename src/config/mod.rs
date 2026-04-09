@@ -196,6 +196,12 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        if !self.profiles.is_empty() && !self.profiles.contains_key(&self.general.default_profile) {
+            return Err(Error::Config(format!(
+                "default_profile `{}` is not present in profiles",
+                self.general.default_profile
+            )));
+        }
         for (name, p) in &self.profiles {
             if name.is_empty() {
                 return Err(Error::Config("profile name cannot be empty".into()));

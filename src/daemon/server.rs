@@ -151,7 +151,7 @@ async fn handle(
     let req: Request = serde_json::from_str(line.trim())?;
 
     let resp = match req {
-        Request::Ping => Response::Pong,
+        Request::Ping => Response::Pong { version: env!("CARGO_PKG_VERSION").into() },
         Request::Status => Response::Status {
             active: sup.active().map(Box::new),
             hard_mode: sup.hard_info().map(Box::new),

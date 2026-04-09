@@ -1414,8 +1414,14 @@ impl App {
 }
 
 async fn ensure_daemon() {
-    if ipc::send(&Request::Ping).await.is_ok() {
-        return;
+    let expected = env!("CARGO_PKG_VERSION");
+    match ipc::send(&Request::Ping).await {
+        Ok(Response::Pong { version }) if version == expected => return,
+        Ok(Response::Pong { .. }) => {
+            let _ = ipc::send(&Request::Shutdown).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        _ => {}
     }
     let Ok(exe) = std::env::current_exe() else { return };
     use std::process::{Command, Stdio};
@@ -1427,7 +1433,8 @@ async fn ensure_daemon() {
         .spawn();
     for _ in 0..20 {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        if ipc::send(&Request::Ping).await.is_ok() {
+        if matches!(ipc::send(&Request::Ping).await, Ok(Response::Pong { version }) if version == expected)
+        {
             return;
         }
     }
