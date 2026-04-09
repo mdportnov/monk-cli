@@ -18,9 +18,7 @@ use crate::{Error, Result};
 fn socket_name() -> Result<interprocess::local_socket::Name<'static>> {
     #[cfg(windows)]
     {
-        Ok(r"\\.\pipe\monkd"
-            .to_ns_name::<GenericNamespaced>()
-            .map_err(|e| Error::Ipc(e.to_string()))?)
+        r"\\.\pipe\monkd".to_ns_name::<GenericNamespaced>().map_err(|e| Error::Ipc(e.to_string()))
     }
     #[cfg(not(windows))]
     {

@@ -60,6 +60,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn pid_alive(pid: u32) -> bool {
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
     unsafe {
