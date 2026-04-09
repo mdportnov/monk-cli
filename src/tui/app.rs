@@ -1,16 +1,20 @@
 use std::{io, time::Duration};
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    config::{Config, Limits},
+    config::{Config, Hooks, Limits, Profile},
     ipc::{self, HardModeInfo, ModeSummary, Request, Response},
     session::Session,
+    tui::widgets::{MultiSelectItem, MultiSelectList, TextInput},
     Result,
 };
 
@@ -203,11 +207,299 @@ impl ConfirmState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorField {
+    Name,
+    Max,
+    Min,
+    Cooldown,
+    DailyCap,
+    Sites,
+    HookBefore,
+    HookAfter,
+    Apps,
+    Groups,
+}
+
+impl EditorField {
+    pub const ORDER: [EditorField; 10] = [
+        EditorField::Name,
+        EditorField::Max,
+        EditorField::Min,
+        EditorField::Cooldown,
+        EditorField::DailyCap,
+        EditorField::Sites,
+        EditorField::HookBefore,
+        EditorField::HookAfter,
+        EditorField::Apps,
+        EditorField::Groups,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EditorField::Name => "name",
+            EditorField::Max => "max duration",
+            EditorField::Min => "min duration",
+            EditorField::Cooldown => "cooldown",
+            EditorField::DailyCap => "daily cap",
+            EditorField::Sites => "custom sites",
+            EditorField::HookBefore => "hook before",
+            EditorField::HookAfter => "hook after",
+            EditorField::Apps => "blocked apps",
+            EditorField::Groups => "site groups",
+        }
+    }
+
+    pub fn help(self) -> &'static str {
+        match self {
+            EditorField::Name => "mode identifier (1-30 chars)",
+            EditorField::Max => "ceiling — even you can't override (e.g. 2h, 90m)",
+            EditorField::Min => "shorter doesn't count as a session",
+            EditorField::Cooldown => "protects against compulsive restart",
+            EditorField::DailyCap => "daily focus budget — prevents burnout",
+            EditorField::Sites => "comma-separated hosts to block",
+            EditorField::HookBefore => "shell command run before session",
+            EditorField::HookAfter => "shell command run after session",
+            EditorField::Apps => "space to toggle, ↑/↓ to navigate",
+            EditorField::Groups => "preset site groups",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct EditorState {
+    pub original_name: Option<String>,
+    pub name: TextInput,
+    pub max: TextInput,
+    pub min: TextInput,
+    pub cooldown: TextInput,
+    pub daily_cap: TextInput,
+    pub sites: TextInput,
+    pub hook_before: TextInput,
+    pub hook_after: TextInput,
+    pub apps: MultiSelectList,
+    pub groups: MultiSelectList,
+    pub focus: EditorField,
+    pub snapshot: Profile,
+    pub error: Option<String>,
+    pub confirm_cancel: bool,
+}
+
+impl EditorState {
+    pub fn new_mode() -> Self {
+        let (apps, groups) = load_picklists(&Profile::default());
+        let mut s = Self {
+            original_name: None,
+            name: TextInput::new(""),
+            max: TextInput::new(""),
+            min: TextInput::new(""),
+            cooldown: TextInput::new(""),
+            daily_cap: TextInput::new(""),
+            sites: TextInput::new(""),
+            hook_before: TextInput::new(""),
+            hook_after: TextInput::new(""),
+            apps,
+            groups,
+            focus: EditorField::Name,
+            snapshot: Profile::default(),
+            error: None,
+            confirm_cancel: false,
+        };
+        s.sync_focus();
+        s
+    }
+
+    pub fn edit(name: String, profile: Profile) -> Self {
+        let (apps, groups) = load_picklists(&profile);
+        let limits = profile.limits.clone();
+        let mut s = Self {
+            original_name: Some(name.clone()),
+            name: TextInput::new(name),
+            max: TextInput::new(fmt_opt_humantime(limits.max_duration)),
+            min: TextInput::new(fmt_opt_humantime(limits.min_duration)),
+            cooldown: TextInput::new(fmt_opt_humantime(limits.cooldown)),
+            daily_cap: TextInput::new(fmt_opt_humantime(limits.daily_cap)),
+            sites: TextInput::new(profile.sites.join(", ")),
+            hook_before: TextInput::new(profile.hooks.before.join(" && ")),
+            hook_after: TextInput::new(profile.hooks.after.join(" && ")),
+            apps,
+            groups,
+            focus: EditorField::Name,
+            snapshot: profile,
+            error: None,
+            confirm_cancel: false,
+        };
+        s.sync_focus();
+        s
+    }
+
+    pub fn input_mut(&mut self, f: EditorField) -> Option<&mut TextInput> {
+        match f {
+            EditorField::Name => Some(&mut self.name),
+            EditorField::Max => Some(&mut self.max),
+            EditorField::Min => Some(&mut self.min),
+            EditorField::Cooldown => Some(&mut self.cooldown),
+            EditorField::DailyCap => Some(&mut self.daily_cap),
+            EditorField::Sites => Some(&mut self.sites),
+            EditorField::HookBefore => Some(&mut self.hook_before),
+            EditorField::HookAfter => Some(&mut self.hook_after),
+            _ => None,
+        }
+    }
+
+    pub fn next_field(&mut self) {
+        let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
+        self.focus = EditorField::ORDER[(idx + 1) % EditorField::ORDER.len()];
+        self.sync_focus();
+    }
+
+    pub fn prev_field(&mut self) {
+        let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
+        self.focus =
+            EditorField::ORDER[(idx + EditorField::ORDER.len() - 1) % EditorField::ORDER.len()];
+        self.sync_focus();
+    }
+
+    fn sync_focus(&mut self) {
+        let focus = self.focus;
+        for f in EditorField::ORDER {
+            let is = f == focus;
+            if let Some(inp) = self.input_mut(f) {
+                inp.focused = is;
+            }
+        }
+    }
+
+    pub fn build_profile(&self) -> std::result::Result<(String, Profile), String> {
+        let name = self.name.value.trim().to_string();
+        if name.is_empty() {
+            return Err("name is required".into());
+        }
+        if name.chars().count() > 30 {
+            return Err("name must be ≤ 30 chars".into());
+        }
+        let limits = Limits {
+            max_duration: parse_opt_humantime(&self.max)?,
+            min_duration: parse_opt_humantime(&self.min)?,
+            cooldown: parse_opt_humantime(&self.cooldown)?,
+            daily_cap: parse_opt_humantime(&self.daily_cap)?,
+        };
+        if let (Some(mn), Some(mx)) = (limits.min_duration, limits.max_duration) {
+            if mn > mx {
+                return Err("min must be ≤ max".into());
+            }
+        }
+        let sites: Vec<String> = self
+            .sites
+            .value
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let hooks = Hooks {
+            before: split_cmds(&self.hook_before.value),
+            after: split_cmds(&self.hook_after.value),
+        };
+        let profile = Profile {
+            sites,
+            site_groups: self.groups.selected_ids(),
+            apps: self.apps.selected_ids(),
+            allow: self.snapshot.allow.clone(),
+            hooks,
+            limits,
+            color: self.snapshot.color.clone(),
+        };
+        Ok((name, profile))
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        match self.build_profile() {
+            Ok((name, p)) => {
+                if self.original_name.as_deref() != Some(name.as_str())
+                    && self.original_name.is_some()
+                {
+                    return true;
+                }
+                if self.original_name.is_none() {
+                    return true;
+                }
+                !profile_eq(&p, &self.snapshot)
+            }
+            Err(_) => true,
+        }
+    }
+}
+
+fn fmt_opt_humantime(d: Option<Duration>) -> String {
+    match d {
+        Some(v) => humantime::format_duration(v).to_string(),
+        None => String::new(),
+    }
+}
+
+fn parse_opt_humantime(input: &TextInput) -> std::result::Result<Option<Duration>, String> {
+    let raw = input.value.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    humantime::parse_duration(raw)
+        .map(Some)
+        .map_err(|e| format!("invalid duration: {e}"))
+}
+
+fn split_cmds(raw: &str) -> Vec<String> {
+    raw.split("&&")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn profile_eq(a: &Profile, b: &Profile) -> bool {
+    a.sites == b.sites
+        && a.site_groups == b.site_groups
+        && a.apps == b.apps
+        && a.allow == b.allow
+        && a.hooks.before == b.hooks.before
+        && a.hooks.after == b.hooks.after
+        && a.limits.max_duration == b.limits.max_duration
+        && a.limits.min_duration == b.limits.min_duration
+        && a.limits.cooldown == b.limits.cooldown
+        && a.limits.daily_cap == b.limits.daily_cap
+        && a.color == b.color
+}
+
+fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
+    let apps_items = crate::apps::load_or_scan(false)
+        .map(|cache| {
+            cache
+                .apps
+                .into_iter()
+                .map(|a| MultiSelectItem { id: a.id.clone(), label: format!("{} [{}]", a.label, a.id) })
+                .collect()
+        })
+        .unwrap_or_default();
+    let groups_items = crate::sites::all_groups()
+        .map(|gs| {
+            gs.into_iter()
+                .map(|g| MultiSelectItem {
+                    id: g.qualified(),
+                    label: format!("{} ({} hosts)", g.qualified(), g.hosts.len()),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (
+        MultiSelectList::new(apps_items, &profile.apps),
+        MultiSelectList::new(groups_items, &profile.site_groups),
+    )
+}
+
 #[derive(Debug)]
 pub enum Screen {
     Home(HomeState),
     ModePicker(PickerState),
     ModeConfirm(Box<ConfirmState>),
+    ModeEditor(Box<EditorState>),
 }
 
 impl Default for Screen {
@@ -279,6 +571,7 @@ impl App {
             Screen::Home(_) => self.handle_home_key(key).await,
             Screen::ModePicker(_) => self.handle_picker_key(key).await,
             Screen::ModeConfirm(_) => self.handle_confirm_key(key).await,
+            Screen::ModeEditor(_) => self.handle_editor_key(key).await,
         }
     }
 
@@ -317,7 +610,135 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
             KeyCode::Char('r') => self.refresh_picker().await,
             KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker(),
+            KeyCode::Char('n') => self.open_editor_new(),
+            KeyCode::Char('e') => self.open_editor_edit(),
+            KeyCode::Char('d') => self.delete_current_mode().await,
             _ => {}
+        }
+    }
+
+    fn open_editor_new(&mut self) {
+        self.screen = Screen::ModeEditor(Box::new(EditorState::new_mode()));
+    }
+
+    fn open_editor_edit(&mut self) {
+        let Screen::ModePicker(picker) = &self.screen else { return };
+        let Some(mode) = picker.current() else { return };
+        let cfg = match Config::load() {
+            Ok(c) => c,
+            Err(e) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some(e.to_string());
+                }
+                return;
+            }
+        };
+        let profile = cfg.profiles.get(&mode.name).cloned().unwrap_or_default();
+        self.screen = Screen::ModeEditor(Box::new(EditorState::edit(mode.name.clone(), profile)));
+    }
+
+    async fn delete_current_mode(&mut self) {
+        let name = {
+            let Screen::ModePicker(picker) = &self.screen else { return };
+            match picker.current() {
+                Some(m) => m.name.clone(),
+                None => return,
+            }
+        };
+        match ipc::send(&Request::DeleteMode { name: name.clone() }).await {
+            Ok(Response::Ok) => {
+                self.globals.flash = Some(format!("deleted `{name}`"));
+                self.refresh_picker().await;
+            }
+            Ok(Response::Error { message }) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some(message);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some(e.to_string());
+                }
+            }
+        }
+    }
+
+    async fn handle_editor_key(&mut self, key: KeyEvent) {
+        let Screen::ModeEditor(ed) = &mut self.screen else { return };
+        if ed.confirm_cancel {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.open_picker().await;
+                }
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    ed.confirm_cancel = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
+            self.save_editor().await;
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                if ed.is_dirty() {
+                    ed.confirm_cancel = true;
+                } else {
+                    self.open_picker().await;
+                }
+            }
+            KeyCode::Tab => ed.next_field(),
+            KeyCode::BackTab => ed.prev_field(),
+            _ => {
+                let focus = ed.focus;
+                match focus {
+                    EditorField::Apps => {
+                        ed.apps.handle(key);
+                    }
+                    EditorField::Groups => {
+                        ed.groups.handle(key);
+                    }
+                    _ => {
+                        if let Some(input) = ed.input_mut(focus) {
+                            input.handle(key);
+                        }
+                    }
+                }
+                ed.error = None;
+            }
+        }
+    }
+
+    async fn save_editor(&mut self) {
+        let (name, profile) = {
+            let Screen::ModeEditor(ed) = &mut self.screen else { return };
+            match ed.build_profile() {
+                Ok(v) => v,
+                Err(e) => {
+                    ed.error = Some(e);
+                    return;
+                }
+            }
+        };
+        match ipc::send(&Request::SaveMode { name: name.clone(), profile }).await {
+            Ok(Response::Ok) => {
+                self.globals.flash = Some(format!("saved `{name}`"));
+                self.open_picker().await;
+            }
+            Ok(Response::Error { message }) => {
+                if let Screen::ModeEditor(ed) = &mut self.screen {
+                    ed.error = Some(message);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if let Screen::ModeEditor(ed) = &mut self.screen {
+                    ed.error = Some(e.to_string());
+                }
+            }
         }
     }
 

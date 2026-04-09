@@ -12,7 +12,7 @@ use tui_big_text::{BigText, PixelSize};
 
 use crate::{
     ipc::ModeSummary,
-    tui::app::{App, ConfirmState, HomeState, MenuItem, PickerState, Screen},
+    tui::app::{App, ConfirmState, EditorField, EditorState, HomeState, MenuItem, PickerState, Screen},
 };
 
 const ACCENT: Color = Color::Rgb(140, 180, 220);
@@ -28,7 +28,139 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Home(home) => draw_home(f, app, home),
         Screen::ModePicker(picker) => draw_picker(f, app, picker),
         Screen::ModeConfirm(confirm) => draw_confirm(f, app, confirm.as_ref()),
+        Screen::ModeEditor(editor) => draw_editor(f, app, editor.as_ref()),
     }
+}
+
+fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
+    let area = f.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+        .split(area);
+
+    draw_header(f, outer[0], app);
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(outer[1]);
+
+    draw_editor_fields(f, body[0], editor);
+    draw_editor_aux(f, body[1], editor);
+
+    let help = if editor.confirm_cancel {
+        "discard unsaved changes?   y  yes   n  keep editing"
+    } else {
+        "tab/shift-tab fields   ctrl+s save   esc cancel"
+    };
+    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
+    f.render_widget(footer, outer[2]);
+}
+
+fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
+    let block = picker_block(" edit mode ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let scalar_fields = [
+        EditorField::Name,
+        EditorField::Max,
+        EditorField::Min,
+        EditorField::Cooldown,
+        EditorField::DailyCap,
+        EditorField::Sites,
+        EditorField::HookBefore,
+        EditorField::HookAfter,
+    ];
+    let mut constraints: Vec<Constraint> =
+        scalar_fields.iter().map(|_| Constraint::Length(2)).collect();
+    constraints.push(Constraint::Length(3));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    for (i, field) in scalar_fields.iter().enumerate() {
+        draw_editor_field(f, rows[i], editor, *field);
+    }
+
+    let status_row = rows[scalar_fields.len()];
+    let mut lines: Vec<Line> = Vec::new();
+    if let Some(err) = &editor.error {
+        lines.push(Line::from(Span::styled(
+            err.clone(),
+            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            editor.focus.help(),
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    if editor.is_dirty() {
+        lines.push(Line::from(Span::styled(
+            "● unsaved changes",
+            Style::default().fg(GLOW),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), status_row);
+}
+
+fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: EditorField) {
+    let focused = editor.focus == field;
+    let label_style = if focused {
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(DIM)
+    };
+    let prefix = if focused { "▶ " } else { "  " };
+    let label = format!("{prefix}{:<14}", field.label());
+    let rows = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(label.len() as u16 + 1), Constraint::Min(5)])
+        .split(area);
+
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(label, label_style))),
+        rows[0],
+    );
+
+    let input = match field {
+        EditorField::Name => &editor.name,
+        EditorField::Max => &editor.max,
+        EditorField::Min => &editor.min,
+        EditorField::Cooldown => &editor.cooldown,
+        EditorField::DailyCap => &editor.daily_cap,
+        EditorField::Sites => &editor.sites,
+        EditorField::HookBefore => &editor.hook_before,
+        EditorField::HookAfter => &editor.hook_after,
+        _ => return,
+    };
+    let style = if focused {
+        Style::default().fg(TEXT)
+    } else {
+        Style::default().fg(DIM)
+    };
+    let buf = f.buffer_mut();
+    input.render(rows[1], buf, style);
+}
+
+fn draw_editor_aux(f: &mut Frame, area: Rect, editor: &EditorState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(area);
+
+    let apps_block = picker_block(" blocked apps ");
+    let apps_focused = editor.focus == EditorField::Apps;
+    editor.apps.render(chunks[0], f.buffer_mut(), apps_block, apps_focused);
+
+    let groups_block = picker_block(" site groups ");
+    let groups_focused = editor.focus == EditorField::Groups;
+    editor.groups.render(chunks[1], f.buffer_mut(), groups_block, groups_focused);
 }
 
 fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
