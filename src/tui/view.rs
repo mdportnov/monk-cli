@@ -279,16 +279,32 @@ fn draw_color_swatch(f: &mut Frame, area: Rect, editor: &EditorState, focused: b
 fn draw_editor_aux(f: &mut Frame, area: Rect, editor: &EditorState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(30),
+            Constraint::Percentage(30),
+        ])
         .split(area);
 
-    let apps_block = picker_block(" blocked apps ");
-    let apps_focused = editor.focus == EditorField::Apps;
-    editor.apps.render(chunks[0], f.buffer_mut(), apps_block, apps_focused);
+    let brands_title = picker_title("brand presets", &editor.brands.filter);
+    let brands_focused = editor.focus == EditorField::Brands;
+    editor.brands.render(chunks[0], f.buffer_mut(), picker_block(&brands_title), brands_focused);
 
-    let groups_block = picker_block(" site groups ");
+    let apps_title = picker_title("blocked apps", &editor.apps.filter);
+    let apps_focused = editor.focus == EditorField::Apps;
+    editor.apps.render(chunks[1], f.buffer_mut(), picker_block(&apps_title), apps_focused);
+
+    let groups_title = picker_title("site groups", &editor.groups.filter);
     let groups_focused = editor.focus == EditorField::Groups;
-    editor.groups.render(chunks[1], f.buffer_mut(), groups_block, groups_focused);
+    editor.groups.render(chunks[2], f.buffer_mut(), picker_block(&groups_title), groups_focused);
+}
+
+fn picker_title(label: &str, filter: &str) -> String {
+    if filter.is_empty() {
+        format!(" {label} ")
+    } else {
+        format!(" {label} · /{filter} ")
+    }
 }
 
 fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
@@ -800,12 +816,12 @@ fn fmt_limit(d: Option<Duration>) -> String {
     }
 }
 
-fn picker_block(title: &'static str) -> Block<'static> {
+fn picker_block(title: &str) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(DIM))
-        .title(Span::styled(title, Style::default().fg(ACCENT)))
+        .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
 fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState) {
@@ -1491,6 +1507,7 @@ mod snapshot_tests {
         let mut editor = EditorState::new_mode();
         editor.apps.items.clear();
         editor.groups.items.clear();
+        editor.brands.items.clear();
         app.screen = Screen::ModeEditor(Box::new(editor));
         insta::assert_snapshot!(render(&app, 100, 30));
     }

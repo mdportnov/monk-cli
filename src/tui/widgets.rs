@@ -138,6 +138,32 @@ impl MultiSelectList {
     }
 
     pub fn handle(&mut self, key: KeyEvent) -> bool {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return false;
+        }
+        match key.code {
+            KeyCode::Char(' ') => {
+                let visible = self.visible_indices();
+                if !visible.is_empty() {
+                    self.toggle(self.cursor);
+                    return true;
+                }
+                return false;
+            }
+            KeyCode::Char(c) => {
+                self.filter.push(c);
+                self.clamp_cursor();
+                return true;
+            }
+            KeyCode::Backspace => {
+                if self.filter.pop().is_some() {
+                    self.clamp_cursor();
+                    return true;
+                }
+                return false;
+            }
+            _ => {}
+        }
         let visible = self.visible_indices();
         if visible.is_empty() {
             return false;
@@ -159,11 +185,17 @@ impl MultiSelectList {
                 }
                 false
             }
-            KeyCode::Char(' ') => {
-                self.toggle(self.cursor);
-                true
-            }
             _ => false,
+        }
+    }
+
+    fn clamp_cursor(&mut self) {
+        let visible = self.visible_indices();
+        if visible.is_empty() {
+            return;
+        }
+        if !visible.contains(&self.cursor) {
+            self.cursor = visible[0];
         }
     }
 
@@ -249,6 +281,23 @@ mod tests {
         t.handle(k(KeyCode::Left));
         t.handle(k(KeyCode::Backspace));
         assert_eq!(t.value, "и");
+    }
+
+    #[test]
+    fn multi_select_filter_typing() {
+        let items = vec![
+            MultiSelectItem { id: "a".into(), label: "Instagram".into() },
+            MultiSelectItem { id: "b".into(), label: "Facebook".into() },
+            MultiSelectItem { id: "c".into(), label: "Telegram".into() },
+        ];
+        let mut m = MultiSelectList::new(items, &[]);
+        m.handle(k(KeyCode::Char('t')));
+        m.handle(k(KeyCode::Char('e')));
+        assert_eq!(m.filter, "te");
+        let vis: Vec<_> = m.visible_indices().iter().map(|i| m.items[*i].id.clone()).collect();
+        assert_eq!(vis, vec!["c".to_string()]);
+        m.handle(k(KeyCode::Backspace));
+        assert_eq!(m.filter, "t");
     }
 
     #[test]

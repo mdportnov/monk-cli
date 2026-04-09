@@ -222,10 +222,11 @@ pub enum EditorField {
     HookAfter,
     Apps,
     Groups,
+    Brands,
 }
 
 impl EditorField {
-    pub const ORDER: [EditorField; 12] = [
+    pub const ORDER: [EditorField; 13] = [
         EditorField::Name,
         EditorField::Color,
         EditorField::Max,
@@ -238,6 +239,7 @@ impl EditorField {
         EditorField::HookAfter,
         EditorField::Apps,
         EditorField::Groups,
+        EditorField::Brands,
     ];
 
     pub fn label(self) -> &'static str {
@@ -254,6 +256,7 @@ impl EditorField {
             EditorField::HookAfter => "hook after",
             EditorField::Apps => "blocked apps",
             EditorField::Groups => "site groups",
+            EditorField::Brands => "brand presets",
         }
     }
 
@@ -269,8 +272,9 @@ impl EditorField {
             EditorField::Sites => "comma-separated hosts to block",
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
-            EditorField::Apps => "space to toggle, ↑/↓ to navigate",
-            EditorField::Groups => "preset site groups",
+            EditorField::Apps => "space toggle · type to filter · ↑/↓ navigate",
+            EditorField::Groups => "space toggle · type to filter · ↑/↓ navigate",
+            EditorField::Brands => "space toggle · type to filter · auto-resolves domains + apps",
         }
     }
 }
@@ -314,6 +318,7 @@ pub struct EditorState {
     pub hook_after: TextInput,
     pub apps: MultiSelectList,
     pub groups: MultiSelectList,
+    pub brands: MultiSelectList,
     pub focus: EditorField,
     pub snapshot: Profile,
     pub error: Option<String>,
@@ -322,7 +327,7 @@ pub struct EditorState {
 
 impl EditorState {
     pub fn new_mode() -> Self {
-        let (apps, groups) = load_picklists(&Profile::default());
+        let (apps, groups, brands) = load_picklists(&Profile::default());
         let mut s = Self {
             original_name: None,
             name: TextInput::new(""),
@@ -337,6 +342,7 @@ impl EditorState {
             hook_after: TextInput::new(""),
             apps,
             groups,
+            brands,
             focus: EditorField::Name,
             snapshot: Profile::default(),
             error: None,
@@ -347,7 +353,7 @@ impl EditorState {
     }
 
     pub fn edit(name: String, profile: Profile) -> Self {
-        let (apps, groups) = load_picklists(&profile);
+        let (apps, groups, brands) = load_picklists(&profile);
         let limits = profile.limits.clone();
         let color_idx = palette_index(&profile.color);
         let mut s = Self {
@@ -364,6 +370,7 @@ impl EditorState {
             hook_after: TextInput::new(profile.hooks.after.join(" && ")),
             apps,
             groups,
+            brands,
             focus: EditorField::Name,
             snapshot: profile,
             error: None,
@@ -389,16 +396,24 @@ impl EditorState {
     }
 
     pub fn next_field(&mut self) {
+        self.clear_picker_filters();
         let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
         self.focus = EditorField::ORDER[(idx + 1) % EditorField::ORDER.len()];
         self.sync_focus();
     }
 
     pub fn prev_field(&mut self) {
+        self.clear_picker_filters();
         let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
         self.focus =
             EditorField::ORDER[(idx + EditorField::ORDER.len() - 1) % EditorField::ORDER.len()];
         self.sync_focus();
+    }
+
+    fn clear_picker_filters(&mut self) {
+        self.apps.filter.clear();
+        self.groups.filter.clear();
+        self.brands.filter.clear();
     }
 
     fn sync_focus(&mut self) {
@@ -444,7 +459,7 @@ impl EditorState {
         let profile = Profile {
             sites,
             site_groups: self.groups.selected_ids(),
-            brands: self.snapshot.brands.clone(),
+            brands: self.brands.selected_ids(),
             apps: self.apps.selected_ids(),
             allow: self.snapshot.allow.clone(),
             hooks,
@@ -495,6 +510,7 @@ fn split_cmds(raw: &str) -> Vec<String> {
 fn profile_eq(a: &Profile, b: &Profile) -> bool {
     a.sites == b.sites
         && a.site_groups == b.site_groups
+        && a.brands == b.brands
         && a.apps == b.apps
         && a.allow == b.allow
         && a.hooks.before == b.hooks.before
@@ -599,7 +615,7 @@ pub fn parse_schedule_spec(raw: &str) -> std::result::Result<Option<crate::confi
     Ok(Some(sch))
 }
 
-fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
+fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, MultiSelectList) {
     let apps_items = crate::apps::load_or_scan(false)
         .map(|cache| {
             cache
@@ -622,9 +638,25 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList) {
                 .collect()
         })
         .unwrap_or_default();
+    let brands_items = crate::brands::all_brands()
+        .map(|bs| {
+            bs.into_iter()
+                .map(|b| MultiSelectItem {
+                    label: format!(
+                        "{} {} [{}]",
+                        b.icon.as_deref().unwrap_or("●"),
+                        b.name,
+                        b.qualified()
+                    ),
+                    id: b.qualified(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     (
         MultiSelectList::new(apps_items, &profile.apps),
         MultiSelectList::new(groups_items, &profile.site_groups),
+        MultiSelectList::new(brands_items, &profile.brands),
     )
 }
 
@@ -1100,6 +1132,9 @@ impl App {
                     }
                     EditorField::Groups => {
                         ed.groups.handle(key);
+                    }
+                    EditorField::Brands => {
+                        ed.brands.handle(key);
                     }
                     EditorField::Color => {
                         let n = COLOR_PALETTE.len();

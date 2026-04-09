@@ -301,9 +301,9 @@ impl Config {
                 })?;
             }
             for b in &p.brands {
-                if b.split_once(':').filter(|(ns, id)| !ns.is_empty() && !id.is_empty()).is_none() {
+                if b.split_once('.').filter(|(ns, id)| !ns.is_empty() && !id.is_empty()).is_none() {
                     return Err(Error::Config(format!(
-                        "profile `{name}` brand `{b}` must be `<namespace>:<id>`"
+                        "profile `{name}` brand `{b}` must be `<namespace>.<id>`"
                     )));
                 }
             }

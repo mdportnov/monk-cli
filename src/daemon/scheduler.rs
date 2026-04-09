@@ -11,14 +11,24 @@ enum Tz {
 impl Tz {
     fn at_utc(self, date: NaiveDate, h: u32, m: u32) -> Option<DateTime<Utc>> {
         match self {
-            Tz::Named(tz) => tz
-                .with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)
-                .single()
-                .map(|dt| dt.with_timezone(&Utc)),
-            Tz::Local => Local
-                .with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)
-                .single()
-                .map(|dt| dt.with_timezone(&Utc)),
+            Tz::Named(tz) => {
+                let mapped =
+                    tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
+                mapped
+                    .single()
+                    .or_else(|| mapped.earliest())
+                    .or_else(|| mapped.latest())
+                    .map(|dt| dt.with_timezone(&Utc))
+            }
+            Tz::Local => {
+                let mapped =
+                    Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
+                mapped
+                    .single()
+                    .or_else(|| mapped.earliest())
+                    .or_else(|| mapped.latest())
+                    .map(|dt| dt.with_timezone(&Utc))
+            }
         }
     }
     fn today(self, now: DateTime<Utc>) -> NaiveDate {
@@ -70,6 +80,38 @@ fn build_window(sch: &Schedule, date: NaiveDate) -> Option<Window> {
 fn day_matches(sch: &Schedule, date: NaiveDate) -> bool {
     let wd = Weekday::from_chrono(date.weekday());
     sch.days.contains(&wd)
+}
+
+/// Pure selection of the schedule that should currently be firing, given a
+/// snapshot of (name, schedule) pairs and a `last_fired` guard. Returns the
+/// candidate as (name, window) if one is eligible.
+pub fn pick_firing<'a>(
+    profiles: impl IntoIterator<Item = (&'a str, &'a Schedule)>,
+    now: DateTime<Utc>,
+    last_fired: Option<&(String, DateTime<Utc>)>,
+    min_remaining: std::time::Duration,
+) -> Option<(String, Window)> {
+    let mut candidates: Vec<(String, Window)> = profiles
+        .into_iter()
+        .filter_map(|(name, sch)| {
+            let w = current_or_next(sch, now)?;
+            if !w.contains(now) {
+                return None;
+            }
+            Some((name.to_string(), w))
+        })
+        .collect();
+    candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    let (name, w) = candidates.into_iter().next()?;
+    if let Some((ln, ls)) = last_fired {
+        if ln == &name && *ls == w.start {
+            return None;
+        }
+    }
+    if w.remaining(now) < min_remaining {
+        return None;
+    }
+    Some((name, w))
 }
 
 pub fn current_or_next(sch: &Schedule, now: DateTime<Utc>) -> Option<Window> {
@@ -127,6 +169,54 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 4, 11, 0, 30, 0).unwrap();
         let w = current_or_next(&s, now).unwrap();
         assert!(w.contains(now));
+    }
+
+    #[test]
+    fn pick_firing_skips_last_fired() {
+        let s = sch(vec![Weekday::Thu], "09:00", "17:00");
+        let now = Utc.with_ymd_and_hms(2026, 4, 9, 10, 0, 0).unwrap();
+        let w = current_or_next(&s, now).unwrap();
+        let last = Some(("focus".to_string(), w.start));
+        let picked = pick_firing(
+            [("focus", &s)],
+            now,
+            last.as_ref(),
+            std::time::Duration::from_secs(60),
+        );
+        assert!(picked.is_none());
+    }
+
+    #[test]
+    fn pick_firing_enforces_min_remaining() {
+        let s = sch(vec![Weekday::Thu], "09:00", "10:00");
+        let now = Utc.with_ymd_and_hms(2026, 4, 9, 9, 59, 30).unwrap();
+        let picked = pick_firing(
+            [("focus", &s)],
+            now,
+            None,
+            std::time::Duration::from_secs(60),
+        );
+        assert!(picked.is_none());
+    }
+
+    #[test]
+    fn pick_firing_sorts_by_name() {
+        let a = sch(vec![Weekday::Thu], "09:00", "17:00");
+        let b = sch(vec![Weekday::Thu], "09:00", "17:00");
+        let now = Utc.with_ymd_and_hms(2026, 4, 9, 10, 0, 0).unwrap();
+        let picked =
+            pick_firing([("z_focus", &a), ("a_focus", &b)], now, None, std::time::Duration::ZERO)
+                .unwrap();
+        assert_eq!(picked.0, "a_focus");
+    }
+
+    #[test]
+    fn pick_firing_requires_active_window() {
+        let s = sch(vec![Weekday::Thu], "09:00", "17:00");
+        let now = Utc.with_ymd_and_hms(2026, 4, 9, 18, 0, 0).unwrap();
+        let picked =
+            pick_firing([("focus", &s)], now, None, std::time::Duration::from_secs(60));
+        assert!(picked.is_none());
     }
 
     #[test]

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg0: #0b0d12;
+    --bg1: #131722;
+    --fg: #e8ecf1;
+    --muted: #8b93a7;
+    --accent: #7aa2f7;
+    --card: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.08);
+    --shadow: 0 30px 80px rgba(0,0,0,0.45);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg0: #f6f7fb;
+      --bg1: #ffffff;
+      --fg: #11151f;
+      --muted: #5c6479;
+      --accent: #3b5bdb;
+      --card: rgba(255, 255, 255, 0.7);
+      --border: rgba(17, 21, 31, 0.08);
+      --shadow: 0 30px 80px rgba(17,21,31,0.08);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    background: radial-gradient(1200px 800px at 20% 10%, color-mix(in srgb, var(--accent) 18%, var(--bg0)) 0%, var(--bg0) 55%) fixed,
+                radial-gradient(900px 600px at 85% 90%, color-mix(in srgb, var(--accent) 10%, var(--bg0)) 0%, var(--bg0) 60%) fixed,
+                var(--bg0);
+    -webkit-font-smoothing: antialiased;
+  }
+  main.wrap {
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+  }
+  .card {
+    width: min(720px, 100%);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 48px 44px;
+    backdrop-filter: blur(10px);
+    box-shadow: var(--shadow);
+    animation: fade 700ms ease-out;
+  }
+  @keyframes fade {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  header.brand {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 36px;
+  }
+  .logo {
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #7aa2f7, #bb9af7);
+    box-shadow: 0 8px 22px rgba(122,162,247,0.35);
+    font-weight: 800;
+    color: #0b0d12;
+    font-size: 20px;
+    letter-spacing: 0.5px;
+  }
+  .brand .name { font-weight: 700; font-size: 18px; letter-spacing: 0.3px; }
+  .brand .sub  { color: var(--muted); font-size: 13px; }
+  .headline {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .domain {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  blockquote {
+    margin: 0 0 22px 0;
+    font-size: 26px;
+    line-height: 1.45;
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .author {
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  footer.foot {
+    margin-top: 36px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+    margin-right: 8px;
+    vertical-align: middle;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+    50%     { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 2%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card { animation: none; }
+    .dot  { animation: none; }
+  }
+  @media (max-width: 480px) {
+    .card { padding: 32px 24px; border-radius: 16px; }
+    blockquote { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <header class="brand">
+        <div class="logo" aria-hidden="true">m</div>
+        <div>
+          <div class="name">monk</div>
+          <div class="sub">__SUB__</div>
+        </div>
+      </header>
+      <div class="headline"><span class="dot" aria-hidden="true"></span>__HEADLINE__<span class="domain">__DOMAIN__</span></div>
+      <blockquote>&ldquo;__QUOTE__&rdquo;</blockquote>
+      <div class="author">— __AUTHOR__</div>
+      <footer class="foot">
+        <span>__FOOTER__</span>
+        <span>__PROFILE_LABEL__ __PROFILE__</span>
+      </footer>
+    </article>
+  </main>
+</body>
+</html>

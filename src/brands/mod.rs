@@ -58,7 +58,7 @@ pub struct Brand {
 
 impl Brand {
     pub fn qualified(&self) -> String {
-        format!("{}:{}", self.namespace, self.id)
+        format!("{}.{}", self.namespace, self.id)
     }
     pub fn current_platform_apps(&self) -> &[String] {
         #[cfg(target_os = "macos")]
@@ -164,13 +164,13 @@ mod tests {
 
     #[test]
     fn resolve_returns_domains_and_apps() {
-        let r = resolve(&["global:instagram".into()]).unwrap();
+        let r = resolve(&["global.instagram".into()]).unwrap();
         assert!(!r.domains.is_empty());
     }
 
     #[test]
     fn resolve_known_brand_includes_canonical_domain() {
-        let r = resolve(&["global:instagram".into()]).unwrap();
+        let r = resolve(&["global.instagram".into()]).unwrap();
         assert!(r.domains.contains("instagram.com"));
         assert!(r.unknown.is_empty());
     }

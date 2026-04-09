@@ -7,8 +7,6 @@ use std::{
 };
 
 use parking_lot::{Mutex, RwLock};
-use uuid::Uuid;
-
 use crate::{
     apps::{self, AppCache},
     audit::{AuditKind, AuditLog},
@@ -22,12 +20,14 @@ use crate::{
 
 /// Lock ordering contract — acquire in this order, release in reverse:
 ///
-/// 1. `config_write` (serializes writers against each other)
-/// 2. `config` (RwLock; clone out fast, never hold across I/O)
-/// 3. `hosts`
-/// 4. `procs`
-/// 5. `active_profile`
-/// 6. `last_tamper_at`
+/// 1. `start_gate` (serializes session starts)
+/// 2. `config_write` (serializes writers against each other)
+/// 3. `config` (RwLock; clone out fast, never hold across I/O)
+/// 4. `hosts`
+/// 5. `procs`
+/// 6. `active_profile`
+/// 7. `last_tamper_at`
+/// 8. `last_fired_window`
 ///
 /// `store` is a standalone file-backed handle and is treated as a leaf —
 /// never acquire any of the above while it's in flight.
@@ -43,6 +43,7 @@ pub struct Supervisor {
     active_profile: Arc<RwLock<Option<String>>>,
     last_tamper_at: Arc<Mutex<Option<std::time::Instant>>>,
     last_fired_window: Arc<Mutex<Option<FiredWindow>>>,
+    start_gate: Arc<Mutex<()>>,
 }
 
 type FiredWindow = (String, chrono::DateTime<chrono::Utc>);
@@ -60,6 +61,7 @@ impl Supervisor {
             active_profile: Arc::new(RwLock::new(None)),
             last_tamper_at: Arc::new(Mutex::new(None)),
             last_fired_window: Arc::new(Mutex::new(None)),
+            start_gate: Arc::new(Mutex::new(())),
         })
     }
 
@@ -255,6 +257,7 @@ impl Supervisor {
         reason: Option<String>,
         panic_phrase: String,
     ) -> Result<Session> {
+        let _gate = self.start_gate.lock();
         if let Some((existing, _)) = self.store.load()? {
             if !existing.is_expired() {
                 return Err(Error::Other("a session is already running".into()));
@@ -442,33 +445,21 @@ impl Supervisor {
         use crate::daemon::scheduler;
         let cfg = self.config.read().clone();
         let now = chrono::Utc::now();
-        let mut candidates: Vec<(String, scheduler::Window)> = cfg
+        let pairs: Vec<(&str, &crate::config::Schedule)> = cfg
             .profiles
             .iter()
-            .filter_map(|(name, p)| {
-                let sch = p.schedule.as_ref()?;
-                let w = scheduler::current_or_next(sch, now)?;
-                if w.contains(now) {
-                    Some((name.clone(), w))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(name, p)| p.schedule.as_ref().map(|s| (name.as_str(), s)))
             .collect();
-        candidates.sort_by(|a, b| a.0.cmp(&b.0));
-        let Some((name, w)) = candidates.into_iter().next() else {
+        let last = self.last_fired_window.lock().clone();
+        let Some((name, w)) = scheduler::pick_firing(
+            pairs,
+            now,
+            last.as_ref(),
+            std::time::Duration::from_secs(60),
+        ) else {
             return;
         };
-        {
-            let last = self.last_fired_window.lock();
-            if last.as_ref().is_some_and(|(n, s)| n == &name && *s == w.start) {
-                return;
-            }
-        }
         let remaining = w.remaining(now);
-        if remaining < std::time::Duration::from_secs(60) {
-            return;
-        }
         let phrase = crate::session::lock::generate_phrase();
         match self.start(name.clone(), remaining, false, Some("scheduled".into()), phrase) {
             Ok(_) => {
@@ -660,13 +651,19 @@ fn build_block_set(profile: &Profile) -> Result<BlockSet> {
     let mut brand_apps: Vec<String> = Vec::new();
     if !profile.brands.is_empty() {
         let resolved = crate::brands::resolve(&profile.brands)?;
+        if resolved.unknown.len() == profile.brands.len() {
+            return Err(Error::Config(format!(
+                "all brands in profile are unknown: {:?}",
+                resolved.unknown
+            )));
+        }
+        if !resolved.unknown.is_empty() {
+            tracing::warn!(unknown = ?resolved.unknown, "profile references unknown brands");
+        }
         for d in resolved.domains {
             hosts.insert(d);
         }
         brand_apps.extend(resolved.apps);
-        if !resolved.unknown.is_empty() {
-            tracing::warn!(unknown = ?resolved.unknown, "profile references unknown brands");
-        }
     }
     let cache = match AppCache::load()? {
         Some(c) => c,
@@ -692,5 +689,3 @@ fn lock_to_session(lock: &SessionLock) -> Session {
     }
 }
 
-#[allow(dead_code)]
-fn _unused(_: Uuid) {}

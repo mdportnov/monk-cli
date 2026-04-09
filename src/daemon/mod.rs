@@ -1,3 +1,4 @@
+mod block_page;
 mod pidfile;
 pub mod scheduler;
 mod server;

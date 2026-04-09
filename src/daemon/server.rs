@@ -66,6 +66,8 @@ pub async fn run() -> Result<()> {
         }
     });
 
+    super::block_page::spawn(supervisor.clone(), shutdown.clone());
+
     tracing::info!("monkd listening");
 
     #[cfg(unix)]
