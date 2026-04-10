@@ -152,12 +152,45 @@ impl AuditLog {
         message: &str,
         extra: serde_json::Value,
     ) {
-        if let Err(e) = self.insert(kind, session_id, message, &extra) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let audit = self.clone();
+            let message = message.to_string();
+            handle.spawn(async move {
+                if let Err(e) = audit.insert(kind, session_id, &message, &extra).await {
+                    tracing::warn!(?e, "audit write failed");
+                }
+            });
+        } else {
+            let at = chrono::Utc::now().to_rfc3339();
+            let sid = session_id.map(|id| id.to_string());
+            let extra_s = serde_json::to_string(&extra).unwrap_or_else(|_| "null".into());
+            let conn = self.conn.lock();
+            if let Err(e) = conn.execute(
+                "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![at, kind.as_str(), sid, message, extra_s],
+            ) {
+                tracing::warn!(?e, "audit write failed");
+            }
+        }
+    }
+
+    pub async fn append_async(&self, kind: AuditKind, session_id: Option<Uuid>, message: &str) {
+        self.append_with_async(kind, session_id, message, serde_json::Value::Null).await;
+    }
+
+    pub async fn append_with_async(
+        &self,
+        kind: AuditKind,
+        session_id: Option<Uuid>,
+        message: &str,
+        extra: serde_json::Value,
+    ) {
+        if let Err(e) = self.insert(kind, session_id, message, &extra).await {
             tracing::warn!(?e, "audit write failed");
         }
     }
 
-    fn insert(
+    async fn insert(
         &self,
         kind: AuditKind,
         session_id: Option<Uuid>,
@@ -167,11 +200,17 @@ impl AuditLog {
         let at = Utc::now().to_rfc3339();
         let sid = session_id.map(|id| id.to_string());
         let extra_s = serde_json::to_string(extra).map_err(Error::from)?;
-        let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
-            params![at, kind.as_str(), sid, message, extra_s],
-        )?;
+        let conn = self.conn.clone();
+        let kind_str = kind.as_str().to_string();
+        let message = message.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock();
+            conn.execute(
+                "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
+                params![at, kind_str, sid, message, extra_s],
+            )
+        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
         Ok(())
     }
 
@@ -195,12 +234,39 @@ impl AuditLog {
         }
     }
 
+    pub async fn last_open_session_start_async(&self) -> Result<Option<AuditEvent>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock();
+            let mut stmt = conn.prepare(
+                "SELECT at, kind, session_id, message, extra FROM audit_events
+                 WHERE kind = 'session_started'
+                   AND session_id IS NOT NULL
+                   AND session_id NOT IN (
+                       SELECT session_id FROM audit_events
+                       WHERE kind IN ('session_completed', 'session_panicked')
+                         AND session_id IS NOT NULL
+                   )
+                 ORDER BY id DESC LIMIT 1",
+            )?;
+            let mut rows = stmt.query_map([], row_to_event)?;
+            match rows.next() {
+                Some(Ok(Some(e))) => Ok(Some(e)),
+                _ => Ok(None),
+            }
+        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+    }
+
     pub fn read_all(&self) -> Result<Vec<AuditEvent>> {
+        self.read_all_with_limit(500)
+    }
+
+    pub fn read_all_with_limit(&self, limit: usize) -> Result<Vec<AuditEvent>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC",
+            "SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC LIMIT ?",
         )?;
-        let rows = stmt.query_map([], row_to_event)?;
+        let rows = stmt.query_map([limit], row_to_event)?;
         let mut out = Vec::new();
         for r in rows {
             if let Ok(Some(e)) = r {
@@ -208,6 +274,28 @@ impl AuditLog {
             }
         }
         Ok(out)
+    }
+
+    pub async fn read_all_async(&self) -> Result<Vec<AuditEvent>> {
+        self.read_all_with_limit_async(500).await
+    }
+
+    pub async fn read_all_with_limit_async(&self, limit: usize) -> Result<Vec<AuditEvent>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock();
+            let mut stmt = conn.prepare(
+                "SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC LIMIT ?",
+            )?;
+            let rows = stmt.query_map([limit], row_to_event)?;
+            let mut out = Vec::new();
+            for r in rows {
+                if let Ok(Some(e)) = r {
+                    out.push(e);
+                }
+            }
+            Ok::<Vec<AuditEvent>, crate::Error>(out)
+        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
     }
 
     fn migrate_legacy_jsonl(&self) {

@@ -1767,6 +1767,14 @@ async fn ensure_daemon() {
 
 pub async fn run() -> Result<()> {
     ensure_daemon().await;
+
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        prev_hook(info);
+    }));
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;

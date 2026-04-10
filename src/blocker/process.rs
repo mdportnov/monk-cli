@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, time::Instant};
 
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -7,30 +7,58 @@ use crate::{
     Result,
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ProcessGuard {
     sys: System,
+    last_refresh: Instant,
+}
+
+impl Default for ProcessGuard {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProcessGuard {
     pub fn new() -> Self {
-        Self { sys: System::new() }
+        use std::time::Duration;
+        Self {
+            sys: System::new(),
+            last_refresh: Instant::now() - Duration::from_secs(10),
+        }
     }
 
     pub fn kill_matching(&mut self, apps: &[InstalledApp]) -> Result<usize> {
         if apps.is_empty() {
             return Ok(0);
         }
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
-        let mut killed = 0;
-        for proc in self.sys.processes().values() {
-            let exe = proc.exe().map(Path::to_path_buf);
-            let name = proc.name().to_string_lossy().to_lowercase();
-            if apps.iter().any(|app| matches_process(app, exe.as_deref(), &name)) && proc.kill() {
-                killed += 1;
+
+        let mut total_killed = 0;
+        for attempt in 0..2 {
+            if attempt == 0 {
+                let now = Instant::now();
+                if now.duration_since(self.last_refresh).as_secs() >= 5 {
+                    self.sys.refresh_processes(ProcessesToUpdate::All, true);
+                    self.last_refresh = now;
+                }
+            } else {
+                self.sys.refresh_processes(ProcessesToUpdate::All, true);
+                self.last_refresh = Instant::now();
+            }
+            let mut killed = 0;
+            for proc in self.sys.processes().values() {
+                let exe = proc.exe().map(Path::to_path_buf);
+                let name = proc.name().to_string_lossy().to_lowercase();
+                if apps.iter().any(|app| matches_process(app, exe.as_deref(), &name)) && proc.kill() {
+                    killed += 1;
+                }
+            }
+            total_killed += killed;
+            if killed == 0 {
+                break;
             }
         }
-        Ok(killed)
+        Ok(total_killed)
     }
 }
 

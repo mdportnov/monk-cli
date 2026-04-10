@@ -87,7 +87,7 @@ impl SessionLock {
     pub fn remaining(&self) -> Duration {
         let total = self.duration_ms.saturating_add(self.penalty_applied_ms);
         let left = total.saturating_sub(self.progressed_ms);
-        Duration::from_millis(u64::try_from(left).unwrap_or(u64::MAX))
+        Duration::from_millis(u64::try_from(left).unwrap_or(0))
     }
 
     pub fn ends_at(&self) -> DateTime<Utc> {
@@ -110,7 +110,11 @@ impl SessionLock {
     }
 
     pub fn apply_penalty(&mut self, extra: Duration) {
+        const MAX_PENALTY_MS: u128 = 24 * 60 * 60 * 1000;
         self.penalty_applied_ms = self.penalty_applied_ms.saturating_add(extra.as_millis());
+        if self.penalty_applied_ms > MAX_PENALTY_MS {
+            self.penalty_applied_ms = MAX_PENALTY_MS;
+        }
         self.reseal();
     }
 

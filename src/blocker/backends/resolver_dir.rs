@@ -34,7 +34,14 @@ impl ResolverDirBlocker {
     }
 
     fn file_for(&self, domain: &str) -> PathBuf {
-        self.root.join(domain)
+        let safe_domain: String = domain
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
+            .collect();
+        if safe_domain.is_empty() || safe_domain != domain {
+            return self.root.join("invalid");
+        }
+        self.root.join(safe_domain)
     }
 
     fn render(&self) -> String {
@@ -193,5 +200,17 @@ mod tests {
     fn conformance() {
         let (_dir, mut b) = make();
         crate::blocker::backends::assert_conformance(&mut b);
+    }
+
+    #[test]
+    fn rejects_path_traversal() {
+        let (_dir, b) = make();
+        let bad_paths = ["../evil", "sub/../../../etc/passwd", "foo/bar", "test\\windows"];
+        for bad in bad_paths {
+            let result = b.file_for(bad);
+            assert_eq!(result.file_name().unwrap(), "invalid");
+        }
+        let good = b.file_for("example.com");
+        assert_eq!(good.file_name().unwrap(), "example.com");
     }
 }

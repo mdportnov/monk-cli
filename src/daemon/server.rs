@@ -7,6 +7,7 @@ use interprocess::local_socket::{GenericFilePath, ToFsName};
 #[cfg(windows)]
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
 use tokio::sync::Notify;
+use tokio::task::JoinSet;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 #[cfg(not(windows))]
@@ -46,13 +47,15 @@ pub async fn run() -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(sock_path) = paths::ipc_socket() {
-            let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o666));
+            let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
         }
     }
 
+    let mut task_set = JoinSet::new();
+
     let tick_sup = supervisor.clone();
     let tick_shutdown = shutdown.clone();
-    let ticker = tokio::spawn(async move {
+    task_set.spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         loop {
             tokio::select! {
@@ -91,10 +94,8 @@ pub async fn run() -> Result<()> {
 
     'main: loop {
         #[cfg(unix)]
-        let sig_ctrl_c = tokio::signal::ctrl_c();
-        #[cfg(unix)]
         tokio::select! {
-            _ = sig_ctrl_c => { if should_exit("ctrl_c") { break 'main; } }
+            _ = tokio::signal::ctrl_c() => { if should_exit("ctrl_c") { break 'main; } }
             _ = sigterm.recv() => { if should_exit("sigterm") { break 'main; } }
             _ = sighup.recv() => { if should_exit("sighup") { break 'main; } }
             _ = shutdown.notified() => break 'main,
@@ -103,7 +104,7 @@ pub async fn run() -> Result<()> {
                     Ok(stream) => {
                         let sup = supervisor.clone();
                         let shutdown = shutdown.clone();
-                        tokio::spawn(async move {
+                        task_set.spawn(async move {
                             if let Err(e) = handle(stream, sup, shutdown).await {
                                 tracing::warn!(?e, "client error");
                             }
@@ -122,7 +123,7 @@ pub async fn run() -> Result<()> {
                     Ok(stream) => {
                         let sup = supervisor.clone();
                         let shutdown = shutdown.clone();
-                        tokio::spawn(async move {
+                        task_set.spawn(async move {
                             if let Err(e) = handle(stream, sup, shutdown).await {
                                 tracing::warn!(?e, "client error");
                             }
@@ -135,7 +136,7 @@ pub async fn run() -> Result<()> {
     }
 
     shutdown.notify_waiters();
-    let _ = ticker.await;
+    task_set.shutdown().await;
     drop(listener);
     #[cfg(not(windows))]
     {
@@ -147,7 +148,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn codec() -> LengthDelimitedCodec {
-    LengthDelimitedCodec::builder().max_frame_length(4 * 1024 * 1024).new_codec()
+    LengthDelimitedCodec::builder().max_frame_length(65536).new_codec()
 }
 
 async fn handle(
@@ -159,34 +160,43 @@ async fn handle(
     let mut source = FramedRead::new(reader, codec());
     let mut sink = FramedWrite::new(writer, codec());
 
-    while let Some(frame) = source.next().await {
-        let bytes = frame.map_err(|e| Error::Ipc(e.to_string()))?;
-        let env: Envelope<Request> = match serde_json::from_slice(&bytes) {
-            Ok(e) => e,
-            Err(e) => {
-                let resp = Response::Error { message: format!("bad envelope: {e}") };
+    let shutdown_fut = shutdown.notified();
+    tokio::pin!(shutdown_fut);
+
+    loop {
+        tokio::select! {
+            frame = source.next() => {
+                let Some(frame) = frame else { break };
+                let bytes = frame.map_err(|e| Error::Ipc(e.to_string()))?;
+                let env: Envelope<Request> = match serde_json::from_slice(&bytes) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        let resp = Response::Error { message: format!("bad envelope: {e}") };
+                        let out = Envelope { v: PROTOCOL_VERSION, body: resp };
+                        let payload = serde_json::to_vec(&out)?;
+                        let _ = sink.send(payload.into()).await;
+                        return Ok(());
+                    }
+                };
+                if env.v != PROTOCOL_VERSION {
+                    let resp = Response::Error {
+                        message: format!(
+                            "protocol version mismatch: client={}, daemon={}",
+                            env.v, PROTOCOL_VERSION
+                        ),
+                    };
+                    let out = Envelope { v: PROTOCOL_VERSION, body: resp };
+                    let payload = serde_json::to_vec(&out)?;
+                    let _ = sink.send(payload.into()).await;
+                    return Ok(());
+                }
+                let resp = dispatch(env.body, &sup, &shutdown);
                 let out = Envelope { v: PROTOCOL_VERSION, body: resp };
                 let payload = serde_json::to_vec(&out)?;
-                let _ = sink.send(payload.into()).await;
-                return Ok(());
+                sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
             }
-        };
-        if env.v != PROTOCOL_VERSION {
-            let resp = Response::Error {
-                message: format!(
-                    "protocol version mismatch: client={}, daemon={}",
-                    env.v, PROTOCOL_VERSION
-                ),
-            };
-            let out = Envelope { v: PROTOCOL_VERSION, body: resp };
-            let payload = serde_json::to_vec(&out)?;
-            let _ = sink.send(payload.into()).await;
-            return Ok(());
+            _ = &mut shutdown_fut => break,
         }
-        let resp = dispatch(env.body, &sup, &shutdown);
-        let out = Envelope { v: PROTOCOL_VERSION, body: resp };
-        let payload = serde_json::to_vec(&out)?;
-        sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
     }
     Ok(())
 }

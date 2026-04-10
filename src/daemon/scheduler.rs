@@ -63,7 +63,13 @@ impl Window {
         now >= self.start && now < self.end
     }
     pub fn remaining(&self, now: DateTime<Utc>) -> std::time::Duration {
-        (self.end - now).to_std().unwrap_or_default()
+        match (self.end - now).to_std() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(?e, "chrono duration conversion failed, using 1 minute fallback");
+                std::time::Duration::from_secs(60)
+            }
+        }
     }
 }
 

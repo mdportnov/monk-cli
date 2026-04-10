@@ -20,12 +20,10 @@ fn apply_sudo_user_home() {
     if user == "root" {
         return;
     }
-    let home = std::process::Command::new("sh")
-        .args(["-c", &format!("eval echo ~{user}")])
-        .output()
+    let home = nix::unistd::User::from_name(&user)
         .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
+        .flatten()
+        .map(|u| u.dir.to_string_lossy().to_string())
         .filter(|s| !s.is_empty());
     if let Some(home) = home {
         std::env::set_var("HOME", &home);
@@ -50,7 +48,10 @@ fn chown_to_sudo_user(path: &std::path::Path) {
     let Some((uid, gid)) = sudo_user_ids() else { return };
     if let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) {
         unsafe {
-            libc::chown(c.as_ptr(), uid, gid);
+            let result = libc::chown(c.as_ptr(), uid, gid);
+            if result != 0 {
+                tracing::warn!("chown failed for {}: errno {}", path.display(), std::io::Error::last_os_error());
+            }
         }
     }
 }

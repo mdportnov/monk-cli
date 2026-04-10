@@ -1,8 +1,11 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Instant,
 };
 
+use parking_lot::Mutex;
 use tokio::{net::UdpSocket, sync::Notify};
 
 pub const PORT: u16 = 53535;
@@ -11,6 +14,7 @@ const TYPE_A: u16 = 1;
 const TYPE_AAAA: u16 = 28;
 const CLASS_IN: u16 = 1;
 const TTL: u32 = 60;
+const MAX_QUERIES_PER_SECOND: u32 = 100;
 
 pub fn spawn(shutdown: Arc<Notify>) {
     let addr: SocketAddr = (Ipv4Addr::LOCALHOST, PORT).into();
@@ -23,6 +27,7 @@ pub fn spawn(shutdown: Arc<Notify>) {
             }
         };
         tracing::info!(%addr, "dns server listening");
+        let rate_limiter = Arc::new(Mutex::new(HashMap::<IpAddr, (Instant, u32)>::new()));
         let mut buf = [0u8; 1500];
         loop {
             tokio::select! {
@@ -30,9 +35,12 @@ pub fn spawn(shutdown: Arc<Notify>) {
                 recv = socket.recv_from(&mut buf) => {
                     match recv {
                         Ok((len, peer)) => {
-                            if let Some(resp) = handle_query(&buf[..len]) {
-                                if let Err(e) = socket.send_to(&resp, peer).await {
-                                    tracing::debug!(?e, "dns server: send failed");
+                            let peer_ip = peer.ip();
+                            if !is_rate_limited(peer_ip, &rate_limiter) {
+                                if let Some(resp) = handle_query(&buf[..len]) {
+                                    if let Err(e) = socket.send_to(&resp, peer).await {
+                                        tracing::debug!(?e, "dns server: send failed");
+                                    }
                                 }
                             }
                         }
@@ -44,6 +52,30 @@ pub fn spawn(shutdown: Arc<Notify>) {
             }
         }
     });
+}
+
+fn is_rate_limited(ip: IpAddr, rate_limiter: &Arc<Mutex<HashMap<IpAddr, (Instant, u32)>>>) -> bool {
+    let mut limiter = rate_limiter.lock();
+    let now = Instant::now();
+
+    limiter.retain(|_, (last_reset, _)| now.duration_since(*last_reset).as_secs() < 1);
+
+    match limiter.get_mut(&ip) {
+        Some((last_reset, count)) => {
+            if now.duration_since(*last_reset).as_secs() >= 1 {
+                *last_reset = now;
+                *count = 1;
+                false
+            } else {
+                *count += 1;
+                *count > MAX_QUERIES_PER_SECOND
+            }
+        }
+        None => {
+            limiter.insert(ip, (now, 1));
+            false
+        }
+    }
 }
 
 fn handle_query(req: &[u8]) -> Option<Vec<u8>> {
