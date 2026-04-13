@@ -70,6 +70,7 @@ jobs:
             (cd dist && tar -czf "${name}.tar.gz" "$name")
             echo "asset=dist/${name}.tar.gz" >> "$GITHUB_OUTPUT"
           fi
+          rm -rf "dist/$name"
 
       - name: build macOS .pkg
         if: runner.os == 'macOS'
@@ -109,21 +110,20 @@ jobs:
       - name: build .rpm
         if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
         shell: bash
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.target }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           [ -z "$version" ] && version="0.0.0-dev"
-          CARGO_BUILD_TARGET=${{ matrix.target }} cargo generate-rpm --output "dist/${BIN}-v${version}-${{ matrix.target }}.rpm"
+          cargo generate-rpm --target ${{ matrix.target }} --output "dist/${BIN}-v${version}-${{ matrix.target }}.rpm"
 
       - name: checksums
         shell: bash
         run: |
           cd dist
+          files=$(find . -maxdepth 1 -type f -name 'monk-*' | sed 's|^\./||' | sort)
           if command -v sha256sum >/dev/null; then
-            sha256sum monk-*.* > "SHA256SUMS-${{ matrix.target }}.txt"
+            sha256sum $files > "SHA256SUMS-${{ matrix.target }}.txt"
           else
-            shasum -a 256 monk-*.* > "SHA256SUMS-${{ matrix.target }}.txt"
+            shasum -a 256 $files > "SHA256SUMS-${{ matrix.target }}.txt"
           fi
 
       - uses: actions/upload-artifact@v4

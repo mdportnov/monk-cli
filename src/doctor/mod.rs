@@ -140,10 +140,8 @@ fn open_path_action(p: crate::Result<std::path::PathBuf>) -> std::result::Result
     } else {
         "xdg-open"
     };
-    let status = std::process::Command::new(cmd)
-        .arg(&path)
-        .status()
-        .map_err(|e| format!("{cmd}: {e}"))?;
+    let status =
+        std::process::Command::new(cmd).arg(&path).status().map_err(|e| format!("{cmd}: {e}"))?;
     if !status.success() {
         return Err(format!("{cmd} exited with {status}"));
     }
@@ -172,7 +170,12 @@ pub fn purpose_for(id: &str) -> &'static str {
 }
 
 impl Check {
-    fn new(id: &'static str, title: impl Into<String>, status: Status, detail: impl Into<String>) -> Self {
+    fn new(
+        id: &'static str,
+        title: impl Into<String>,
+        status: Status,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             id,
             title: title.into(),
@@ -257,12 +260,7 @@ pub async fn run() -> Report {
 }
 
 fn check_version() -> Check {
-    Check::new(
-        "version",
-        "monk version",
-        Status::Info,
-        format!("v{}", env!("CARGO_PKG_VERSION")),
-    )
+    Check::new("version", "monk version", Status::Info, format!("v{}", env!("CARGO_PKG_VERSION")))
 }
 
 fn check_platform() -> Check {
@@ -281,18 +279,18 @@ fn check_privileges() -> Check {
         if is_root {
             Check::new("privileges", "privileges", Status::Ok, "running as root")
         } else {
-            Check::new(
-                "privileges",
-                "privileges",
-                Status::Warn,
-                "not running as root",
-            )
-            .with_hint("some blocker backends require root (run `sudo monk ...`)")
+            Check::new("privileges", "privileges", Status::Warn, "not running as root")
+                .with_hint("some blocker backends require root (run `sudo monk ...`)")
         }
     }
     #[cfg(windows)]
     {
-        Check::new("privileges", "privileges", Status::Info, "windows — elevation checked per-backend")
+        Check::new(
+            "privileges",
+            "privileges",
+            Status::Info,
+            "windows — elevation checked per-backend",
+        )
     }
 }
 
@@ -372,13 +370,10 @@ fn check_pidfile() -> Check {
     let stop = Action { key: 'x', label: "stop daemon", kind: ActionKind::StopDaemon };
     match PidFile::new() {
         Ok(p) => match p.is_alive() {
-            Ok(Some(pid)) => Check::new(
-                "daemon",
-                "daemon",
-                Status::Ok,
-                format!("running (pid {pid})"),
-            )
-            .with_actions(vec![stop]),
+            Ok(Some(pid)) => {
+                Check::new("daemon", "daemon", Status::Ok, format!("running (pid {pid})"))
+                    .with_actions(vec![stop])
+            }
             Ok(None) => Check::new("daemon", "daemon", Status::Warn, "not running")
                 .with_hint("start it with `monk daemon` (or `sudo monk daemon`)")
                 .with_actions(vec![start]),
@@ -392,12 +387,9 @@ fn check_pidfile() -> Check {
 async fn check_ipc() -> Check {
     let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     match ipc::send(&Request::Ping).await {
-        Ok(Response::Pong { version }) => Check::new(
-            "ipc",
-            "ipc",
-            Status::Ok,
-            format!("daemon v{version} responds"),
-        ),
+        Ok(Response::Pong { version }) => {
+            Check::new("ipc", "ipc", Status::Ok, format!("daemon v{version} responds"))
+        }
         Ok(other) => Check::new("ipc", "ipc", Status::Warn, format!("unexpected: {other:?}")),
         Err(e) => Check::new("ipc", "ipc", Status::Fail, format!("send failed: {e}"))
             .with_hint("daemon may be down or socket path mismatched")
@@ -538,7 +530,9 @@ async fn check_dns_server() -> Check {
             ),
             Err(e) => Check::new("dns_server", "dns server", Status::Warn, e.to_string()),
         },
-        Ok(Err(e)) => Check::new("dns_server", "dns server", Status::Fail, format!("recv failed: {e}")),
+        Ok(Err(e)) => {
+            Check::new("dns_server", "dns server", Status::Fail, format!("recv failed: {e}"))
+        }
         Err(_) => Check::new("dns_server", "dns server", Status::Fail, "timeout waiting for reply")
             .with_hint("daemon may be down or another process owns the port")
             .with_actions(vec![start]),
@@ -603,7 +597,11 @@ fn skip_name(buf: &[u8], mut i: usize) -> std::result::Result<usize, &'static st
 }
 
 async fn check_block_page() -> Check {
-    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, time::timeout};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpStream,
+        time::timeout,
+    };
 
     let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     let fut = async {
@@ -635,10 +633,7 @@ async fn check_block_page() -> Check {
                     "permission denied",
                     "binding :80 requires root; run daemon with elevated privileges",
                 ),
-                ErrorKind::AddrInUse => (
-                    "address in use",
-                    "another process owns 127.0.0.1:80",
-                ),
+                ErrorKind::AddrInUse => ("address in use", "another process owns 127.0.0.1:80"),
                 _ => ("not reachable", "daemon not running or port 80 unavailable"),
             };
             Check::new("block_page", "block page", Status::Warn, format!("{detail}: {e}"))

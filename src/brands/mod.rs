@@ -96,8 +96,7 @@ pub struct Resolved {
 
 pub fn resolve(qualified_ids: &[String]) -> Result<Resolved> {
     let brands = all_brands()?;
-    let by_q: BTreeMap<String, &Brand> =
-        brands.iter().map(|b| (b.qualified(), b)).collect();
+    let by_q: BTreeMap<String, &Brand> = brands.iter().map(|b| (b.qualified(), b)).collect();
     let mut out = Resolved::default();
     for q in qualified_ids {
         if let Some(b) = by_q.get(q) {

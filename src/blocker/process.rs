@@ -1,4 +1,7 @@
-use std::{path::{Path, PathBuf}, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -22,10 +25,7 @@ impl Default for ProcessGuard {
 impl ProcessGuard {
     pub fn new() -> Self {
         use std::time::Duration;
-        Self {
-            sys: System::new(),
-            last_refresh: Instant::now() - Duration::from_secs(10),
-        }
+        Self { sys: System::new(), last_refresh: Instant::now() - Duration::from_secs(10) }
     }
 
     pub fn kill_matching(&mut self, apps: &[InstalledApp]) -> Result<usize> {
@@ -49,7 +49,8 @@ impl ProcessGuard {
             for proc in self.sys.processes().values() {
                 let exe = proc.exe().map(Path::to_path_buf);
                 let name = proc.name().to_string_lossy().to_lowercase();
-                if apps.iter().any(|app| matches_process(app, exe.as_deref(), &name)) && proc.kill() {
+                if apps.iter().any(|app| matches_process(app, exe.as_deref(), &name)) && proc.kill()
+                {
                     killed += 1;
                 }
             }

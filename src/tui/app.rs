@@ -540,7 +540,9 @@ pub fn format_schedule_spec(s: Option<&crate::config::Schedule>) -> String {
     format!("{prefix}{days} {}-{}{tz}", s.start, s.end)
 }
 
-pub fn parse_schedule_spec(raw: &str) -> std::result::Result<Option<crate::config::Schedule>, String> {
+pub fn parse_schedule_spec(
+    raw: &str,
+) -> std::result::Result<Option<crate::config::Schedule>, String> {
     use crate::config::{Schedule, Weekday};
     let s = raw.trim();
     if s.is_empty() {
@@ -560,9 +562,8 @@ pub fn parse_schedule_spec(raw: &str) -> std::result::Result<Option<crate::confi
     let window = tokens.remove(0);
     let tz = tokens.first().map(|s| (*s).to_string()).unwrap_or_else(|| "local".into());
 
-    let (start, end) = window
-        .split_once('-')
-        .ok_or_else(|| "window must be HH:MM-HH:MM".to_string())?;
+    let (start, end) =
+        window.split_once('-').ok_or_else(|| "window must be HH:MM-HH:MM".to_string())?;
     let parse_day = |t: &str| -> std::result::Result<Weekday, String> {
         Ok(match t.to_ascii_lowercase().as_str() {
             "mon" | "mo" => Weekday::Mon,
@@ -999,7 +1000,8 @@ impl App {
             }
             if let Some(session) = &self.globals.active {
                 if let Ok(Response::Config(cfg)) = ipc::send(&Request::GetConfig).await {
-                    self.globals.active_profile_detail = cfg.profiles.get(&session.profile).cloned();
+                    self.globals.active_profile_detail =
+                        cfg.profiles.get(&session.profile).cloned();
                 }
             } else {
                 self.globals.active_profile_detail = None;
@@ -1225,7 +1227,8 @@ impl App {
                 }
             }
         };
-        match ipc::send(&Request::SaveMode { name: name.clone(), profile: Box::new(profile) }).await {
+        match ipc::send(&Request::SaveMode { name: name.clone(), profile: Box::new(profile) }).await
+        {
             Ok(Response::Ok) => {
                 self.globals.set_flash(
                     crate::i18n::t!("tui.flash.saved", profile = name).to_string(),

@@ -13,8 +13,8 @@ use tui_big_text::{BigText, PixelSize};
 use crate::{
     ipc::ModeSummary,
     tui::app::{
-        App, ConfirmState, DoctorState, EditorField, EditorState, HomeState, MenuItem,
-        PickerState, Screen, SettingsField, SettingsState, LOCALES,
+        App, ConfirmState, DoctorState, EditorField, EditorState, HomeState, MenuItem, PickerState,
+        Screen, SettingsField, SettingsState, LOCALES,
     },
 };
 
@@ -493,9 +493,10 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
 
     let mut lines: Vec<Line> = Vec::new();
     let apps = &detail.profile.apps;
-    lines.push(Line::from(vec![
-        Span::styled(format!("apps · {}", apps.len()), Style::default().fg(ACCENT)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("apps · {}", apps.len()),
+        Style::default().fg(ACCENT),
+    )]));
     if apps.is_empty() {
         lines.push(Line::from(Span::styled(
             "  —",
@@ -518,16 +519,14 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
     }
     lines.push(Line::from(""));
     let sites = &detail.expanded_sites;
-    lines.push(Line::from(vec![
-        Span::styled(format!("sites · {}", sites.len()), Style::default().fg(ACCENT)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("sites · {}", sites.len()),
+        Style::default().fg(ACCENT),
+    )]));
     if !detail.profile.site_groups.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  groups  ", Style::default().fg(DIM)),
-            Span::styled(
-                detail.profile.site_groups.join(", "),
-                Style::default().fg(TEXT),
-            ),
+            Span::styled(detail.profile.site_groups.join(", "), Style::default().fg(TEXT)),
         ]));
     }
     let capacity = inner.height.saturating_sub(lines.len() as u16) as usize;
@@ -573,8 +572,7 @@ fn draw_usage_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
         return;
     }
 
-    let max_secs =
-        detail.usage.iter().map(|d| d.total.as_secs()).max().unwrap_or(0).max(1);
+    let max_secs = detail.usage.iter().map(|d| d.total.as_secs()).max().unwrap_or(0).max(1);
     let bar_area_height = inner.height.saturating_sub(2);
     let mut lines: Vec<Line> = Vec::new();
     for day in &detail.usage {
@@ -1472,12 +1470,10 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
             })
             .collect();
         let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::RIGHT)
-                    .border_style(Style::default().fg(DIM)),
+            .block(Block::default().borders(Borders::RIGHT).border_style(Style::default().fg(DIM)))
+            .highlight_style(
+                Style::default().bg(Color::Rgb(40, 50, 65)).add_modifier(Modifier::BOLD),
             )
-            .highlight_style(Style::default().bg(Color::Rgb(40, 50, 65)).add_modifier(Modifier::BOLD))
             .highlight_symbol("▶ ");
         let mut state = ListState::default();
         state.select(Some(st.selected));
@@ -1513,10 +1509,7 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
             if !c.extras.is_empty() {
                 lines.push(Line::from(""));
                 for extra in &c.extras {
-                    lines.push(Line::from(Span::styled(
-                        extra.clone(),
-                        Style::default().fg(DIM),
-                    )));
+                    lines.push(Line::from(Span::styled(extra.clone(), Style::default().fg(DIM))));
                 }
             }
             if let Some(hint) = &c.hint {
@@ -1564,8 +1557,8 @@ fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
     } else {
         "running…".to_string()
     };
-    let p = Paragraph::new(Span::styled(footer, Style::default().fg(DIM)))
-        .alignment(Alignment::Center);
+    let p =
+        Paragraph::new(Span::styled(footer, Style::default().fg(DIM))).alignment(Alignment::Center);
     f.render_widget(p, chunks[1]);
 }
 

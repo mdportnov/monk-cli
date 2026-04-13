@@ -23,23 +23,51 @@ pub struct Envelope<T> {
 pub enum Request {
     Ping,
     Status,
-    Start { profile: String, duration: Duration, hard_mode: bool, reason: Option<String> },
-    Stop { id: Option<Uuid> },
-    Pause { id: Uuid },
-    Resume { id: Uuid },
+    Start {
+        profile: String,
+        duration: Duration,
+        hard_mode: bool,
+        reason: Option<String>,
+    },
+    Stop {
+        id: Option<Uuid>,
+    },
+    Pause {
+        id: Uuid,
+    },
+    Resume {
+        id: Uuid,
+    },
     List,
     Shutdown,
-    Panic { phrase: String, cancel: bool },
+    Panic {
+        phrase: String,
+        cancel: bool,
+    },
     ListModes,
-    ModeStats { name: String },
-    ModeDetail { name: String, days: u32 },
-    SaveMode { name: String, profile: Box<crate::config::Profile> },
-    DeleteMode { name: String },
+    ModeStats {
+        name: String,
+    },
+    ModeDetail {
+        name: String,
+        days: u32,
+    },
+    SaveMode {
+        name: String,
+        profile: Box<crate::config::Profile>,
+    },
+    DeleteMode {
+        name: String,
+    },
     GetGeneral,
-    UpdateGeneral { general: crate::config::General },
+    UpdateGeneral {
+        general: crate::config::General,
+    },
     ResetAll,
     GetConfig,
-    SaveConfig { config: Box<Config> },
+    SaveConfig {
+        config: Box<Config>,
+    },
     NextScheduled,
     #[serde(other)]
     Unknown,
@@ -82,19 +110,34 @@ pub struct HardModeInfo {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
     Ok,
-    Pong { version: String },
+    Pong {
+        version: String,
+    },
     Session(Box<Session>),
-    Sessions { sessions: Vec<Session> },
-    Status { active: Option<Box<Session>>, hard_mode: Option<Box<HardModeInfo>>, pid: u32 },
+    Sessions {
+        sessions: Vec<Session>,
+    },
+    Status {
+        active: Option<Box<Session>>,
+        hard_mode: Option<Box<HardModeInfo>>,
+        pid: u32,
+    },
     PanicScheduled(Box<HardModeInfo>),
     HardModeActive(Box<HardModeInfo>),
-    Modes { modes: Vec<ModeSummary> },
+    Modes {
+        modes: Vec<ModeSummary>,
+    },
     ModeStatsData(ModeStats),
     ModeDetailData(Box<ModeDetailPayload>),
     General(crate::config::General),
     Config(Box<Config>),
-    NextScheduled { profile: Option<String>, at: Option<DateTime<Utc>> },
-    Error { message: String },
+    NextScheduled {
+        profile: Option<String>,
+        at: Option<DateTime<Utc>>,
+    },
+    Error {
+        message: String,
+    },
     #[serde(other)]
     Unknown,
 }

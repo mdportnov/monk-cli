@@ -490,10 +490,7 @@ pub async fn doctor() -> Result<()> {
     }
     let (ok, warn, fail) = report.summary();
     println!();
-    println!(
-        "summary: {ok} ok · {warn} warn · {fail} fail (took {:.0?})",
-        report.duration
-    );
+    println!("summary: {ok} ok · {warn} warn · {fail} fail (took {:.0?})", report.duration);
     if report.has_failures() {
         std::process::exit(1);
     }

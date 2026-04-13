@@ -176,9 +176,8 @@ impl Schedule {
         self.days.iter().fold(0u8, |m, d| m | d.bit())
     }
     pub fn parse_hhmm(s: &str) -> Result<(u32, u32)> {
-        let (h, m) = s
-            .split_once(':')
-            .ok_or_else(|| Error::Config(format!("invalid HH:MM `{s}`")))?;
+        let (h, m) =
+            s.split_once(':').ok_or_else(|| Error::Config(format!("invalid HH:MM `{s}`")))?;
         let h: u32 = h.parse().map_err(|_| Error::Config(format!("invalid hour `{s}`")))?;
         let m: u32 = m.parse().map_err(|_| Error::Config(format!("invalid minute `{s}`")))?;
         if h > 23 || m > 59 {
@@ -296,9 +295,8 @@ impl Config {
                 }
             }
             if let Some(sch) = &p.schedule {
-                sch.validate().map_err(|e| {
-                    Error::Config(format!("profile `{name}` schedule: {e}"))
-                })?;
+                sch.validate()
+                    .map_err(|e| Error::Config(format!("profile `{name}` schedule: {e}")))?;
             }
             for b in &p.brands {
                 if b.split_once('.').filter(|(ns, id)| !ns.is_empty() && !id.is_empty()).is_none() {

@@ -254,7 +254,9 @@ impl AuditLog {
                 Some(Ok(Some(e))) => Ok(Some(e)),
                 _ => Ok(None),
             }
-        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        })
+        .await
+        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
     }
 
     pub fn read_all(&self) -> Result<Vec<AuditEvent>> {

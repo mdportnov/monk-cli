@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use parking_lot::{Mutex, RwLock};
 use crate::{
     apps::{self, AppCache},
     audit::{AuditKind, AuditLog},
@@ -17,6 +16,7 @@ use crate::{
     session::{LoadKind, LockStore, NewLock, Session, SessionLock, SessionState},
     sites, Error, Result,
 };
+use parking_lot::{Mutex, RwLock};
 
 /// Lock ordering contract — acquire in this order, release in reverse:
 ///
@@ -125,18 +125,18 @@ impl Supervisor {
             .collect()
     }
 
-    pub fn mode_detail(
-        &self,
-        name: &str,
-        days: u32,
-    ) -> Result<crate::ipc::ModeDetailPayload> {
+    pub fn mode_detail(&self, name: &str, days: u32) -> Result<crate::ipc::ModeDetailPayload> {
         let cfg = self.config.read().clone();
         let profile = cfg
             .profile(name)
             .ok_or_else(|| Error::Config(format!("unknown mode `{name}`")))?
             .clone();
-        let mut expanded: std::collections::BTreeSet<String> =
-            profile.sites.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect();
+        let mut expanded: std::collections::BTreeSet<String> = profile
+            .sites
+            .iter()
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
         if let Ok(hosts) = crate::sites::expand_groups(&profile.site_groups) {
             for h in hosts {
                 expanded.insert(h);
@@ -452,12 +452,9 @@ impl Supervisor {
             .filter_map(|(name, p)| p.schedule.as_ref().map(|s| (name.as_str(), s)))
             .collect();
         let last = self.last_fired_window.lock().clone();
-        let Some((name, w)) = scheduler::pick_firing(
-            pairs,
-            now,
-            last.as_ref(),
-            std::time::Duration::from_secs(60),
-        ) else {
+        let Some((name, w)) =
+            scheduler::pick_firing(pairs, now, last.as_ref(), std::time::Duration::from_secs(60))
+        else {
             return;
         };
         let remaining = w.remaining(now);
@@ -526,8 +523,7 @@ impl Supervisor {
         let boot_ms = extra.get("boot_ms").and_then(|v| v.as_u64()).unwrap_or(0) as u128;
         let reason =
             extra.get("reason").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
-        let claim_mac =
-            extra.get("mac").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let claim_mac = extra.get("mac").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         if claim_mac.is_empty() {
             tracing::warn!("audit claim missing mac; refusing to reconstruct");
             return Ok(None);
@@ -561,11 +557,7 @@ impl Supervisor {
             return Ok(None);
         }
 
-        let mut lock = SessionLock {
-            progressed_ms: elapsed,
-            mac: String::new(),
-            ..original
-        };
+        let mut lock = SessionLock { progressed_ms: elapsed, mac: String::new(), ..original };
         lock.reseal();
         tracing::warn!(id = %lock.id, "session lock reconstructed from audit trail");
         Ok(Some(lock))
@@ -689,4 +681,3 @@ fn lock_to_session(lock: &SessionLock) -> Session {
         state: if lock.is_expired() { SessionState::Completed } else { SessionState::Running },
     }
 }
-

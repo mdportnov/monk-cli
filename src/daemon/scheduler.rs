@@ -12,8 +12,7 @@ impl Tz {
     fn at_utc(self, date: NaiveDate, h: u32, m: u32) -> Option<DateTime<Utc>> {
         match self {
             Tz::Named(tz) => {
-                let mapped =
-                    tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
+                let mapped = tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
                 mapped
                     .single()
                     .or_else(|| mapped.earliest())
@@ -21,8 +20,7 @@ impl Tz {
                     .map(|dt| dt.with_timezone(&Utc))
             }
             Tz::Local => {
-                let mapped =
-                    Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
+                let mapped = Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
                 mapped
                     .single()
                     .or_else(|| mapped.earliest())
@@ -144,18 +142,16 @@ mod tests {
     use super::*;
 
     fn sch(days: Vec<Weekday>, start: &str, end: &str) -> Schedule {
-        Schedule {
-            enabled: true,
-            days,
-            start: start.into(),
-            end: end.into(),
-            tz: "UTC".into(),
-        }
+        Schedule { enabled: true, days, start: start.into(), end: end.into(), tz: "UTC".into() }
     }
 
     #[test]
     fn in_window() {
-        let s = sch(vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri], "09:00", "17:00");
+        let s = sch(
+            vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri],
+            "09:00",
+            "17:00",
+        );
         let now = Utc.with_ymd_and_hms(2026, 4, 9, 10, 0, 0).unwrap();
         let w = current_or_next(&s, now).unwrap();
         assert!(w.contains(now));
@@ -163,7 +159,11 @@ mod tests {
 
     #[test]
     fn next_day() {
-        let s = sch(vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri], "09:00", "17:00");
+        let s = sch(
+            vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri],
+            "09:00",
+            "17:00",
+        );
         let now = Utc.with_ymd_and_hms(2026, 4, 9, 18, 0, 0).unwrap();
         let w = current_or_next(&s, now).unwrap();
         assert_eq!(w.start, Utc.with_ymd_and_hms(2026, 4, 10, 9, 0, 0).unwrap());
@@ -183,12 +183,8 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 4, 9, 10, 0, 0).unwrap();
         let w = current_or_next(&s, now).unwrap();
         let last = Some(("focus".to_string(), w.start));
-        let picked = pick_firing(
-            [("focus", &s)],
-            now,
-            last.as_ref(),
-            std::time::Duration::from_secs(60),
-        );
+        let picked =
+            pick_firing([("focus", &s)], now, last.as_ref(), std::time::Duration::from_secs(60));
         assert!(picked.is_none());
     }
 
@@ -196,12 +192,7 @@ mod tests {
     fn pick_firing_enforces_min_remaining() {
         let s = sch(vec![Weekday::Thu], "09:00", "10:00");
         let now = Utc.with_ymd_and_hms(2026, 4, 9, 9, 59, 30).unwrap();
-        let picked = pick_firing(
-            [("focus", &s)],
-            now,
-            None,
-            std::time::Duration::from_secs(60),
-        );
+        let picked = pick_firing([("focus", &s)], now, None, std::time::Duration::from_secs(60));
         assert!(picked.is_none());
     }
 
@@ -220,8 +211,7 @@ mod tests {
     fn pick_firing_requires_active_window() {
         let s = sch(vec![Weekday::Thu], "09:00", "17:00");
         let now = Utc.with_ymd_and_hms(2026, 4, 9, 18, 0, 0).unwrap();
-        let picked =
-            pick_firing([("focus", &s)], now, None, std::time::Duration::from_secs(60));
+        let picked = pick_firing([("focus", &s)], now, None, std::time::Duration::from_secs(60));
         assert!(picked.is_none());
     }
 

@@ -58,7 +58,6 @@ impl SystemdResolvedBlocker {
             tracing::warn!(?e, "failed to reload systemd-resolved");
         }
     }
-
 }
 
 impl Blocker for SystemdResolvedBlocker {
@@ -97,9 +96,8 @@ impl Blocker for SystemdResolvedBlocker {
         if !path.exists() {
             return Ok(());
         }
-        let is_ours = fs_err::read_to_string(&path)
-            .map(|s| s.contains("monk-managed"))
-            .unwrap_or(false);
+        let is_ours =
+            fs_err::read_to_string(&path).map(|s| s.contains("monk-managed")).unwrap_or(false);
         if is_ours {
             let _ = fs_err::remove_file(&path);
             self.reload_resolved();
@@ -111,9 +109,7 @@ impl Blocker for SystemdResolvedBlocker {
 impl BlockerBackend for SystemdResolvedBlocker {
     fn probe() -> ProbeResult {
         if !Path::new("/run/systemd/resolve").exists() {
-            return ProbeResult::Unavailable {
-                reason: "systemd-resolved not active".into(),
-            };
+            return ProbeResult::Unavailable { reason: "systemd-resolved not active".into() };
         }
         if !nix::unistd::geteuid().is_root() {
             return ProbeResult::Unavailable { reason: "requires root".into() };
@@ -139,11 +135,8 @@ mod tests {
     #[test]
     fn writes_dropin_with_routing_domains() {
         let (_dir, mut b) = make();
-        b.apply(&BlockSet {
-            sites: vec!["example.com".into(), "foo.test".into()],
-            apps: vec![],
-        })
-        .unwrap();
+        b.apply(&BlockSet { sites: vec!["example.com".into(), "foo.test".into()], apps: vec![] })
+            .unwrap();
         let content = fs_err::read_to_string(b.file_path()).unwrap();
         assert!(content.contains("monk-managed"));
         assert!(content.contains("DNS=127.0.0.1:53535"));

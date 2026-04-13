@@ -118,13 +118,10 @@ impl BlockerBackend for HostsBlocker {
     fn probe() -> ProbeResult {
         let path = hosts_path();
         match fs_err::OpenOptions::new().write(true).open(&path) {
-            Ok(_) => ProbeResult::Available {
-                priority: 10,
-                detail: path.display().to_string(),
-            },
-            Err(e) => ProbeResult::Unavailable {
-                reason: format!("{} not writable: {e}", path.display()),
-            },
+            Ok(_) => ProbeResult::Available { priority: 10, detail: path.display().to_string() },
+            Err(e) => {
+                ProbeResult::Unavailable { reason: format!("{} not writable: {e}", path.display()) }
+            }
         }
     }
 

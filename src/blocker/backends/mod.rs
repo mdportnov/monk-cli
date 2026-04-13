@@ -72,10 +72,7 @@ pub fn cleanup_all() {
 #[cfg(test)]
 pub(crate) fn assert_conformance<B: Blocker>(b: &mut B) {
     use super::BlockSet;
-    let set_a = BlockSet {
-        sites: vec!["example.com".into(), "foo.test".into()],
-        apps: vec![],
-    };
+    let set_a = BlockSet { sites: vec!["example.com".into(), "foo.test".into()], apps: vec![] };
     let set_b = BlockSet { sites: vec!["example.com".into()], apps: vec![] };
     let empty = BlockSet::default();
 

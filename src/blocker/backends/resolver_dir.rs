@@ -68,7 +68,6 @@ impl ResolverDirBlocker {
         }
         out
     }
-
 }
 
 impl Blocker for ResolverDirBlocker {
@@ -157,11 +156,8 @@ mod tests {
     #[test]
     fn writes_and_reverts_marker_files() {
         let (_dir, mut b) = make();
-        b.apply(&BlockSet {
-            sites: vec!["example.com".into(), "foo.test".into()],
-            apps: vec![],
-        })
-        .unwrap();
+        b.apply(&BlockSet { sites: vec!["example.com".into(), "foo.test".into()], apps: vec![] })
+            .unwrap();
         assert!(b.root.join("example.com").exists());
         assert!(b.root.join("foo.test").exists());
         let body = fs_err::read_to_string(b.root.join("example.com")).unwrap();
@@ -186,11 +182,7 @@ mod tests {
     #[test]
     fn shrinks_on_reapply() {
         let (_dir, mut b) = make();
-        b.apply(&BlockSet {
-            sites: vec!["a.com".into(), "b.com".into()],
-            apps: vec![],
-        })
-        .unwrap();
+        b.apply(&BlockSet { sites: vec!["a.com".into(), "b.com".into()], apps: vec![] }).unwrap();
         b.apply(&BlockSet { sites: vec!["a.com".into()], apps: vec![] }).unwrap();
         assert!(b.root.join("a.com").exists());
         assert!(!b.root.join("b.com").exists());

@@ -50,7 +50,11 @@ fn chown_to_sudo_user(path: &std::path::Path) {
         unsafe {
             let result = libc::chown(c.as_ptr(), uid, gid);
             if result != 0 {
-                tracing::warn!("chown failed for {}: errno {}", path.display(), std::io::Error::last_os_error());
+                tracing::warn!(
+                    "chown failed for {}: errno {}",
+                    path.display(),
+                    std::io::Error::last_os_error()
+                );
             }
         }
     }
