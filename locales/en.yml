@@ -76,7 +76,6 @@ tui:
     no_hard_session: "no hard-mode session"
     panic_release_at: "panic release at {at}"
     panic_cancelled: "panic cancelled"
-    doctor_hint: "run `monk doctor` in a shell for the full report"
     unexpected: "unexpected response"
     settings_saved: "settings saved"
     reset_done: "all data wiped — restart to re-run onboarding"
