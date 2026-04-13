@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="mihail/monk"
+REPO="mdportnov/monk-cli"
 BIN="monk"
 INSTALL_DIR="${MONK_INSTALL_DIR:-$HOME/.local/bin}"
 
@@ -43,12 +43,22 @@ main() {
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
 
+    local archive="${BIN}-${version}-${target}.tar.gz"
+    local sums_url="https://github.com/${REPO}/releases/download/${version}/SHA256SUMS.txt"
+
     msg "downloading $url"
-    curl -fsSL "$url" -o "$tmp/monk.tar.gz"
-    tar -xzf "$tmp/monk.tar.gz" -C "$tmp"
+    curl -fsSL "$url" -o "$tmp/$archive"
+    curl -fsSL "$sums_url" -o "$tmp/SHA256SUMS.txt"
+
+    msg "verifying checksum"
+    (cd "$tmp" && grep -F "$archive" SHA256SUMS.txt | sha256sum -c --quiet 2>/dev/null \
+        || grep -F "$archive" SHA256SUMS.txt | shasum -a 256 -c --quiet) \
+        || err "checksum verification failed"
+
+    tar -xzf "$tmp/$archive" -C "$tmp"
 
     mkdir -p "$INSTALL_DIR"
-    install -m 0755 "$tmp/${BIN}" "$INSTALL_DIR/${BIN}"
+    install -m 0755 "$tmp/${BIN}-${version}-${target}/${BIN}" "$INSTALL_DIR/${BIN}"
 
     msg "installed $BIN $version to $INSTALL_DIR/$BIN"
     case ":$PATH:" in

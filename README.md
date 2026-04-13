@@ -51,8 +51,8 @@ monk runs a small always-on daemon (`monkd`) that owns the block state. The CLI 
 ### From source
 
 ```sh
-git clone https://github.com/mihail/monk
-cd monk
+git clone https://github.com/mdportnov/monk-cli
+cd monk-cli
 cargo install --path .
 ```
 

@@ -1,6 +1,6 @@
 [Unit]
 Description=monk focus & distraction blocker daemon
-Documentation=https://github.com/mihail/monk
+Documentation=https://github.com/mdportnov/monk-cli
 After=network.target
 StartLimitIntervalSec=0
 StartLimitBurst=0

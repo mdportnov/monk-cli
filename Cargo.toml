@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.82"
 description = "A cross-platform CLI focus & distraction blocker"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/mihail/monk"
+repository = "https://github.com/mdportnov/monk-cli"
 readme = "README.md"
 keywords = ["focus", "blocker", "productivity", "tui", "cli"]
 categories = ["command-line-utilities"]
@@ -72,7 +72,7 @@ pkg-fmt = "zip"
 pkg-fmt = "zip"
 
 [package.metadata.deb]
-maintainer = "mihail"
+maintainer = "Mike Portnov <mikport26@gmail.com>"
 section = "utility"
 priority = "optional"
 depends = "libc6"

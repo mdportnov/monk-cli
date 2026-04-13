@@ -51,8 +51,8 @@ monk запускает небольшой постоянный демон (`mon
 ### Из исходников
 
 ```sh
-git clone https://github.com/mihail/monk
-cd monk
+git clone https://github.com/mdportnov/monk-cli
+cd monk-cli
 cargo install --path .
 ```
 
