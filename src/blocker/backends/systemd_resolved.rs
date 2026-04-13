@@ -27,6 +27,7 @@ impl Default for SystemdResolvedBlocker {
 }
 
 impl SystemdResolvedBlocker {
+    #[cfg(test)]
     pub fn with_root(root: PathBuf) -> Self {
         Self { root, port: DEFAULT_PORT, reload: false }
     }

@@ -8,6 +8,7 @@ ignore = [
     "RUSTSEC-2025-0057",
     "RUSTSEC-2025-0119",
     "RUSTSEC-2026-0002",
+    "RUSTSEC-2026-0097",
 ]
 yanked = "deny"
 

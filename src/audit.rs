@@ -210,7 +210,7 @@ impl AuditLog {
                 "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
                 params![at, kind_str, sid, message, extra_s],
             )
-        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+        }).await.map_err(|e| Error::Io(std::io::Error::other(e)))??;
         Ok(())
     }
 
@@ -256,7 +256,7 @@ impl AuditLog {
             }
         })
         .await
-        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| Error::Io(std::io::Error::other(e)))?
     }
 
     pub fn read_all(&self) -> Result<Vec<AuditEvent>> {
@@ -297,7 +297,7 @@ impl AuditLog {
                 }
             }
             Ok::<Vec<AuditEvent>, crate::Error>(out)
-        }).await.map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        }).await.map_err(|e| Error::Io(std::io::Error::other(e)))?
     }
 
     fn migrate_legacy_jsonl(&self) {
