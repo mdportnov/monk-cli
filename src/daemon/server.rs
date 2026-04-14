@@ -137,6 +137,7 @@ pub async fn run() -> Result<()> {
 
     shutdown.notify_waiters();
     task_set.shutdown().await;
+    supervisor.shutdown_cleanup();
     drop(listener);
     #[cfg(not(windows))]
     {

@@ -524,6 +524,14 @@ impl Supervisor {
         Ok(())
     }
 
+    pub fn shutdown_cleanup(&self) {
+        if let Err(e) = self.hosts.lock().revert() {
+            tracing::warn!(?e, "hosts revert failed during daemon shutdown");
+        } else {
+            tracing::info!("hosts reverted on daemon shutdown (session state preserved)");
+        }
+    }
+
     fn reconstruct_from_audit(&self) -> Result<Option<SessionLock>> {
         let Some(start) = self.audit.last_open_session_start().unwrap_or(None) else {
             return Ok(None);
