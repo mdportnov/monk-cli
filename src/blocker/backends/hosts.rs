@@ -14,6 +14,31 @@ use tracing::{debug, warn};
 const BEGIN: &str = "# >>> monk begin >>>";
 const END: &str = "# <<< monk end <<<";
 
+const DOH_BOOTSTRAP_HOSTS: &[&str] = &[
+    "cloudflare-dns.com",
+    "one.one.one.one",
+    "mozilla.cloudflare-dns.com",
+    "chrome.cloudflare-dns.com",
+    "security.cloudflare-dns.com",
+    "family.cloudflare-dns.com",
+    "dns.google",
+    "dns.google.com",
+    "dns.quad9.net",
+    "dns10.quad9.net",
+    "dns11.quad9.net",
+    "doh.opendns.com",
+    "doh.familyshield.opendns.com",
+    "doh.umbrella.com",
+    "dns.nextdns.io",
+    "dns.adguard.com",
+    "dns-family.adguard.com",
+    "dns-unfiltered.adguard.com",
+    "doh.cleanbrowsing.org",
+    "mask.icloud.com",
+    "mask-h2.icloud.com",
+    "mask-api.icloud.com",
+];
+
 #[derive(Debug)]
 pub struct HostsBlocker {
     path: PathBuf,
@@ -74,6 +99,11 @@ impl HostsBlocker {
                 s.push_str(&format!("127.0.0.1 www.{host}\n"));
                 s.push_str(&format!("::1       www.{host}\n"));
             }
+        }
+        s.push_str("# doh/dot bootstrap — forces browsers back to system dns\n");
+        for host in DOH_BOOTSTRAP_HOSTS {
+            s.push_str(&format!("127.0.0.1 {host}\n"));
+            s.push_str(&format!("::1       {host}\n"));
         }
         s.push_str(END);
         s.push('\n');
@@ -181,6 +211,23 @@ mod tests {
         let reverted = fs_err::read_to_string(&p).unwrap();
         assert!(!reverted.contains("x.com"));
         assert!(reverted.contains("localhost"));
+    }
+
+    #[test]
+    fn doh_bootstrap_hosts_injected() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("hosts");
+        fs_err::write(&p, "127.0.0.1 localhost\n").unwrap();
+        let mut b = HostsBlocker::with_path(p.clone());
+        b.apply(&BlockSet { sites: vec!["x.com".into()], apps: vec![] }).unwrap();
+        let after = fs_err::read_to_string(&p).unwrap();
+        assert!(after.contains("127.0.0.1 dns.google"));
+        assert!(after.contains("127.0.0.1 cloudflare-dns.com"));
+        assert!(after.contains("127.0.0.1 mask.icloud.com"));
+        b.revert().unwrap();
+        let reverted = fs_err::read_to_string(&p).unwrap();
+        assert!(!reverted.contains("dns.google"));
+        assert!(!reverted.contains("cloudflare-dns.com"));
     }
 
     #[test]
