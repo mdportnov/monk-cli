@@ -113,14 +113,15 @@ pub fn spawn(supervisor: Arc<Supervisor>, shutdown: Arc<Notify>) {
         let shared = shared.clone();
         let shutdown = shutdown.clone();
         tokio::spawn(async move {
-            let listener = match TcpListener::bind(addr).await {
+            let listener = match bind_with_fallback(addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    tracing::warn!(?e, %addr, "block page: bind failed");
+                    tracing::warn!(?e, %addr, "block page: all bind attempts failed");
                     return;
                 }
             };
-            tracing::info!(%addr, "block page listening");
+            let actual_addr = listener.local_addr().unwrap_or(addr);
+            tracing::info!(%actual_addr, "block page listening");
             loop {
                 tokio::select! {
                     _ = shutdown.notified() => break,
@@ -237,4 +238,39 @@ fn escape(input: &str) -> String {
         }
     }
     out
+}
+
+async fn bind_with_fallback(mut addr: SocketAddr) -> std::io::Result<TcpListener> {
+    match TcpListener::bind(addr).await {
+        Ok(listener) => return Ok(listener),
+        Err(e) if is_eacces(&e) && addr.port() == 80 => {
+            tracing::info!("block page on :8080 (run as root for :80)");
+            addr.set_port(8080);
+        }
+        Err(e) => return Err(e),
+    }
+
+    for attempt in 0..3 {
+        match TcpListener::bind(addr).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) if is_eaddrinuse(&e) => {
+                addr.set_port(addr.port() + 1);
+                if attempt == 2 {
+                    tracing::warn!("block page: ports 8080-8082 all in use, giving up");
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    unreachable!()
+}
+
+fn is_eacces(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+fn is_eaddrinuse(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::AddrInUse
 }

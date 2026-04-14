@@ -10,9 +10,10 @@ enum Tz {
 
 impl Tz {
     fn at_utc(self, date: NaiveDate, h: u32, m: u32) -> Option<DateTime<Utc>> {
+        let naive = date.and_hms_opt(h, m, 0)?;
         match self {
-            Tz::Named(tz) => resolve_local_time(tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)),
-            Tz::Local => resolve_local_time(Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)),
+            Tz::Named(tz) => resolve_local_time(&tz, naive),
+            Tz::Local => resolve_local_time(&Local, naive),
         }
     }
     fn today(self, now: DateTime<Utc>) -> NaiveDate {
@@ -23,17 +24,23 @@ impl Tz {
     }
 }
 
-fn resolve_local_time<Tz: TimeZone>(result: LocalResult<DateTime<Tz>>) -> Option<DateTime<Utc>> {
-    match result {
+fn resolve_local_time<Tz: TimeZone>(tz: &Tz, naive: chrono::NaiveDateTime) -> Option<DateTime<Utc>> {
+    match tz.from_local_datetime(&naive) {
         LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
         LocalResult::Ambiguous(earlier, _later) => {
             tracing::info!("DST ambiguous time, choosing earlier occurrence");
             Some(earlier.with_timezone(&Utc))
         }
         LocalResult::None => {
-            let shifted = result.latest()?;
-            tracing::info!("DST gap time does not exist, moving to next valid time");
-            Some(shifted.with_timezone(&Utc))
+            let mut candidate = naive;
+            for _ in 0..120 {
+                candidate += ChronoDuration::minutes(1);
+                if let Some(dt) = tz.from_local_datetime(&candidate).single() {
+                    tracing::info!("DST gap time does not exist, moving to next valid time");
+                    return Some(dt.with_timezone(&Utc));
+                }
+            }
+            None
         }
     }
 }
@@ -226,19 +233,19 @@ mod tests {
 
     #[test]
     fn dst_ambiguous_chooses_earlier() {
-        use chrono::{LocalResult, TimeZone, Local};
-        let result = LocalResult::Ambiguous(
-            Local.with_ymd_and_hms(2026, 11, 2, 1, 30, 0).unwrap(),
-            Local.with_ymd_and_hms(2026, 11, 2, 1, 30, 0).unwrap(),
-        );
-        let resolved = resolve_local_time(result);
+        use chrono_tz::US::Eastern;
+        let ambiguous_time = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap().and_hms_opt(1, 30, 0).unwrap();
+        let resolved = resolve_local_time(&Eastern, ambiguous_time);
         assert!(resolved.is_some());
     }
 
     #[test]
-    fn dst_none_example() {
-        let result: LocalResult<DateTime<Local>> = LocalResult::None;
-        let resolved = resolve_local_time(result);
-        assert!(resolved.is_none());
+    fn dst_none_finds_next_valid_time() {
+        use chrono_tz::US::Eastern;
+        let gap_time = NaiveDate::from_ymd_opt(2026, 3, 8).unwrap().and_hms_opt(2, 30, 0).unwrap();
+        let resolved = resolve_local_time(&Eastern, gap_time);
+        assert!(resolved.is_some());
+        let resolved_naive = resolved.unwrap().with_timezone(&Eastern).naive_local();
+        assert!(resolved_naive > gap_time);
     }
 }

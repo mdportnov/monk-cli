@@ -63,6 +63,104 @@ fn chown_to_sudo_user(path: &std::path::Path) {
 #[cfg(not(unix))]
 fn chown_to_sudo_user(_: &std::path::Path) {}
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn set_windows_acl_current_user(path: &std::path::Path) -> Result<()> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, LocalFree, HLOCAL, PSID};
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenUser, TOKEN_USER, TOKEN_QUERY, DACL_SECURITY_INFORMATION,
+        SetNamedSecurityInfoW, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_W,
+        GRANT_ACCESS, CONTAINER_INHERIT_ACE, OBJECT_INHERIT_ACE,
+        SetEntriesInAclW, EXPLICIT_ACCESSW, GENERIC_ALL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_USER
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows::core::PWSTR;
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::ptr;
+
+    unsafe {
+        let current_process = GetCurrentProcess();
+        let mut token: HANDLE = HANDLE::default();
+        if !OpenProcessToken(current_process, TOKEN_QUERY, &mut token).as_bool() {
+            return Err(Error::Other("Failed to open current process token".into()));
+        }
+
+        let mut token_info_length = 0u32;
+        GetTokenInformation(token, TokenUser, Some(ptr::null_mut()), 0, &mut token_info_length);
+
+        if token_info_length == 0 {
+            CloseHandle(token);
+            return Err(Error::Other("Failed to get token info length".into()));
+        }
+
+        let token_info = libc::malloc(token_info_length as usize);
+        if token_info.is_null() {
+            CloseHandle(token);
+            return Err(Error::Other("Memory allocation failed".into()));
+        }
+
+        if !GetTokenInformation(
+            token,
+            TokenUser,
+            Some(token_info),
+            token_info_length,
+            &mut token_info_length,
+        ).as_bool() {
+            libc::free(token_info);
+            CloseHandle(token);
+            return Err(Error::Other("Failed to get token information".into()));
+        }
+
+        let token_user = &*(token_info as *const TOKEN_USER);
+        let user_sid = token_user.User.Sid;
+
+        let mut ea = EXPLICIT_ACCESSW {
+            grfAccessPermissions: GENERIC_ALL,
+            grfAccessMode: GRANT_ACCESS,
+            grfInheritance: CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE,
+            Trustee: TRUSTEE_W {
+                pMultipleTrustee: ptr::null_mut(),
+                MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+                TrusteeForm: TRUSTEE_IS_SID,
+                TrusteeType: TRUSTEE_IS_USER,
+                ptstrName: PWSTR(user_sid as *mut u16),
+            },
+        };
+
+        let mut new_acl = ptr::null_mut();
+        let result = SetEntriesInAclW(1, &mut ea, None, &mut new_acl);
+        if result != 0 {
+            libc::free(token_info);
+            CloseHandle(token);
+            return Err(Error::Other(format!("SetEntriesInAclW failed: {}", result).into()));
+        }
+
+        let path_wide: Vec<u16> = OsString::from(path).encode_wide().chain(Some(0)).collect();
+        let result = SetNamedSecurityInfoW(
+            PWSTR(path_wide.as_ptr() as *mut u16),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            PSID::default(),
+            PSID::default(),
+            Some(new_acl),
+            None,
+        );
+
+        if !new_acl.is_null() {
+            LocalFree(HLOCAL(new_acl as isize));
+        }
+        libc::free(token_info);
+        CloseHandle(token);
+
+        if result != 0 {
+            return Err(Error::Other(format!("SetNamedSecurityInfoW failed: {}", result).into()));
+        }
+
+        Ok(())
+    }
+}
+
 fn dirs() -> Result<&'static ProjectDirs> {
     DIRS.as_ref().ok_or_else(|| Error::Other("could not resolve user directories".into()))
 }
@@ -92,6 +190,13 @@ pub fn runtime_dir() -> Result<PathBuf> {
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs_err::set_permissions(&p, std::fs::Permissions::from_mode(0o700));
+    }
+
+    #[cfg(windows)]
+    {
+        if let Err(e) = set_windows_acl_current_user(&p) {
+            tracing::warn!("Failed to set Windows ACL on runtime dir: {}", e);
+        }
     }
 
     chown_to_sudo_user(&p);

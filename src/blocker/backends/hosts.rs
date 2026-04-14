@@ -8,6 +8,9 @@ use crate::{
     Error, Result,
 };
 
+#[cfg(target_os = "macos")]
+use tracing::{debug, warn};
+
 const BEGIN: &str = "# >>> monk begin >>>";
 const END: &str = "# <<< monk end <<<";
 
@@ -95,7 +98,12 @@ impl Blocker for HostsBlocker {
         let mut next = cleaned.trim_end().to_string();
         next.push_str("\n\n");
         next.push_str(&Self::render_block(set));
-        self.write(&next)
+        let result = self.write(&next);
+        if result.is_ok() {
+            #[cfg(target_os = "macos")]
+            flush_dns_cache();
+        }
+        result
     }
 
     fn revert(&mut self) -> Result<()> {
@@ -108,7 +116,12 @@ impl Blocker for HostsBlocker {
             Err(e) => return Err(e),
         };
         let cleaned = Self::strip_block(&current);
-        self.write(cleaned.trim_end())?;
+        let result = self.write(cleaned.trim_end());
+        if result.is_ok() {
+            #[cfg(target_os = "macos")]
+            flush_dns_cache();
+        }
+        result?;
         self.backup = None;
         Ok(())
     }
@@ -127,6 +140,21 @@ impl BlockerBackend for HostsBlocker {
 
     fn build() -> Result<Self> {
         Ok(Self::default())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn flush_dns_cache() {
+    debug!("Flushing DNS cache");
+    match std::process::Command::new("dscacheutil").arg("-flushcache").status() {
+        Ok(status) if status.success() => debug!("dscacheutil -flushcache: ok"),
+        Ok(status) => warn!("dscacheutil -flushcache exited with: {}", status),
+        Err(e) => warn!("Failed to run dscacheutil -flushcache: {}", e),
+    }
+    match std::process::Command::new("killall").arg("-HUP").arg("mDNSResponder").status() {
+        Ok(status) if status.success() => debug!("killall -HUP mDNSResponder: ok"),
+        Ok(status) => warn!("killall -HUP mDNSResponder exited with: {}", status),
+        Err(e) => warn!("Failed to run killall -HUP mDNSResponder: {}", e),
     }
 }
 

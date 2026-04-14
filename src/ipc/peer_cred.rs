@@ -93,6 +93,13 @@ fn check_bsd_peer_creds(stream: &interprocess::local_socket::tokio::Stream) -> R
 fn get_allowed_uid() -> u32 {
     if let Some((sudo_uid, _)) = crate::paths::sudo_user_ids() {
         sudo_uid
+    } else if let Ok(config_path) = crate::paths::config_dir() {
+        if let Ok(metadata) = std::fs::metadata(&config_path) {
+            use std::os::unix::fs::MetadataExt;
+            metadata.uid()
+        } else {
+            nix::unistd::getuid().as_raw()
+        }
     } else {
         nix::unistd::getuid().as_raw()
     }
@@ -126,34 +133,126 @@ fn check_windows_peer(stream: &interprocess::local_socket::tokio::Stream) -> Res
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn is_same_user_process(pid: u32) -> Result<bool> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
+    check_windows_peer_sids(pid)
+}
 
-    let output = Command::new("wmic")
-        .args(&["process", "where", &format!("processid={}", pid), "get", "name,owner", "/format:csv"])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output()
-        .map_err(|e| crate::Error::Ipc(format!("Failed to execute wmic: {}", e)))?;
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, LocalFree, HLOCAL};
+    use windows::Win32::Security::{GetTokenInformation, EqualSid, TokenUser, TOKEN_USER, TOKEN_QUERY};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
+    use std::mem;
+    use std::ptr;
 
-    if !output.status.success() {
-        return Err(crate::Error::Ipc(format!("wmic failed with status: {}", output.status)));
+    unsafe {
+        let current_process = GetCurrentProcess();
+        let mut current_token: HANDLE = HANDLE::default();
+        if !OpenProcessToken(current_process, TOKEN_QUERY, &mut current_token).as_bool() {
+            return Err(crate::Error::Ipc("Failed to open current process token".to_string()));
+        }
+
+        let current_sid = match get_process_user_sid(current_token) {
+            Ok(sid) => sid,
+            Err(e) => {
+                CloseHandle(current_token);
+                return Err(e);
+            }
+        };
+
+        let peer_process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, peer_pid) {
+            Ok(handle) if !handle.is_invalid() => handle,
+            _ => {
+                if !current_sid.is_null() {
+                    LocalFree(HLOCAL(current_sid as isize));
+                }
+                CloseHandle(current_token);
+                return Err(crate::Error::Ipc(format!("Failed to open peer process {}", peer_pid)));
+            }
+        };
+
+        let mut peer_token: HANDLE = HANDLE::default();
+        if !OpenProcessToken(peer_process, TOKEN_QUERY, &mut peer_token).as_bool() {
+            if !current_sid.is_null() {
+                LocalFree(HLOCAL(current_sid as isize));
+            }
+            CloseHandle(current_token);
+            CloseHandle(peer_process);
+            return Err(crate::Error::Ipc("Failed to open peer process token".to_string()));
+        }
+
+        let peer_sid = match get_process_user_sid(peer_token) {
+            Ok(sid) => sid,
+            Err(e) => {
+                if !current_sid.is_null() {
+                    LocalFree(HLOCAL(current_sid as isize));
+                }
+                CloseHandle(current_token);
+                CloseHandle(peer_process);
+                CloseHandle(peer_token);
+                return Err(e);
+            }
+        };
+
+        let is_same_user = !current_sid.is_null() && !peer_sid.is_null() &&
+            EqualSid(current_sid, peer_sid).as_bool();
+
+        if !current_sid.is_null() {
+            LocalFree(HLOCAL(current_sid as isize));
+        }
+        if !peer_sid.is_null() {
+            LocalFree(HLOCAL(peer_sid as isize));
+        }
+        CloseHandle(current_token);
+        CloseHandle(peer_process);
+        CloseHandle(peer_token);
+
+        debug!(
+            peer_pid = peer_pid,
+            same_user = is_same_user,
+            "Windows SID peer check"
+        );
+
+        Ok(is_same_user)
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+unsafe fn get_process_user_sid(token: HANDLE) -> Result<*mut core::ffi::c_void> {
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
+    use std::mem;
+    use std::ptr;
+
+    let mut token_info_length = 0u32;
+    GetTokenInformation(token, TokenUser, Some(ptr::null_mut()), 0, &mut token_info_length);
+
+    if token_info_length == 0 {
+        return Err(crate::Error::Ipc("Failed to get token info length".to_string()));
     }
 
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    let current_user = std::env::var("USERNAME")
-        .map_err(|_| crate::Error::Ipc("Could not get current username".to_string()))?;
+    let token_info = libc::malloc(token_info_length as usize);
+    if token_info.is_null() {
+        return Err(crate::Error::Ipc("Memory allocation failed".to_string()));
+    }
 
-    let is_same_user = output_str.lines()
-        .any(|line| line.contains(&current_user) && line.contains(&pid.to_string()));
+    if !GetTokenInformation(
+        token,
+        TokenUser,
+        Some(token_info),
+        token_info_length,
+        &mut token_info_length,
+    ).as_bool() {
+        libc::free(token_info);
+        return Err(crate::Error::Ipc("Failed to get token information".to_string()));
+    }
 
-    debug!(
-        peer_pid = pid,
-        current_user = %current_user,
-        same_user = is_same_user,
-        "Windows peer user check"
-    );
+    let token_user = &*(token_info as *const TOKEN_USER);
+    let sid = token_user.User.Sid;
+    libc::free(token_info);
 
-    Ok(is_same_user)
+    Ok(sid)
 }
 
 #[cfg(test)]

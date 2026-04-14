@@ -300,6 +300,15 @@ impl AuditLog {
         }).await.map_err(|e| Error::Io(std::io::Error::other(e)))?
     }
 
+    pub fn prune(&self, older_than_days: u32) -> Result<u64> {
+        let conn = self.conn.lock();
+        let deleted = conn.execute(
+            "DELETE FROM audit_events WHERE at < datetime('now', printf('-%d days', ?))",
+            params![older_than_days],
+        )?;
+        Ok(deleted as u64)
+    }
+
     fn migrate_legacy_jsonl(&self) {
         let Some(dir) = self.path.parent() else { return };
         let legacy = dir.join(LEGACY_AUDIT_FILE);
@@ -542,5 +551,56 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].message, "deepwork");
         assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn prune_deletes_old_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = AuditLog::with_path(dir.path().join(AUDIT_FILE));
+        let conn = log.conn.lock();
+        let old_time = chrono::Utc::now() - chrono::Duration::days(100);
+        let recent_time = chrono::Utc::now();
+        for i in 1..=10 {
+            conn.execute(
+                "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![old_time.to_rfc3339(), "session_started", None::<String>, format!("old{}", i), "null"]
+            ).unwrap();
+        }
+        for i in 1..=5 {
+            conn.execute(
+                "INSERT INTO audit_events(at, kind, session_id, message, extra) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![recent_time.to_rfc3339(), "session_started", None::<String>, format!("recent{}", i), "null"]
+            ).unwrap();
+        }
+        let insert_count = 15;
+        assert_eq!(insert_count, 15);
+        let count_before: i64 = conn.prepare("SELECT COUNT(*) FROM audit_events").unwrap().query_row([], |row| row.get(0)).unwrap();
+        assert_eq!(count_before, 15);
+        drop(conn);
+        let deleted = log.prune(90).unwrap();
+        assert_eq!(deleted, 10);
+        let count_after: i64 = log.conn.lock().prepare("SELECT COUNT(*) FROM audit_events").unwrap().query_row([], |row| row.get(0)).unwrap();
+        assert_eq!(count_after, 5);
+        let conn = log.conn.lock();
+        let mut stmt = conn.prepare("SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC").unwrap();
+        let rows = stmt.query_map([], |row| {
+            let at: String = row.get(0)?;
+            let kind: String = row.get(1)?;
+            let msg: String = row.get(3)?;
+            Ok((at, kind, msg))
+        }).unwrap();
+        let mut raw_rows = Vec::new();
+        for row in rows {
+            raw_rows.push(row.unwrap());
+        }
+        drop(stmt);
+        drop(conn);
+
+        assert_eq!(raw_rows.len(), 5);
+        let events = log.read_all_with_limit(20).unwrap();
+        assert_eq!(events.len(), 5);
+        for event in events {
+            assert!(event.message.starts_with("recent"));
+        }
     }
 }

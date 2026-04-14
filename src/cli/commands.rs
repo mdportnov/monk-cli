@@ -443,8 +443,8 @@ pub fn daemon_install() -> Result<()> {
     Ok(())
 }
 
-pub fn daemon_uninstall() -> Result<()> {
-    let msg = crate::daemon::service_run(crate::daemon::ServiceAction::Uninstall)?;
+pub async fn daemon_uninstall(purge: bool) -> Result<()> {
+    let msg = crate::daemon::service_run(crate::daemon::ServiceAction::Uninstall { purge })?;
     println!("{msg}");
     Ok(())
 }

@@ -80,8 +80,15 @@ impl PidFile {
         }
     }
 
-    pub fn release(&self) {
+    pub fn release(&mut self) {
+        self._file.take();
         let _ = fs_err::remove_file(&self.path);
+    }
+}
+
+impl Drop for PidFile {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 

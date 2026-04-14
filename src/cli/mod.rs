@@ -158,7 +158,10 @@ enum DaemonCmd {
     Status,
     Run,
     Install,
-    Uninstall,
+    Uninstall {
+        #[arg(long)]
+        purge: bool,
+    },
 }
 
 fn parse_duration(raw: &str) -> std::result::Result<Duration, String> {
@@ -241,7 +244,7 @@ pub async fn run() -> Result<()> {
         Command::Daemon(DaemonCmd::Stop) => commands::daemon_stop().await,
         Command::Daemon(DaemonCmd::Status) => commands::daemon_status().await,
         Command::Daemon(DaemonCmd::Install) => commands::daemon_install(),
-        Command::Daemon(DaemonCmd::Uninstall) => commands::daemon_uninstall(),
+        Command::Daemon(DaemonCmd::Uninstall { purge }) => commands::daemon_uninstall(purge).await,
         Command::Completions { shell } => {
             use clap::CommandFactory;
             clap_complete::generate(shell, &mut Cli::command(), "monk", &mut std::io::stdout());

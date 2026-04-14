@@ -124,7 +124,7 @@ fn apply(
 }
 
 fn reset() -> Result<()> {
-    let _ = daemon::service_run(ServiceAction::Uninstall);
+    let _ = daemon::service_run(ServiceAction::Uninstall { purge: false });
     let path = paths::config_file()?;
     if path.exists() {
         fs_err::remove_file(&path)?;

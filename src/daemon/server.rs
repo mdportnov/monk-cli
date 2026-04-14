@@ -22,7 +22,7 @@ use crate::{
 pub async fn run() -> Result<()> {
     let mut pid = PidFile::new()?;
     pid.acquire()?;
-    let _pid_guard = scopeguard::Guard::new(&pid);
+    let _pid_guard = pid;
 
     let config = Config::load()?;
     let supervisor = Arc::new(Supervisor::new(config)?);
@@ -288,20 +288,5 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             Response::NextScheduled { profile, at }
         }
         Request::Unknown => Response::Error { message: "unknown request kind".into() },
-    }
-}
-
-mod scopeguard {
-    use super::PidFile;
-    pub struct Guard<'a>(&'a PidFile);
-    impl<'a> Guard<'a> {
-        pub fn new(p: &'a PidFile) -> Self {
-            Self(p)
-        }
-    }
-    impl<'a> Drop for Guard<'a> {
-        fn drop(&mut self) {
-            self.0.release();
-        }
     }
 }

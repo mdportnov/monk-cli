@@ -86,11 +86,16 @@ impl SessionLock {
 
     pub fn remaining(&self) -> Duration {
         let now = Utc::now();
-        let end = self.ends_at();
-        if now >= end {
-            Duration::ZERO
+        if now < self.started_at {
+            let total_ms = self.duration_ms.saturating_add(self.penalty_applied_ms);
+            Duration::from_millis(u64::try_from(total_ms).unwrap_or(u64::MAX))
         } else {
-            (end - now).to_std().unwrap_or(Duration::ZERO)
+            let end = self.ends_at();
+            if now >= end {
+                Duration::ZERO
+            } else {
+                (end - now).to_std().unwrap_or(Duration::ZERO)
+            }
         }
     }
 
@@ -109,7 +114,17 @@ impl SessionLock {
 
     /// Checks if session has expired based on wall-clock time
     pub fn is_expired(&self) -> bool {
-        Utc::now() >= self.ends_at()
+        let now = Utc::now();
+        if now < self.started_at {
+            tracing::warn!(
+                session_id = %self.id,
+                started_at = %self.started_at,
+                now = %now,
+                "session start time is in the future; treating as not expired"
+            );
+            return false;
+        }
+        now >= self.ends_at()
     }
 
     pub fn should_release_via_panic(&self) -> bool {
@@ -536,5 +551,25 @@ mod tests {
         }
 
         assert_eq!(penalty_count, 3);
+    }
+
+    #[test]
+    fn future_start_time_handling() {
+        let future = Utc::now() + chrono::Duration::minutes(10);
+        let mut lock = SessionLock::new(NewLock {
+            profile: "test".into(),
+            duration: Duration::from_secs(60),
+            hard_mode: false,
+            panic_delay: Duration::from_secs(300),
+            panic_phrase: "test phrase".into(),
+            reason: None,
+            boot_id: "boot-123".into(),
+            boot_ms: 0,
+        });
+        lock.started_at = future;
+        lock.reseal();
+
+        assert!(!lock.is_expired());
+        assert_eq!(lock.remaining(), Duration::from_secs(60));
     }
 }

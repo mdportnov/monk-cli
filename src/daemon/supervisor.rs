@@ -52,13 +52,17 @@ type FiredWindow = (String, chrono::DateTime<chrono::Utc>);
 impl Supervisor {
     pub fn new(config: Config) -> Result<Self> {
         blocker::cleanup_all_backends();
+        let audit = Arc::new(AuditLog::new()?);
+        if let Err(e) = audit.prune(90) {
+            tracing::warn!(?e, "audit prune failed");
+        }
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             config_write: Arc::new(Mutex::new(())),
             hosts: Arc::new(Mutex::new(blocker::select_site_blocker())),
             procs: Arc::new(Mutex::new(ProcessGuard::new())),
             store: Arc::new(LockStore::new()?),
-            audit: Arc::new(AuditLog::new()?),
+            audit,
             last_tick_ms: Arc::new(AtomicU64::new(clock::monotonic_ms() as u64)),
             active_profile: Arc::new(RwLock::new(None)),
             last_tamper_mac: Arc::new(Mutex::new(None)),
@@ -261,6 +265,8 @@ impl Supervisor {
         panic_phrase: String,
     ) -> Result<Session> {
         let _gate = self.start_gate.lock();
+        self.consecutive_hosts_failures.store(0, Ordering::SeqCst);
+
         if let Some((existing, _)) = self.store.load()? {
             if !existing.is_expired() {
                 return Err(Error::Other("a session is already running".into()));
@@ -289,17 +295,25 @@ impl Supervisor {
             boot_ms: clock::monotonic_ms(),
         });
 
-        self.store.save(&lock)?;
-        *self.active_profile.write() = Some(profile.clone());
-        self.last_tick_ms.store(clock::monotonic_ms() as u64, Ordering::SeqCst);
-        self.audit.append_with(
-            AuditKind::SessionStarted,
-            Some(lock.id),
-            &profile,
-            session_claim(&lock),
-        );
-
-        Ok(lock_to_session(&lock))
+        match self.store.save(&lock) {
+            Ok(_) => {
+                *self.active_profile.write() = Some(profile.clone());
+                self.last_tick_ms.store(clock::monotonic_ms() as u64, Ordering::SeqCst);
+                self.audit.append_with(
+                    AuditKind::SessionStarted,
+                    Some(lock.id),
+                    &profile,
+                    session_claim(&lock),
+                );
+                Ok(lock_to_session(&lock))
+            }
+            Err(e) => {
+                if let Err(revert_err) = self.hosts.lock().revert() {
+                    tracing::error!(?revert_err, "hosts revert failed after store.save error");
+                }
+                Err(e)
+            }
+        }
     }
 
     pub fn stop(&self) -> Result<Option<Session>> {
@@ -406,6 +420,8 @@ impl Supervisor {
     }
 
     pub fn restore(&self) -> Result<()> {
+        self.consecutive_hosts_failures.store(0, Ordering::SeqCst);
+
         let loaded = self.store.load()?;
         let loaded = match loaded {
             Some(l) => Some(l),
