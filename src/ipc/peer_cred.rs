@@ -23,11 +23,22 @@ fn check_unix_peer(stream: &interprocess::local_socket::tokio::Stream) -> Result
     {
         check_linux_peer_creds(stream)
     }
-    #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
     {
         check_bsd_peer_creds(stream)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
     {
         debug!("unix peer auth check: relying on filesystem permissions on unsupported platform");
         Ok(())
@@ -38,10 +49,12 @@ fn check_unix_peer(stream: &interprocess::local_socket::tokio::Stream) -> Result
 fn check_linux_peer_creds(stream: &interprocess::local_socket::tokio::Stream) -> Result<()> {
     use interprocess::local_socket::traits::StreamCommon;
 
-    let peer_creds = stream.peer_creds()
+    let peer_creds = stream
+        .peer_creds()
         .map_err(|e| crate::Error::Ipc(format!("Failed to get peer credentials: {}", e)))?;
 
-    let peer_uid = peer_creds.euid()
+    let peer_uid = peer_creds
+        .euid()
         .ok_or_else(|| crate::Error::Ipc("Could not get peer effective UID".to_string()))?;
     let allowed_uid = get_allowed_uid();
 
@@ -61,14 +74,21 @@ fn check_linux_peer_creds(stream: &interprocess::local_socket::tokio::Stream) ->
     Ok(())
 }
 
-#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
 fn check_bsd_peer_creds(stream: &interprocess::local_socket::tokio::Stream) -> Result<()> {
     use interprocess::local_socket::traits::StreamCommon;
 
-    let peer_creds = stream.peer_creds()
+    let peer_creds = stream
+        .peer_creds()
         .map_err(|e| crate::Error::Ipc(format!("Failed to get peer credentials: {}", e)))?;
 
-    let peer_uid = peer_creds.euid()
+    let peer_uid = peer_creds
+        .euid()
         .ok_or_else(|| crate::Error::Ipc("Could not get peer effective UID".to_string()))?;
     let allowed_uid = get_allowed_uid();
 
@@ -105,12 +125,12 @@ fn get_allowed_uid() -> u32 {
     }
 }
 
-
 #[cfg(windows)]
 fn check_windows_peer(stream: &interprocess::local_socket::tokio::Stream) -> Result<()> {
     use interprocess::local_socket::traits::StreamCommon;
 
-    let peer_creds = stream.peer_creds()
+    let peer_creds = stream
+        .peer_creds()
         .map_err(|e| crate::Error::Ipc(format!("Failed to get peer credentials: {}", e)))?;
 
     if let Some(peer_pid) = peer_creds.pid() {
@@ -119,10 +139,7 @@ fn check_windows_peer(stream: &interprocess::local_socket::tokio::Stream) -> Res
             Ok(())
         } else {
             warn!(peer_pid = peer_pid, "unauthorized peer connection attempt blocked");
-            Err(crate::Error::Ipc(format!(
-                "Peer process {} belongs to different user",
-                peer_pid
-            )))
+            Err(crate::Error::Ipc(format!("Peer process {} belongs to different user", peer_pid)))
         }
     } else {
         warn!("could not determine peer process ID");
@@ -139,11 +156,15 @@ fn is_same_user_process(pid: u32) -> Result<bool> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, LocalFree, HLOCAL};
-    use windows::Win32::Security::{GetTokenInformation, EqualSid, TokenUser, TOKEN_USER, TOKEN_QUERY};
-    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
     use std::mem;
     use std::ptr;
+    use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
+    use windows::Win32::Security::{
+        EqualSid, GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER,
+    };
+    use windows::Win32::System::Threading::{
+        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
 
     unsafe {
         let current_process = GetCurrentProcess();
@@ -194,8 +215,9 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
             }
         };
 
-        let is_same_user = !current_sid.is_null() && !peer_sid.is_null() &&
-            EqualSid(current_sid, peer_sid).as_bool();
+        let is_same_user = !current_sid.is_null()
+            && !peer_sid.is_null()
+            && EqualSid(current_sid, peer_sid).as_bool();
 
         if !current_sid.is_null() {
             LocalFree(HLOCAL(current_sid as isize));
@@ -207,11 +229,7 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
         CloseHandle(peer_process);
         CloseHandle(peer_token);
 
-        debug!(
-            peer_pid = peer_pid,
-            same_user = is_same_user,
-            "Windows SID peer check"
-        );
+        debug!(peer_pid = peer_pid, same_user = is_same_user, "Windows SID peer check");
 
         Ok(is_same_user)
     }
@@ -220,10 +238,10 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 unsafe fn get_process_user_sid(token: HANDLE) -> Result<*mut core::ffi::c_void> {
-    use windows::Win32::Foundation::{LocalFree, HLOCAL};
-    use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
     use std::mem;
     use std::ptr;
+    use windows::Win32::Foundation::{LocalFree, HLOCAL};
+    use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
     let mut token_info_length = 0u32;
     GetTokenInformation(token, TokenUser, Some(ptr::null_mut()), 0, &mut token_info_length);
@@ -243,7 +261,9 @@ unsafe fn get_process_user_sid(token: HANDLE) -> Result<*mut core::ffi::c_void> 
         Some(token_info),
         token_info_length,
         &mut token_info_length,
-    ).as_bool() {
+    )
+    .as_bool()
+    {
         libc::free(token_info);
         return Err(crate::Error::Ipc("Failed to get token information".to_string()));
     }
@@ -268,4 +288,3 @@ mod tests {
         }
     }
 }
-

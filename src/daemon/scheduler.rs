@@ -1,4 +1,6 @@
-use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDate, TimeZone, Utc};
+use chrono::{
+    DateTime, Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDate, TimeZone, Utc,
+};
 
 use crate::config::{Schedule, Weekday};
 
@@ -24,7 +26,10 @@ impl Tz {
     }
 }
 
-fn resolve_local_time<Tz: TimeZone>(tz: &Tz, naive: chrono::NaiveDateTime) -> Option<DateTime<Utc>> {
+fn resolve_local_time<Tz: TimeZone>(
+    tz: &Tz,
+    naive: chrono::NaiveDateTime,
+) -> Option<DateTime<Utc>> {
     match tz.from_local_datetime(&naive) {
         LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
         LocalResult::Ambiguous(earlier, _later) => {
@@ -234,7 +239,8 @@ mod tests {
     #[test]
     fn dst_ambiguous_chooses_earlier() {
         use chrono_tz::US::Eastern;
-        let ambiguous_time = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap().and_hms_opt(1, 30, 0).unwrap();
+        let ambiguous_time =
+            NaiveDate::from_ymd_opt(2026, 11, 2).unwrap().and_hms_opt(1, 30, 0).unwrap();
         let resolved = resolve_local_time(&Eastern, ambiguous_time);
         assert!(resolved.is_some());
     }

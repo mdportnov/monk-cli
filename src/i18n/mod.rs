@@ -2,12 +2,8 @@ mod detect;
 
 pub use detect::detect;
 
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    sync::OnceLock,
-};
 use parking_lot::Mutex;
+use std::{borrow::Cow, collections::HashMap, sync::OnceLock};
 
 pub const SUPPORTED: &[&str] = &["en", "ru"];
 

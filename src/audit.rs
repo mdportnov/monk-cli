@@ -574,21 +574,37 @@ mod tests {
         }
         let insert_count = 15;
         assert_eq!(insert_count, 15);
-        let count_before: i64 = conn.prepare("SELECT COUNT(*) FROM audit_events").unwrap().query_row([], |row| row.get(0)).unwrap();
+        let count_before: i64 = conn
+            .prepare("SELECT COUNT(*) FROM audit_events")
+            .unwrap()
+            .query_row([], |row| row.get(0))
+            .unwrap();
         assert_eq!(count_before, 15);
         drop(conn);
         let deleted = log.prune(90).unwrap();
         assert_eq!(deleted, 10);
-        let count_after: i64 = log.conn.lock().prepare("SELECT COUNT(*) FROM audit_events").unwrap().query_row([], |row| row.get(0)).unwrap();
+        let count_after: i64 = log
+            .conn
+            .lock()
+            .prepare("SELECT COUNT(*) FROM audit_events")
+            .unwrap()
+            .query_row([], |row| row.get(0))
+            .unwrap();
         assert_eq!(count_after, 5);
         let conn = log.conn.lock();
-        let mut stmt = conn.prepare("SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC").unwrap();
-        let rows = stmt.query_map([], |row| {
-            let at: String = row.get(0)?;
-            let kind: String = row.get(1)?;
-            let msg: String = row.get(3)?;
-            Ok((at, kind, msg))
-        }).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT at, kind, session_id, message, extra FROM audit_events ORDER BY id ASC",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                let at: String = row.get(0)?;
+                let kind: String = row.get(1)?;
+                let msg: String = row.get(3)?;
+                Ok((at, kind, msg))
+            })
+            .unwrap();
         let mut raw_rows = Vec::new();
         for row in rows {
             raw_rows.push(row.unwrap());

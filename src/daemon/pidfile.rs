@@ -1,4 +1,7 @@
-use std::{fs::File, path::{Path, PathBuf}};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use crate::{paths, Error, Result};
 
@@ -10,17 +13,11 @@ pub struct PidFile {
 
 impl PidFile {
     pub fn new() -> Result<Self> {
-        Ok(Self {
-            path: paths::pid_file()?,
-            _file: None,
-        })
+        Ok(Self { path: paths::pid_file()?, _file: None })
     }
 
     pub fn with_path(path: PathBuf) -> Self {
-        Self {
-            path,
-            _file: None,
-        }
+        Self { path, _file: None }
     }
 
     pub fn path(&self) -> &Path {

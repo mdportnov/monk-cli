@@ -66,18 +66,18 @@ fn chown_to_sudo_user(_: &std::path::Path) {}
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn set_windows_acl_current_user(path: &std::path::Path) -> Result<()> {
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, LocalFree, HLOCAL, PSID};
-    use windows::Win32::Security::{
-        GetTokenInformation, TokenUser, TOKEN_USER, TOKEN_QUERY, DACL_SECURITY_INFORMATION,
-        SetNamedSecurityInfoW, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_W,
-        GRANT_ACCESS, CONTAINER_INHERIT_ACE, OBJECT_INHERIT_ACE,
-        SetEntriesInAclW, EXPLICIT_ACCESSW, GENERIC_ALL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_USER
-    };
-    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    use windows::core::PWSTR;
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
     use std::ptr;
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL, PSID};
+    use windows::Win32::Security::{
+        GetTokenInformation, SetEntriesInAclW, SetNamedSecurityInfoW, TokenUser,
+        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, EXPLICIT_ACCESSW, GENERIC_ALL,
+        GRANT_ACCESS, NO_MULTIPLE_TRUSTEE, OBJECT_INHERIT_ACE, SE_FILE_OBJECT, TOKEN_QUERY,
+        TOKEN_USER, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_W,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     unsafe {
         let current_process = GetCurrentProcess();
@@ -106,7 +106,9 @@ fn set_windows_acl_current_user(path: &std::path::Path) -> Result<()> {
             Some(token_info),
             token_info_length,
             &mut token_info_length,
-        ).as_bool() {
+        )
+        .as_bool()
+        {
             libc::free(token_info);
             CloseHandle(token);
             return Err(Error::Other("Failed to get token information".into()));

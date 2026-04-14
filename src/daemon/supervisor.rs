@@ -393,9 +393,13 @@ impl Supervisor {
                 Ok(set) => {
                     let mut hosts = self.hosts.lock();
                     if let Err(e) = hosts.apply(&set) {
-                        let failures = self.consecutive_hosts_failures.fetch_add(1, Ordering::SeqCst) + 1;
+                        let failures =
+                            self.consecutive_hosts_failures.fetch_add(1, Ordering::SeqCst) + 1;
                         if failures >= 5 {
-                            tracing::error!("blocking degraded: {} consecutive hosts.apply failures", failures);
+                            tracing::error!(
+                                "blocking degraded: {} consecutive hosts.apply failures",
+                                failures
+                            );
                         }
                         tracing::warn!(?e, "hosts reapply failed");
                         self.audit.append(

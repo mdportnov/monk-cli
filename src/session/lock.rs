@@ -101,7 +101,8 @@ impl SessionLock {
 
     pub fn ends_at(&self) -> DateTime<Utc> {
         let total_ms = self.duration_ms.saturating_add(self.penalty_applied_ms);
-        let total_duration = chrono::Duration::milliseconds(i64::try_from(total_ms).unwrap_or(i64::MAX));
+        let total_duration =
+            chrono::Duration::milliseconds(i64::try_from(total_ms).unwrap_or(i64::MAX));
         self.started_at + total_duration
     }
 

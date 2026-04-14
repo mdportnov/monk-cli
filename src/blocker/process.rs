@@ -59,7 +59,9 @@ impl ProcessGuard {
                 let exe = proc.exe().map(Path::to_path_buf);
                 let name = proc.name().to_string_lossy().to_lowercase();
 
-                if let Some(app) = apps.iter().find(|app| matches_process(app, exe.as_deref(), &name)) {
+                if let Some(app) =
+                    apps.iter().find(|app| matches_process(app, exe.as_deref(), &name))
+                {
                     if let Some(exe_path) = &exe {
                         if is_system_path(exe_path) {
                             warn!(
@@ -72,7 +74,12 @@ impl ProcessGuard {
                         }
                     }
 
-                    to_kill.push((proc.pid(), proc.name().to_string_lossy().to_string(), exe.clone(), app.id.clone()));
+                    to_kill.push((
+                        proc.pid(),
+                        proc.name().to_string_lossy().to_string(),
+                        exe.clone(),
+                        app.id.clone(),
+                    ));
                 }
             }
 
@@ -201,23 +208,23 @@ fn should_consider_process(_proc: &sysinfo::Process, _current_uid: Option<u32>) 
 fn is_system_path(path: &Path) -> bool {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        path.starts_with("/usr/bin") ||
-        path.starts_with("/bin") ||
-        path.starts_with("/usr/sbin") ||
-        path.starts_with("/sbin") ||
-        path.starts_with("/System") ||
-        path.starts_with("/usr/libexec") ||
-        path.starts_with("/usr/lib") ||
-        path.starts_with("/Library/PrivilegedHelperTools") ||
-        path.starts_with("/Library/LaunchDaemons") ||
-        path.starts_with("/Library/LaunchAgents")
+        path.starts_with("/usr/bin")
+            || path.starts_with("/bin")
+            || path.starts_with("/usr/sbin")
+            || path.starts_with("/sbin")
+            || path.starts_with("/System")
+            || path.starts_with("/usr/libexec")
+            || path.starts_with("/usr/lib")
+            || path.starts_with("/Library/PrivilegedHelperTools")
+            || path.starts_with("/Library/LaunchDaemons")
+            || path.starts_with("/Library/LaunchAgents")
     }
     #[cfg(target_os = "windows")]
     {
         if let Some(path_str) = path.to_str() {
             let path_lower = path_str.to_lowercase();
-            path_lower.starts_with("c:\\windows\\") ||
-            path_lower.starts_with("c:\\program files\\windows")
+            path_lower.starts_with("c:\\windows\\")
+                || path_lower.starts_with("c:\\program files\\windows")
         } else {
             false
         }
@@ -230,8 +237,8 @@ fn is_system_path(path: &Path) -> bool {
 
 #[cfg(target_os = "linux")]
 fn is_flatpak_or_snap_wrapper(exec_path: &Path) -> bool {
-    exec_path.to_string_lossy().contains("flatpak") ||
-    exec_path.file_name().and_then(|s| s.to_str()) == Some("snap")
+    exec_path.to_string_lossy().contains("flatpak")
+        || exec_path.file_name().and_then(|s| s.to_str()) == Some("snap")
 }
 
 #[cfg(target_os = "linux")]
@@ -240,8 +247,8 @@ fn matches_sandboxed_app(app: &InstalledApp, pid: sysinfo::Pid) -> bool {
     if let Ok(cgroup) = std::fs::read_to_string(&cgroup_path) {
         let app_id = extract_app_id_from_exec(&app.exec_path);
         if let Some(id) = app_id {
-            return cgroup.contains(&format!("app-flatpak-{}", id)) ||
-                   cgroup.contains(&format!("snap.{}", id));
+            return cgroup.contains(&format!("app-flatpak-{}", id))
+                || cgroup.contains(&format!("snap.{}", id));
         }
     }
     warn!("Failed to match Flatpak/Snap process for app_id: {}", app.id);

@@ -7,7 +7,6 @@ use std::process::Command;
 use crate::paths;
 use crate::{ipc, ipc::Request, Error, Result};
 
-
 #[derive(Debug, Clone)]
 pub enum ServiceAction {
     Install,
@@ -32,9 +31,7 @@ fn install(bin: &str) -> Result<String> {
 
     let mut msgs = vec![format!("wrote {}", unit.display())];
 
-    let daemon_reload = Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output();
+    let daemon_reload = Command::new("systemctl").args(["--user", "daemon-reload"]).output();
     match daemon_reload {
         Ok(output) => {
             if output.status.success() {
@@ -49,9 +46,8 @@ fn install(bin: &str) -> Result<String> {
         }
     }
 
-    let enable_start = Command::new("systemctl")
-        .args(["--user", "enable", "--now", "monk"])
-        .output();
+    let enable_start =
+        Command::new("systemctl").args(["--user", "enable", "--now", "monk"]).output();
     match enable_start {
         Ok(output) => {
             if output.status.success() {
