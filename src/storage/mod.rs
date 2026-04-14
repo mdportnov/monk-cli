@@ -16,6 +16,7 @@ impl Store {
             fs_err::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;

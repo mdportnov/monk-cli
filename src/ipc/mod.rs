@@ -1,4 +1,5 @@
 pub mod protocol;
+pub mod peer_cred;
 
 pub use protocol::{
     Envelope, HardModeInfo, ModeDetailPayload, ModeSummary, Request, Response, PROTOCOL_VERSION,

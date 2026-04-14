@@ -85,13 +85,19 @@ impl SessionLock {
     }
 
     pub fn remaining(&self) -> Duration {
-        let total = self.duration_ms.saturating_add(self.penalty_applied_ms);
-        let left = total.saturating_sub(self.progressed_ms);
-        Duration::from_millis(u64::try_from(left).unwrap_or(0))
+        let now = Utc::now();
+        let end = self.ends_at();
+        if now >= end {
+            Duration::ZERO
+        } else {
+            (end - now).to_std().unwrap_or(Duration::ZERO)
+        }
     }
 
     pub fn ends_at(&self) -> DateTime<Utc> {
-        self.started_at + chrono::Duration::from_std(self.remaining()).unwrap_or_default()
+        let total_ms = self.duration_ms.saturating_add(self.penalty_applied_ms);
+        let total_duration = chrono::Duration::milliseconds(i64::try_from(total_ms).unwrap_or(i64::MAX));
+        self.started_at + total_duration
     }
 
     pub fn panic_releases_at(&self) -> Option<DateTime<Utc>> {
@@ -101,8 +107,9 @@ impl SessionLock {
         Some(requested + delay)
     }
 
+    /// Checks if session has expired based on wall-clock time
     pub fn is_expired(&self) -> bool {
-        self.remaining().is_zero()
+        Utc::now() >= self.ends_at()
     }
 
     pub fn should_release_via_panic(&self) -> bool {
@@ -398,6 +405,7 @@ mod tests {
     #[test]
     fn penalty_advances_end() {
         let mut lock = sample();
+        lock.started_at = Utc::now() - chrono::Duration::minutes(20);
         let before = lock.remaining();
         lock.apply_penalty(Duration::from_secs(60));
         let after = lock.remaining();
@@ -472,6 +480,7 @@ mod tests {
         assert_eq!(kind, LoadKind::TamperedPrimary);
 
         let mut penalized = after;
+        penalized.started_at = Utc::now() - chrono::Duration::minutes(30);
         penalized.apply_penalty(Duration::from_secs(15 * 60));
         assert!(penalized.verify());
         assert!(penalized.remaining() > Duration::from_secs(15 * 60));
@@ -495,5 +504,37 @@ mod tests {
 
         let (_, kind) = store.load().unwrap().unwrap();
         assert_eq!(kind, LoadKind::TamperedPrimary);
+    }
+
+    #[test]
+    fn multiple_tamper_events_unique_detection() {
+        let lock1 = sample();
+        let mut lock2 = sample();
+        let mut lock3 = sample();
+
+        lock2.duration_ms = 100;
+        lock2.reseal();
+        lock3.duration_ms = 200;
+        lock3.reseal();
+
+        assert_ne!(lock1.mac, lock2.mac);
+        assert_ne!(lock2.mac, lock3.mac);
+        assert_ne!(lock1.mac, lock3.mac);
+
+        let mut penalty_count = 0;
+        let mut last_mac: Option<String> = None;
+
+        for lock in [&lock1, &lock2, &lock3] {
+            if let Some(ref prev_mac) = last_mac {
+                if *prev_mac != lock.mac {
+                    penalty_count += 1;
+                }
+            } else {
+                penalty_count += 1;
+            }
+            last_mac = Some(lock.mac.clone());
+        }
+
+        assert_eq!(penalty_count, 3);
     }
 }

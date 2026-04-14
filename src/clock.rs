@@ -53,8 +53,13 @@ fn compute_boot_id() -> String {
 #[cfg(target_os = "windows")]
 fn compute_boot_id() -> String {
     use std::time::SystemTime;
-    let now_sys =
-        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let now_sys = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(d) => d.as_millis(),
+        Err(e) => {
+            tracing::warn!("system time before epoch, using fallback: {}", e);
+            1_000_000u128
+        }
+    };
     let uptime = monotonic_ms();
     let boot_wall_approx = now_sys.saturating_sub(uptime);
     let digest = blake3::hash(boot_wall_approx.to_le_bytes().as_ref());

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use parking_lot::Mutex;
@@ -15,6 +15,8 @@ const TYPE_AAAA: u16 = 28;
 const CLASS_IN: u16 = 1;
 const TTL: u32 = 60;
 const MAX_QUERIES_PER_SECOND: u32 = 100;
+const RATE_LIMIT_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const RATE_LIMIT_ENTRY_TTL: Duration = Duration::from_secs(300);
 
 pub fn spawn(shutdown: Arc<Notify>) {
     let addr: SocketAddr = (Ipv4Addr::LOCALHOST, PORT).into();
@@ -28,6 +30,25 @@ pub fn spawn(shutdown: Arc<Notify>) {
         };
         tracing::info!(%addr, "dns server listening");
         let rate_limiter = Arc::new(Mutex::new(HashMap::<IpAddr, (Instant, u32)>::new()));
+
+        let cleanup_limiter = rate_limiter.clone();
+        let cleanup_shutdown = shutdown.clone();
+        let cleanup_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(RATE_LIMIT_CLEANUP_INTERVAL);
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let mut limiter = cleanup_limiter.lock();
+                        let now = Instant::now();
+                        limiter.retain(|_, (last_access, _)| {
+                            now.duration_since(*last_access) < RATE_LIMIT_ENTRY_TTL
+                        });
+                    }
+                    _ = cleanup_shutdown.notified() => break,
+                }
+            }
+        });
+
         let mut buf = [0u8; 1500];
         loop {
             tokio::select! {
@@ -51,6 +72,10 @@ pub fn spawn(shutdown: Arc<Notify>) {
                 }
             }
         }
+
+        cleanup_task.abort();
+        drop(socket);
+        tracing::info!("dns server shutdown complete");
     });
 }
 

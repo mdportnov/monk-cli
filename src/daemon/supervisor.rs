@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -26,7 +26,7 @@ use parking_lot::{Mutex, RwLock};
 /// 4. `hosts`
 /// 5. `procs`
 /// 6. `active_profile`
-/// 7. `last_tamper_at`
+/// 7. `last_tamper_mac`
 /// 8. `last_fired_window`
 ///
 /// `store` is a standalone file-backed handle and is treated as a leaf —
@@ -41,9 +41,10 @@ pub struct Supervisor {
     audit: Arc<AuditLog>,
     last_tick_ms: Arc<AtomicU64>,
     active_profile: Arc<RwLock<Option<String>>>,
-    last_tamper_at: Arc<Mutex<Option<std::time::Instant>>>,
+    last_tamper_mac: Arc<Mutex<Option<String>>>,
     last_fired_window: Arc<Mutex<Option<FiredWindow>>>,
     start_gate: Arc<Mutex<()>>,
+    consecutive_hosts_failures: Arc<AtomicU32>,
 }
 
 type FiredWindow = (String, chrono::DateTime<chrono::Utc>);
@@ -60,9 +61,10 @@ impl Supervisor {
             audit: Arc::new(AuditLog::new()?),
             last_tick_ms: Arc::new(AtomicU64::new(clock::monotonic_ms() as u64)),
             active_profile: Arc::new(RwLock::new(None)),
-            last_tamper_at: Arc::new(Mutex::new(None)),
+            last_tamper_mac: Arc::new(Mutex::new(None)),
             last_fired_window: Arc::new(Mutex::new(None)),
             start_gate: Arc::new(Mutex::new(())),
+            consecutive_hosts_failures: Arc::new(AtomicU32::new(0)),
         })
     }
 
@@ -273,6 +275,9 @@ impl Supervisor {
         let duration = enforce_limits(&profile, &profile_def.limits, duration, &self.audit)?;
         let set = build_block_set(&profile_def)?;
 
+        self.hosts.lock().apply(&set)?;
+        let _ = self.procs.lock().kill_matching(&set.apps);
+
         let lock = SessionLock::new(NewLock {
             profile: profile.clone(),
             duration,
@@ -284,15 +289,6 @@ impl Supervisor {
             boot_ms: clock::monotonic_ms(),
         });
 
-        if let Err(e) = self.hosts.lock().apply(&set) {
-            if matches!(e, Error::Permission(_)) {
-                tracing::warn!(?e, "hosts apply failed; continuing without site blocking");
-                self.audit.append(AuditKind::HostsApplyFailed, None, &e.to_string());
-            } else {
-                return Err(e);
-            }
-        }
-        let _ = self.procs.lock().kill_matching(&set.apps);
         self.store.save(&lock)?;
         *self.active_profile.write() = Some(profile.clone());
         self.last_tick_ms.store(clock::monotonic_ms() as u64, Ordering::SeqCst);
@@ -383,6 +379,10 @@ impl Supervisor {
                 Ok(set) => {
                     let mut hosts = self.hosts.lock();
                     if let Err(e) = hosts.apply(&set) {
+                        let failures = self.consecutive_hosts_failures.fetch_add(1, Ordering::SeqCst) + 1;
+                        if failures >= 5 {
+                            tracing::error!("blocking degraded: {} consecutive hosts.apply failures", failures);
+                        }
                         tracing::warn!(?e, "hosts reapply failed");
                         self.audit.append(
                             AuditKind::HostsApplyFailed,
@@ -390,6 +390,7 @@ impl Supervisor {
                             &e.to_string(),
                         );
                     } else {
+                        self.consecutive_hosts_failures.store(0, Ordering::SeqCst);
                         self.audit.append(AuditKind::HostsRepaired, Some(lock.id), "hosts ensured");
                     }
                     drop(hosts);
@@ -564,15 +565,15 @@ impl Supervisor {
     }
 
     fn handle_tamper(&self, lock: &mut SessionLock) {
-        let now = std::time::Instant::now();
-        let mut last = self.last_tamper_at.lock();
-        if let Some(prev) = *last {
-            if now.duration_since(prev) < Duration::from_secs(60) {
+        let mut last_mac = self.last_tamper_mac.lock();
+        let current_mac = lock.mac.clone();
+        if let Some(prev_mac) = last_mac.as_ref() {
+            if *prev_mac == current_mac {
                 return;
             }
         }
-        *last = Some(now);
-        drop(last);
+        *last_mac = Some(current_mac);
+        drop(last_mac);
         let penalty = self.config.read().general.tamper_penalty;
         lock.apply_penalty(penalty);
         self.audit.append(
@@ -679,5 +680,60 @@ fn lock_to_session(lock: &SessionLock) -> Session {
         duration: Duration::from_millis(u64::try_from(lock.duration_ms).unwrap_or(u64::MAX)),
         hard_mode: lock.hard_mode,
         state: if lock.is_expired() { SessionState::Completed } else { SessionState::Running },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{blocker::BlockSet, Error};
+
+    #[derive(Debug)]
+    struct MockBlocker {
+        fail: bool,
+    }
+
+    impl MockBlocker {
+        fn new(fail: bool) -> Self {
+            Self { fail }
+        }
+    }
+
+    impl Blocker for MockBlocker {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+
+        fn apply(&mut self, _set: &BlockSet) -> Result<()> {
+            if self.fail {
+                Err(Error::Permission("mock permission denied".into()))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn revert(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_start_fails_when_hosts_apply_fails() {
+        let mut config = crate::config::Config::default();
+        config.profiles.insert("test".into(), crate::config::Profile::default());
+        let supervisor = Supervisor::new(config).unwrap();
+
+        *supervisor.hosts.lock() = Box::new(MockBlocker::new(true));
+
+        let result = supervisor.start(
+            "test".to_string(),
+            Duration::from_secs(60),
+            false,
+            None,
+            "panic_phrase".to_string(),
+        );
+
+        assert!(result.is_err());
+        assert!(supervisor.store.load().unwrap().is_none());
     }
 }

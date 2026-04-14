@@ -87,6 +87,13 @@ pub fn runtime_dir() -> Result<PathBuf> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| std::env::temp_dir().join("monk"));
     fs_err::create_dir_all(&p)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs_err::set_permissions(&p, std::fs::Permissions::from_mode(0o700));
+    }
+
     chown_to_sudo_user(&p);
     Ok(p)
 }

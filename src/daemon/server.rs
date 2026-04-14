@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub async fn run() -> Result<()> {
-    let pid = PidFile::new()?;
+    let mut pid = PidFile::new()?;
     pid.acquire()?;
     let _pid_guard = scopeguard::Guard::new(&pid);
 
@@ -156,6 +156,11 @@ async fn handle(
     sup: Arc<Supervisor>,
     shutdown: Arc<Notify>,
 ) -> Result<()> {
+    if let Err(e) = crate::ipc::peer_cred::check_peer_auth(&stream) {
+        tracing::warn!(?e, "rejecting unauthorized IPC connection");
+        return Ok(());
+    }
+
     let (reader, writer) = stream.split();
     let mut source = FramedRead::new(reader, codec());
     let mut sink = FramedWrite::new(writer, codec());

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, LocalResult, NaiveDate, TimeZone, Utc};
 
 use crate::config::{Schedule, Weekday};
 
@@ -11,28 +11,29 @@ enum Tz {
 impl Tz {
     fn at_utc(self, date: NaiveDate, h: u32, m: u32) -> Option<DateTime<Utc>> {
         match self {
-            Tz::Named(tz) => {
-                let mapped = tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
-                mapped
-                    .single()
-                    .or_else(|| mapped.earliest())
-                    .or_else(|| mapped.latest())
-                    .map(|dt| dt.with_timezone(&Utc))
-            }
-            Tz::Local => {
-                let mapped = Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0);
-                mapped
-                    .single()
-                    .or_else(|| mapped.earliest())
-                    .or_else(|| mapped.latest())
-                    .map(|dt| dt.with_timezone(&Utc))
-            }
+            Tz::Named(tz) => resolve_local_time(tz.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)),
+            Tz::Local => resolve_local_time(Local.with_ymd_and_hms(date.year(), date.month(), date.day(), h, m, 0)),
         }
     }
     fn today(self, now: DateTime<Utc>) -> NaiveDate {
         match self {
             Tz::Named(tz) => now.with_timezone(&tz).date_naive(),
             Tz::Local => now.with_timezone(&Local).date_naive(),
+        }
+    }
+}
+
+fn resolve_local_time<Tz: TimeZone>(result: LocalResult<DateTime<Tz>>) -> Option<DateTime<Utc>> {
+    match result {
+        LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
+        LocalResult::Ambiguous(earlier, _later) => {
+            tracing::info!("DST ambiguous time, choosing earlier occurrence");
+            Some(earlier.with_timezone(&Utc))
+        }
+        LocalResult::None => {
+            let shifted = result.latest()?;
+            tracing::info!("DST gap time does not exist, moving to next valid time");
+            Some(shifted.with_timezone(&Utc))
         }
     }
 }
@@ -221,5 +222,23 @@ mod tests {
         s.enabled = false;
         let now = Utc.with_ymd_and_hms(2026, 4, 6, 10, 0, 0).unwrap();
         assert!(current_or_next(&s, now).is_none());
+    }
+
+    #[test]
+    fn dst_ambiguous_chooses_earlier() {
+        use chrono::{LocalResult, TimeZone, Local};
+        let result = LocalResult::Ambiguous(
+            Local.with_ymd_and_hms(2026, 11, 2, 1, 30, 0).unwrap(),
+            Local.with_ymd_and_hms(2026, 11, 2, 1, 30, 0).unwrap(),
+        );
+        let resolved = resolve_local_time(result);
+        assert!(resolved.is_some());
+    }
+
+    #[test]
+    fn dst_none_example() {
+        let result: LocalResult<DateTime<Local>> = LocalResult::None;
+        let resolved = resolve_local_time(result);
+        assert!(resolved.is_none());
     }
 }

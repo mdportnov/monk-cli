@@ -1,19 +1,26 @@
-use std::path::{Path, PathBuf};
+use std::{fs::File, path::{Path, PathBuf}};
 
 use crate::{paths, Error, Result};
 
 #[derive(Debug)]
 pub struct PidFile {
     path: PathBuf,
+    _file: Option<File>,
 }
 
 impl PidFile {
     pub fn new() -> Result<Self> {
-        Ok(Self { path: paths::pid_file()? })
+        Ok(Self {
+            path: paths::pid_file()?,
+            _file: None,
+        })
     }
 
     pub fn with_path(path: PathBuf) -> Self {
-        Self { path }
+        Self {
+            path,
+            _file: None,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -37,19 +44,60 @@ impl PidFile {
         }
     }
 
-    pub fn acquire(&self) -> Result<()> {
-        if let Some(pid) = self.is_alive()? {
-            return Err(Error::DaemonAlreadyRunning(pid));
-        }
+    pub fn acquire(&mut self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             fs_err::create_dir_all(parent)?;
         }
-        fs_err::write(&self.path, std::process::id().to_string())?;
-        Ok(())
+
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&self.path)?;
+
+        match try_exclusive_lock(&file) {
+            Ok(()) => {
+                use std::io::{Seek, SeekFrom, Write};
+                let mut file = file;
+                file.seek(SeekFrom::Start(0))?;
+                file.set_len(0)?;
+                write!(file, "{}", std::process::id())?;
+                file.flush()?;
+                file.sync_all()?;
+                self._file = Some(file);
+                Ok(())
+            }
+            Err(LockError::WouldBlock) => {
+                let existing_pid = self.read().unwrap_or(None);
+                if let Some(pid) = existing_pid {
+                    if pid_alive(pid) {
+                        return Err(Error::DaemonAlreadyRunning(pid));
+                    }
+                }
+                Err(Error::DaemonAlreadyRunning(existing_pid.unwrap_or(0)))
+            }
+            Err(LockError::Other(e)) => Err(Error::Io(e)),
+        }
     }
 
     pub fn release(&self) {
         let _ = fs_err::remove_file(&self.path);
+    }
+}
+
+#[derive(Debug)]
+enum LockError {
+    WouldBlock,
+    Other(std::io::Error),
+}
+
+fn try_exclusive_lock(file: &File) -> std::result::Result<(), LockError> {
+    use fs2::FileExt;
+
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(LockError::WouldBlock),
+        Err(e) => Err(LockError::Other(e)),
     }
 }
 

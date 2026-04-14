@@ -5,8 +5,9 @@ pub use detect::detect;
 use std::{
     borrow::Cow,
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::OnceLock,
 };
+use parking_lot::Mutex;
 
 pub const SUPPORTED: &[&str] = &["en", "ru"];
 
@@ -29,11 +30,11 @@ fn current_locale() -> &'static Mutex<&'static str> {
 }
 
 pub fn set(locale: &str) {
-    *current_locale().lock().unwrap() = normalize(locale);
+    *current_locale().lock() = normalize(locale);
 }
 
 pub fn current() -> String {
-    current_locale().lock().unwrap().to_string()
+    current_locale().lock().to_string()
 }
 
 pub fn normalize(raw: &str) -> &'static str {
@@ -50,7 +51,7 @@ pub fn init(config_locale: Option<&str>, cli_override: Option<&str>) {
 }
 
 pub fn lookup(key: &str) -> Cow<'static, str> {
-    let locale: &str = &current_locale().lock().unwrap();
+    let locale: &str = &current_locale().lock();
     let b = bundles();
     if let Some(v) = b.get(locale).and_then(|m| m.get(key)) {
         return Cow::Owned(v.clone());
