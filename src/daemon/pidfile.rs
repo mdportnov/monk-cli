@@ -107,8 +107,12 @@ fn try_exclusive_lock(file: &File) -> std::result::Result<(), LockError> {
 
 #[cfg(unix)]
 fn pid_alive(pid: u32) -> bool {
-    use nix::{sys::signal, unistd::Pid};
-    signal::kill(Pid::from_raw(pid as i32), None).is_ok()
+    use nix::{errno::Errno, sys::signal, unistd::Pid};
+    match signal::kill(Pid::from_raw(pid as i32), None) {
+        Ok(()) => true,
+        Err(Errno::EPERM) => true,
+        Err(_) => false,
+    }
 }
 
 #[cfg(windows)]

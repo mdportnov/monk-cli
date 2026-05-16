@@ -43,6 +43,13 @@ pub enum Error {
     )]
     Permission(String),
 
+    #[error("site blocking unavailable: {0}")]
+    #[diagnostic(
+        code(monk::blocker::unavailable),
+        help("run `sudo monk service install` so the daemon can manage /etc/hosts")
+    )]
+    BlockerUnavailable(String),
+
     #[error("ipc error: {0}")]
     #[diagnostic(code(monk::ipc))]
     Ipc(String),

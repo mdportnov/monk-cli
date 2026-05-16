@@ -1,4 +1,4 @@
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -110,32 +110,136 @@ fn uninstall(purge: bool) -> Result<String> {
 }
 
 #[cfg(target_os = "macos")]
+const SYSTEM_PLIST: &str = "/Library/LaunchDaemons/dev.monk.monkd.plist";
+#[cfg(target_os = "macos")]
+const SYSTEM_BIN_DIR: &str = "/usr/local/libexec/monk";
+#[cfg(target_os = "macos")]
+const SYSTEM_BIN: &str = "/usr/local/libexec/monk/monkd";
+
+#[cfg(target_os = "macos")]
+fn require_root() -> Result<()> {
+    if nix::unistd::geteuid().is_root() {
+        Ok(())
+    } else {
+        Err(Error::Permission(
+            "this command must run as root — try `sudo monk service install`".into(),
+        ))
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn install(bin: &str) -> Result<String> {
-    let home = dirs_home()?;
-    let dir = home.join("Library/LaunchAgents");
-    fs_err::create_dir_all(&dir)?;
-    let plist = dir.join("dev.monk.monkd.plist");
-    let log = paths::log_file()?;
-    let tpl = include_str!("../../assets/launchd/dev.monk.monkd.plist");
-    let rendered = tpl.replace("__BIN__", bin).replace("__LOG__", &log.to_string_lossy());
-    fs_err::write(&plist, rendered)?;
-    Ok(format!("wrote {}\nnext: `launchctl load -w {}`", plist.display(), plist.display()))
+    require_root()?;
+
+    let mut msgs = Vec::new();
+
+    fs_err::create_dir_all(SYSTEM_BIN_DIR)?;
+    let src = std::path::Path::new(bin);
+    let dst = std::path::Path::new(SYSTEM_BIN);
+    if src.canonicalize().ok().as_deref() != Some(dst) {
+        fs_err::copy(src, dst)?;
+        msgs.push(format!("copied binary → {}", dst.display()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs_err::set_permissions(dst, std::fs::Permissions::from_mode(0o755));
+    }
+
+    let data_dir = std::path::Path::new("/Library/Application Support/monk");
+    fs_err::create_dir_all(data_dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs_err::set_permissions(data_dir, std::fs::Permissions::from_mode(0o755));
+    }
+    let log = data_dir.join("monk.log");
+
+    let tpl = include_str!("../../assets/launchd/dev.monk.monkd.daemon.plist");
+    let rendered =
+        tpl.replace("__BIN__", &dst.to_string_lossy()).replace("__LOG__", &log.to_string_lossy());
+    fs_err::write(SYSTEM_PLIST, rendered)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs_err::set_permissions(SYSTEM_PLIST, std::fs::Permissions::from_mode(0o644));
+    }
+    msgs.push(format!("wrote {SYSTEM_PLIST}"));
+
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        if user != "root" {
+            let legacy = std::path::PathBuf::from(format!(
+                "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
+            ));
+            if legacy.exists() {
+                if let Some((uid, _)) = paths::sudo_user_ids() {
+                    let _ = std::process::Command::new("launchctl")
+                        .args(["bootout", &format!("gui/{uid}")])
+                        .arg(&legacy)
+                        .status();
+                }
+                let _ = std::process::Command::new("launchctl")
+                    .args(["unload", "-w"])
+                    .arg(&legacy)
+                    .status();
+                let _ = fs_err::remove_file(&legacy);
+                msgs.push(format!("removed legacy LaunchAgent {}", legacy.display()));
+            }
+        }
+    }
+
+    cleanup_hosts();
+    msgs.push("reverted /etc/hosts (clears stale monk markers)".into());
+
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", "system"])
+        .arg(SYSTEM_PLIST)
+        .status();
+    let status = std::process::Command::new("launchctl")
+        .args(["bootstrap", "system"])
+        .arg(SYSTEM_PLIST)
+        .status();
+    match status {
+        Ok(s) if s.success() => msgs.push("loaded via launchctl bootstrap system".into()),
+        _ => msgs.push(format!("manual start: `sudo launchctl bootstrap system {SYSTEM_PLIST}`")),
+    }
+
+    Ok(msgs.join("\n"))
 }
 
 #[cfg(target_os = "macos")]
 fn uninstall(purge: bool) -> Result<String> {
+    require_root()?;
+
     let mut msgs = Vec::new();
 
     if try_shutdown_daemon().is_err() {
         tracing::debug!("daemon shutdown failed during uninstall");
     }
 
-    let home = dirs_home()?;
-    let plist = home.join("Library/LaunchAgents/dev.monk.monkd.plist");
-    if plist.exists() {
-        let _ = std::process::Command::new("launchctl").args(["unload", "-w"]).arg(&plist).status();
-        fs_err::remove_file(&plist)?;
-        msgs.push(format!("removed {}", plist.display()));
+    if std::path::Path::new(SYSTEM_PLIST).exists() {
+        let _ = std::process::Command::new("launchctl")
+            .args(["bootout", "system"])
+            .arg(SYSTEM_PLIST)
+            .status();
+        let _ =
+            std::process::Command::new("launchctl").args(["unload", "-w", SYSTEM_PLIST]).status();
+        fs_err::remove_file(SYSTEM_PLIST)?;
+        msgs.push(format!("removed {SYSTEM_PLIST}"));
+    }
+
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        let legacy = std::path::PathBuf::from(format!(
+            "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
+        ));
+        if legacy.exists() {
+            let _ = std::process::Command::new("launchctl")
+                .args(["unload", "-w"])
+                .arg(&legacy)
+                .status();
+            let _ = fs_err::remove_file(&legacy);
+            msgs.push(format!("removed legacy LaunchAgent {}", legacy.display()));
+        }
     }
 
     cleanup_hosts();
@@ -144,14 +248,16 @@ fn uninstall(purge: bool) -> Result<String> {
         let _ = fs_err::remove_dir_all(&runtime_dir);
     }
 
+    if std::path::Path::new(SYSTEM_BIN).exists() {
+        let _ = fs_err::remove_file(SYSTEM_BIN);
+    }
+    let _ = fs_err::remove_dir(SYSTEM_BIN_DIR);
+
     if purge {
-        if let Ok(data_dir) = crate::paths::data_dir() {
-            let _ = fs_err::remove_dir_all(&data_dir);
-            msgs.push("purged user data".into());
-        }
-        if let Ok(config_dir) = crate::paths::config_dir() {
-            let _ = fs_err::remove_dir_all(&config_dir);
-            msgs.push("purged config".into());
+        let sys_data = std::path::Path::new("/Library/Application Support/monk");
+        if sys_data.exists() {
+            let _ = fs_err::remove_dir_all(sys_data);
+            msgs.push("purged system data".into());
         }
     }
 
@@ -229,13 +335,6 @@ fn cleanup_hosts() {
             tracing::info!("hosts cleaned up during uninstall");
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-fn dirs_home() -> Result<PathBuf> {
-    directories::BaseDirs::new()
-        .map(|d| d.home_dir().to_path_buf())
-        .ok_or_else(|| Error::Other("cannot resolve home dir".into()))
 }
 
 #[cfg(target_os = "linux")]

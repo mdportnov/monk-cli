@@ -75,7 +75,12 @@ impl Blocker for NoopBlocker {
     }
 }
 
-pub fn select_site_blocker() -> Box<dyn Blocker> {
+pub struct SelectedBlocker {
+    pub blocker: Box<dyn Blocker>,
+    pub fallback_reason: Option<String>,
+}
+
+pub fn select_site_blocker() -> SelectedBlocker {
     let experimental = std::env::var("MONK_DNS_BACKEND").is_ok();
 
     if experimental {
@@ -86,7 +91,7 @@ pub fn select_site_blocker() -> Box<dyn Blocker> {
                 ProbeResult::Available { detail, .. } => match ResolverDirBlocker::build() {
                     Ok(b) => {
                         tracing::info!(backend = "resolver_dir", %detail, "selected site blocker backend");
-                        return Box::new(b);
+                        return SelectedBlocker { blocker: Box::new(b), fallback_reason: None };
                     }
                     Err(e) => tracing::warn!(?e, "resolver_dir build failed"),
                 },
@@ -102,7 +107,7 @@ pub fn select_site_blocker() -> Box<dyn Blocker> {
                 ProbeResult::Available { detail, .. } => match SystemdResolvedBlocker::build() {
                     Ok(b) => {
                         tracing::info!(backend = "systemd_resolved", %detail, "selected site blocker backend");
-                        return Box::new(b);
+                        return SelectedBlocker { blocker: Box::new(b), fallback_reason: None };
                     }
                     Err(e) => tracing::warn!(?e, "systemd_resolved build failed"),
                 },
@@ -117,16 +122,17 @@ pub fn select_site_blocker() -> Box<dyn Blocker> {
         ProbeResult::Available { detail, .. } => match HostsBlocker::build() {
             Ok(b) => {
                 tracing::info!(backend = "hosts", %detail, "selected site blocker backend");
-                Box::new(b)
+                SelectedBlocker { blocker: Box::new(b), fallback_reason: None }
             }
             Err(e) => {
-                tracing::warn!(?e, "hosts build failed; running noop");
-                Box::new(NoopBlocker)
+                let reason = format!("hosts build failed: {e}");
+                tracing::error!(%reason, "no site blocker available; running noop");
+                SelectedBlocker { blocker: Box::new(NoopBlocker), fallback_reason: Some(reason) }
             }
         },
         ProbeResult::Unavailable { reason } => {
-            tracing::warn!(%reason, "hosts unavailable; running noop");
-            Box::new(NoopBlocker)
+            tracing::error!(%reason, "no site blocker available; running noop");
+            SelectedBlocker { blocker: Box::new(NoopBlocker), fallback_reason: Some(reason) }
         }
     }
 }

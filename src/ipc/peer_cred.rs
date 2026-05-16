@@ -90,8 +90,15 @@ fn check_bsd_peer_creds(stream: &interprocess::local_socket::tokio::Stream) -> R
     let peer_uid = peer_creds
         .euid()
         .ok_or_else(|| crate::Error::Ipc("Could not get peer effective UID".to_string()))?;
-    let allowed_uid = get_allowed_uid();
 
+    // system_mode: socket is 0660 root:admin, so connect() already gated on
+    // admin-group membership at the kernel level. trust it.
+    if crate::paths::system_mode() {
+        debug!(peer_uid, "peer credential check passed (system mode, fs-gated)");
+        return Ok(());
+    }
+
+    let allowed_uid = get_allowed_uid();
     if peer_uid != allowed_uid {
         warn!(
             peer_uid = peer_uid,

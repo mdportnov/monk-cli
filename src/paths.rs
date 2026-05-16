@@ -167,7 +167,44 @@ fn dirs() -> Result<&'static ProjectDirs> {
     DIRS.as_ref().ok_or_else(|| Error::Other("could not resolve user directories".into()))
 }
 
+#[cfg(target_os = "macos")]
+const SYSTEM_LAUNCHD_PLIST: &str = "/Library/LaunchDaemons/dev.monk.monkd.plist";
+#[cfg(target_os = "macos")]
+const SYSTEM_DATA_DIR: &str = "/Library/Application Support/monk";
+#[cfg(target_os = "macos")]
+const SYSTEM_RUNTIME_DIR: &str = "/var/run/monk";
+
+/// True when the system-wide LaunchDaemon is installed: all paths resolve to
+/// system locations regardless of who's calling.
+pub fn system_mode() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::path::Path::new(SYSTEM_LAUNCHD_PLIST).exists()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Try to create dir; swallow permission errors so CLI as user doesn't fail
+/// when the daemon owns the path. Caller still gets the path back, and
+/// downstream open/read calls produce a clear error.
+fn ensure_dir_best_effort(p: &std::path::Path) {
+    if let Err(e) = fs_err::create_dir_all(p) {
+        if e.kind() != std::io::ErrorKind::AlreadyExists && !p.exists() {
+            tracing::debug!(?e, path = %p.display(), "create_dir_all failed (continuing)");
+        }
+    }
+}
+
 pub fn config_dir() -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    if system_mode() {
+        let p = PathBuf::from(SYSTEM_DATA_DIR);
+        ensure_dir_best_effort(&p);
+        return Ok(p);
+    }
     let p = dirs()?.config_dir().to_path_buf();
     fs_err::create_dir_all(&p)?;
     chown_to_sudo_user(&p);
@@ -175,6 +212,12 @@ pub fn config_dir() -> Result<PathBuf> {
 }
 
 pub fn data_dir() -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    if system_mode() {
+        let p = PathBuf::from(SYSTEM_DATA_DIR);
+        ensure_dir_best_effort(&p);
+        return Ok(p);
+    }
     let p = dirs()?.data_dir().to_path_buf();
     fs_err::create_dir_all(&p)?;
     chown_to_sudo_user(&p);
@@ -182,6 +225,17 @@ pub fn data_dir() -> Result<PathBuf> {
 }
 
 pub fn runtime_dir() -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    if system_mode() {
+        let p = PathBuf::from(SYSTEM_RUNTIME_DIR);
+        ensure_dir_best_effort(&p);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs_err::set_permissions(&p, std::fs::Permissions::from_mode(0o755));
+        }
+        return Ok(p);
+    }
     let p = dirs()?
         .runtime_dir()
         .map(std::path::Path::to_path_buf)
@@ -230,4 +284,116 @@ pub fn ipc_socket() -> Result<PathBuf> {
     {
         Ok(runtime_dir()?.join("monkd.sock"))
     }
+}
+
+/// Legacy per-user paths (pre-LaunchDaemon). Used at migration time.
+#[cfg(target_os = "macos")]
+pub fn legacy_user_config_file_for(user: &str) -> PathBuf {
+    PathBuf::from(format!("/Users/{user}/Library/Application Support/dev.monk.monk/config.toml"))
+}
+
+#[cfg(target_os = "macos")]
+pub fn legacy_user_data_dir_for(user: &str) -> PathBuf {
+    PathBuf::from(format!("/Users/{user}/Library/Application Support/dev.monk.monk"))
+}
+
+/// One-shot migration: when the system-mode daemon starts for the first time
+/// and the system data dir is empty, copy a legacy per-user config + audit
+/// log. Idempotent and never overwrites existing files. Preference order:
+/// SUDO_USER (the user who ran `sudo monk service install`), then the user
+/// with the most-recently-modified config.toml under `/Users/*`.
+#[cfg(target_os = "macos")]
+pub fn migrate_legacy_if_needed() {
+    if !system_mode() {
+        return;
+    }
+    let Ok(sys_dir) = data_dir() else { return };
+    let sys_config = sys_dir.join("config.toml");
+    if sys_config.exists() {
+        return;
+    }
+    let Some(user) = pick_legacy_user() else { return };
+    let legacy_cfg = legacy_user_config_file_for(&user);
+    let legacy_data = legacy_user_data_dir_for(&user);
+    if !legacy_cfg.exists() {
+        return;
+    }
+    tracing::info!(%user, "migrating legacy per-user data to system path");
+    if let Err(e) = fs_err::copy(&legacy_cfg, &sys_config) {
+        tracing::warn!(?e, "config migrate failed");
+        return;
+    }
+    let _ = checkpoint_legacy_sqlite(&legacy_data);
+    for name in [
+        "audit.sqlite3",
+        "audit.sqlite3-wal",
+        "audit.sqlite3-shm",
+        "audit.log",
+        "session.lock",
+        "apps.json",
+    ] {
+        let src = legacy_data.join(name);
+        let dst = sys_dir.join(name);
+        if src.exists() && !dst.exists() {
+            if let Err(e) = fs_err::copy(&src, &dst) {
+                tracing::warn!(?e, file = %src.display(), "migrate copy failed (continuing)");
+            }
+        }
+    }
+    let marker = legacy_data.join(".migrated");
+    if fs_err::write(&marker, chrono::Utc::now().to_rfc3339()).is_ok() {
+        chown_path_to_user(&marker, &user);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn migrate_legacy_if_needed() {}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn chown_path_to_user(path: &std::path::Path, user: &str) {
+    let Ok(Some(u)) = nix::unistd::User::from_name(user) else { return };
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return };
+    unsafe {
+        let _ = libc::chown(c.as_ptr(), u.uid.as_raw(), u.gid.as_raw());
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn checkpoint_legacy_sqlite(legacy_data: &std::path::Path) -> Result<()> {
+    let db = legacy_data.join("audit.sqlite3");
+    if !db.exists() {
+        return Ok(());
+    }
+    let conn = rusqlite::Connection::open(&db).map_err(Error::from)?;
+    let _ = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn pick_legacy_user() -> Option<String> {
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        if user != "root" {
+            let cfg = legacy_user_config_file_for(&user);
+            if cfg.exists() {
+                return Some(user);
+            }
+        }
+    }
+    let entries = fs_err::read_dir("/Users").ok()?;
+    let mut candidates: Vec<(std::time::SystemTime, String)> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "Shared" {
+            continue;
+        }
+        let cfg = entry.path().join("Library/Application Support/dev.monk.monk/config.toml");
+        if let Ok(meta) = fs_err::metadata(&cfg) {
+            let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            candidates.push((mtime, name));
+        }
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.into_iter().next().map(|(_, u)| u)
 }

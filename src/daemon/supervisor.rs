@@ -36,6 +36,7 @@ pub struct Supervisor {
     config: Arc<RwLock<Config>>,
     config_write: Arc<Mutex<()>>,
     hosts: Arc<Mutex<Box<dyn Blocker>>>,
+    blocker_fallback_reason: Arc<RwLock<Option<String>>>,
     procs: Arc<Mutex<ProcessGuard>>,
     store: Arc<LockStore>,
     audit: Arc<AuditLog>,
@@ -56,10 +57,12 @@ impl Supervisor {
         if let Err(e) = audit.prune(90) {
             tracing::warn!(?e, "audit prune failed");
         }
+        let selected = blocker::select_site_blocker();
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
             config_write: Arc::new(Mutex::new(())),
-            hosts: Arc::new(Mutex::new(blocker::select_site_blocker())),
+            hosts: Arc::new(Mutex::new(selected.blocker)),
+            blocker_fallback_reason: Arc::new(RwLock::new(selected.fallback_reason)),
             procs: Arc::new(Mutex::new(ProcessGuard::new())),
             store: Arc::new(LockStore::new()?),
             audit,
@@ -280,6 +283,17 @@ impl Supervisor {
             .clone();
         let duration = enforce_limits(&profile, &profile_def.limits, duration, &self.audit)?;
         let set = build_block_set(&profile_def)?;
+
+        if !set.sites.is_empty() {
+            if let Some(reason) = self.blocker_fallback_reason.read().clone() {
+                self.audit.append(
+                    AuditKind::HostsApplyFailed,
+                    None,
+                    &format!("start refused: {reason}"),
+                );
+                return Err(Error::BlockerUnavailable(reason));
+            }
+        }
 
         self.hosts.lock().apply(&set)?;
         let _ = self.procs.lock().kill_matching(&set.apps);
@@ -517,7 +531,9 @@ impl Supervisor {
     }
 
     fn finalize(&self, lock: &SessionLock, _state: SessionState) -> Result<()> {
-        let _ = self.hosts.lock().revert();
+        if let Err(e) = self.hosts.lock().revert() {
+            tracing::warn!(?e, id = %lock.id, "hosts revert failed during finalize");
+        }
         self.store.delete()?;
         *self.active_profile.write() = None;
         tracing::info!(id = %lock.id, "session finalized");

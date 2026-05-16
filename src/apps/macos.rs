@@ -9,9 +9,23 @@ const SEARCH_ROOTS: &[&str] = &["/Applications", "/System/Applications"];
 pub fn scan() -> Result<Vec<InstalledApp>> {
     let mut out = Vec::new();
     let mut roots: Vec<PathBuf> = SEARCH_ROOTS.iter().map(PathBuf::from).collect();
-    if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
+
+    let running_as_root = nix::unistd::geteuid().is_root();
+    if running_as_root {
+        if let Ok(entries) = fs_err::read_dir("/Users") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with('.') || name == "Shared" {
+                    continue;
+                }
+                roots.push(entry.path().join("Applications"));
+            }
+        }
+    } else if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
         roots.push(home.join("Applications"));
     }
+
     for root in roots {
         walk_bundles(&root, 0, &mut out);
     }

@@ -1729,42 +1729,35 @@ async fn ensure_daemon() {
         }
         _ => {}
     }
+
+    if crate::paths::system_mode() {
+        eprintln!(
+            "monk: daemon unreachable. \
+             reload it with `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.monk.monkd.plist`"
+        );
+        return;
+    }
+
     let Ok(exe) = std::env::current_exe() else { return };
     use std::process::{Command, Stdio};
-    let need_sudo = cfg!(unix) && !is_root() && !hosts_writable();
-    if need_sudo {
-        eprintln!("monk: elevating daemon via sudo to manage /etc/hosts…");
-        let user = std::env::var("USER").unwrap_or_default();
-        let home = std::env::var("HOME").unwrap_or_default();
-        let log = crate::paths::log_file()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| "/tmp/monkd.log".into());
-        let shell = format!("nohup {exe:?} daemon run >>{log:?} 2>&1 &", exe = exe, log = log);
-        let _ = Command::new("sudo")
-            .args([
-                "-E",
-                "env",
-                &format!("SUDO_USER={user}"),
-                &format!("HOME={home}"),
-                "sh",
-                "-c",
-                &shell,
-            ])
-            .status();
-    } else {
-        let _ = Command::new(&exe)
-            .args(["daemon", "run"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-    }
+    let _ = Command::new(&exe)
+        .args(["daemon", "run"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
     for _ in 0..20 {
         tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(ipc::send(&Request::Ping).await, Ok(Response::Pong { version }) if version == expected)
         {
             return;
         }
+    }
+    if !hosts_writable() && !is_root() {
+        eprintln!(
+            "monk: daemon running as user — /etc/hosts not writable, blocking will be unavailable. \
+             install the system daemon: `sudo monk service install`"
+        );
     }
 }
 

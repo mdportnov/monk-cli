@@ -248,7 +248,9 @@ impl Config {
         let path = paths::config_file()?;
         if !path.exists() {
             let cfg = Self::default();
-            cfg.save_to(&path)?;
+            if let Err(e) = cfg.save_to(&path) {
+                tracing::debug!(?e, path = %path.display(), "config save failed (read-only context)");
+            }
             return Ok(cfg);
         }
         Self::load_from(&path)

@@ -152,7 +152,8 @@ pub fn purpose_for(id: &str) -> &'static str {
     match id {
         "version" => "build identity — confirms which binary you're running",
         "platform" => "host os/arch — gates backend selection",
-        "privileges" => "root access — required by hosts, resolver_dir, systemd_resolved, and :80",
+        "privileges" => "process privileges — daemon needs root, cli does not",
+        "service.install" => "system LaunchDaemon — root daemon that owns /etc/hosts and :80",
         "path.config" => "where monk stores your profiles and general settings",
         "path.data" => "where monk stores audit logs and mode stats",
         "path.log" => "rolling log file for daemon output",
@@ -241,11 +242,8 @@ impl Report {
 
 pub async fn run() -> Report {
     let start = Instant::now();
-    let mut checks = Vec::new();
-
-    checks.push(check_version());
-    checks.push(check_platform());
-    checks.push(check_privileges());
+    let mut checks =
+        vec![check_version(), check_platform(), check_privileges(), check_service_install()];
     checks.extend(check_paths());
     checks.push(check_config());
     checks.push(check_pidfile());
@@ -272,15 +270,42 @@ fn check_platform() -> Check {
     )
 }
 
+fn check_service_install() -> Check {
+    #[cfg(target_os = "macos")]
+    {
+        let plist = std::path::Path::new("/Library/LaunchDaemons/dev.monk.monkd.plist");
+        if plist.exists() {
+            Check::new(
+                "service.install",
+                "system service",
+                Status::Ok,
+                "LaunchDaemon installed; daemon runs as root",
+            )
+            .with_extras(vec![plist.display().to_string()])
+        } else {
+            Check::new(
+                "service.install",
+                "system service",
+                Status::Warn,
+                "system LaunchDaemon not installed",
+            )
+            .with_hint("install with `sudo monk service install` so blocking works")
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Check::new("service.install", "system service", Status::Info, "n/a on this platform")
+    }
+}
+
 fn check_privileges() -> Check {
     #[cfg(unix)]
     {
         let is_root = nix::unistd::geteuid().is_root();
         if is_root {
-            Check::new("privileges", "privileges", Status::Ok, "running as root")
+            Check::new("privileges", "privileges", Status::Info, "running as root")
         } else {
-            Check::new("privileges", "privileges", Status::Warn, "not running as root")
-                .with_hint("some blocker backends require root (run `sudo monk ...`)")
+            Check::new("privileges", "privileges", Status::Info, "running as user (cli context)")
         }
     }
     #[cfg(windows)]
@@ -368,17 +393,32 @@ fn check_config() -> Check {
 fn check_pidfile() -> Check {
     let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     let stop = Action { key: 'x', label: "stop daemon", kind: ActionKind::StopDaemon };
+    let in_system_mode = paths::system_mode();
     match PidFile::new() {
         Ok(p) => match p.is_alive() {
             Ok(Some(pid)) => {
-                Check::new("daemon", "daemon", Status::Ok, format!("running (pid {pid})"))
-                    .with_actions(vec![stop])
+                let mut check =
+                    Check::new("daemon", "daemon", Status::Ok, format!("running (pid {pid})"));
+                if !in_system_mode {
+                    check = check.with_actions(vec![stop]);
+                }
+                check
             }
-            Ok(None) => Check::new("daemon", "daemon", Status::Warn, "not running")
-                .with_hint("start it with `monk daemon` (or `sudo monk daemon`)")
-                .with_actions(vec![start]),
+            Ok(None) => {
+                let mut c = Check::new("daemon", "daemon", Status::Warn, "not running");
+                if in_system_mode {
+                    c = c.with_hint(
+                        "reload: `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.monk.monkd.plist`",
+                    );
+                } else {
+                    c = c
+                        .with_hint("start it with `monk daemon` (or `sudo monk service install`)")
+                        .with_actions(vec![start]);
+                }
+                c
+            }
             Err(e) => Check::new("daemon", "daemon", Status::Fail, format!("pidfile read: {e}"))
-                .with_actions(vec![start]),
+                .with_actions(if in_system_mode { vec![] } else { vec![start] }),
         },
         Err(e) => Check::new("daemon", "daemon", Status::Fail, format!("pidfile init: {e}")),
     }
@@ -429,6 +469,7 @@ fn check_blocker_backend() -> Check {
         if writable { "writable" } else { "read-only" }
     ));
 
+    let hosts_available = matches!(HostsBlocker::probe(), ProbeResult::Available { .. });
     match HostsBlocker::probe() {
         ProbeResult::Available { priority, detail } => {
             lines.push(format!("hosts backend: available (priority {priority}, {detail})"));
@@ -438,10 +479,13 @@ fn check_blocker_backend() -> Check {
         }
     }
 
+    let mut alt_available = false;
+
     #[cfg(target_os = "macos")]
     {
         match crate::blocker::backends::resolver_dir::ResolverDirBlocker::probe() {
             ProbeResult::Available { priority, detail } => {
+                alt_available = true;
                 lines.push(format!("resolver_dir: available (priority {priority}, {detail})"));
             }
             ProbeResult::Unavailable { reason } => {
@@ -454,6 +498,7 @@ fn check_blocker_backend() -> Check {
     {
         match crate::blocker::backends::systemd_resolved::SystemdResolvedBlocker::probe() {
             ProbeResult::Available { priority, detail } => {
+                alt_available = true;
                 lines.push(format!("systemd_resolved: available (priority {priority}, {detail})"));
             }
             ProbeResult::Unavailable { reason } => {
@@ -462,13 +507,26 @@ fn check_blocker_backend() -> Check {
         }
     }
 
-    let status = if writable { Status::Ok } else { Status::Warn };
-    let detail = if writable {
-        "hosts writable"
+    // In system_mode the daemon runs as root and owns /etc/hosts even when
+    // THIS process (cli) can't write it. Don't fail the local-process probe.
+    // service.install + ipc checks already tell us if blocking is wired up.
+    let in_system_mode = paths::system_mode();
+    let any_available = hosts_available || alt_available;
+    let (status, detail) = if in_system_mode {
+        (Status::Ok, "system daemon owns /etc/hosts (cli-local probe is informational)")
+    } else if any_available {
+        (Status::Ok, "site blocking available")
     } else {
-        "hosts not writable — elevated privileges required"
+        (Status::Fail, "no site blocker available — sessions will refuse to start")
     };
-    Check::new("blocker.backends", "blocker backends", status, detail).with_extras(lines)
+    let mut check =
+        Check::new("blocker.backends", "blocker backends", status, detail).with_extras(lines);
+    if !in_system_mode && !any_available {
+        check = check.with_hint(
+            "install the LaunchDaemon so monkd runs as root: `sudo monk service install`",
+        );
+    }
+    check
 }
 
 async fn check_dns_server() -> Check {

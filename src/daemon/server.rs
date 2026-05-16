@@ -20,6 +20,18 @@ use crate::{
 };
 
 pub async fn run() -> Result<()> {
+    #[cfg(unix)]
+    if crate::paths::system_mode() && !nix::unistd::geteuid().is_root() {
+        return Err(Error::Permission(
+            "system LaunchDaemon is installed but this process is not root. \
+             use `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.monk.monkd.plist` \
+             or uninstall first with `sudo monk service uninstall`"
+                .into(),
+        ));
+    }
+
+    crate::paths::migrate_legacy_if_needed();
+
     let mut pid = PidFile::new()?;
     pid.acquire()?;
     let _pid_guard = pid;
@@ -47,7 +59,18 @@ pub async fn run() -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         if let Ok(sock_path) = paths::ipc_socket() {
-            let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
+            if paths::system_mode() && nix::unistd::geteuid().is_root() {
+                if let Ok(Some(admin)) = nix::unistd::Group::from_name("admin") {
+                    let _ = nix::unistd::chown(
+                        &sock_path,
+                        Some(nix::unistd::Uid::from_raw(0)),
+                        Some(admin.gid),
+                    );
+                }
+                let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o660));
+            } else {
+                let _ = fs_err::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
+            }
         }
     }
 
