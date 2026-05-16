@@ -177,7 +177,7 @@ impl MultiSelectList {
             return false;
         }
         match key.code {
-            KeyCode::Char(' ') => {
+            KeyCode::Char(' ') | KeyCode::Enter => {
                 self.rebuild_visible_if_dirty();
                 if !self.visible_cache.is_empty() {
                     self.toggle(self.cursor);

@@ -103,7 +103,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from(""),
             Line::from("  tab/shift-tab   next / prev field"),
             Line::from("  ctrl+s          save"),
-            Line::from("  space           toggle app/group"),
+            Line::from("  space · enter   toggle app/group"),
             Line::from("  esc             cancel"),
         ],
         Screen::Settings(_) => vec![

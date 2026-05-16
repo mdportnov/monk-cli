@@ -276,9 +276,11 @@ impl EditorField {
             EditorField::Sites => "comma-separated hosts to block",
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
-            EditorField::Apps => "space toggle · type to filter · ↑/↓ navigate",
-            EditorField::Groups => "space toggle · type to filter · ↑/↓ navigate",
-            EditorField::Brands => "space toggle · type to filter · auto-resolves domains + apps",
+            EditorField::Apps => "space/enter toggle · type to filter · ↑/↓ navigate",
+            EditorField::Groups => "space/enter toggle · type to filter · ↑/↓ navigate",
+            EditorField::Brands => {
+                "space/enter toggle · type to filter · auto-resolves domains + apps"
+            }
         }
     }
 }
