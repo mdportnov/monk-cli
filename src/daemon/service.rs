@@ -318,14 +318,24 @@ fn uninstall(purge: bool) -> Result<String> {
 }
 
 fn try_shutdown_daemon() -> Result<()> {
-    let rt = tokio::runtime::Runtime::new().map_err(|e| Error::Other(e.to_string()))?;
-    rt.block_on(async {
-        match ipc::send(&Request::Shutdown).await {
-            Ok(_) => Ok(()),
-            Err(crate::Error::DaemonNotRunning) => Ok(()),
-            Err(e) => Err(e),
-        }
+    // service_run has both sync (wizard) and async (cli) callers. Spinning up
+    // a private runtime on a fresh OS thread keeps us safe from nesting
+    // panics ("cannot start a runtime from within a runtime").
+    std::thread::spawn(|| -> Result<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Error::Other(e.to_string()))?;
+        rt.block_on(async {
+            match ipc::send(&Request::Shutdown).await {
+                Ok(_) => Ok(()),
+                Err(crate::Error::DaemonNotRunning) => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
     })
+    .join()
+    .map_err(|_| Error::Other("shutdown thread panicked".into()))?
 }
 
 fn cleanup_hosts() {
