@@ -173,15 +173,8 @@ fn install(bin: &str) -> Result<String> {
             ));
             if legacy.exists() {
                 if let Some((uid, _)) = paths::sudo_user_ids() {
-                    let _ = std::process::Command::new("launchctl")
-                        .args(["bootout", &format!("gui/{uid}")])
-                        .arg(&legacy)
-                        .status();
+                    let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}")], Some(&legacy));
                 }
-                let _ = std::process::Command::new("launchctl")
-                    .args(["unload", "-w"])
-                    .arg(&legacy)
-                    .status();
                 let _ = fs_err::remove_file(&legacy);
                 msgs.push(format!("removed legacy LaunchAgent {}", legacy.display()));
             }
@@ -191,10 +184,9 @@ fn install(bin: &str) -> Result<String> {
     cleanup_hosts();
     msgs.push("reverted /etc/hosts (clears stale monk markers)".into());
 
-    let _ = std::process::Command::new("launchctl")
-        .args(["bootout", "system"])
-        .arg(SYSTEM_PLIST)
-        .status();
+    // bootout system on a not-yet-bootstrapped plist errors with code 5; we
+    // expect that on first install — suppress the noise.
+    let _ = quiet_launchctl(&["bootout", "system"], Some(std::path::Path::new(SYSTEM_PLIST)));
     let status = std::process::Command::new("launchctl")
         .args(["bootstrap", "system"])
         .arg(SYSTEM_PLIST)
@@ -208,6 +200,20 @@ fn install(bin: &str) -> Result<String> {
 }
 
 #[cfg(target_os = "macos")]
+fn quiet_launchctl(
+    args: &[&str],
+    extra_path: Option<&std::path::Path>,
+) -> std::io::Result<std::process::ExitStatus> {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new("launchctl");
+    cmd.args(args);
+    if let Some(p) = extra_path {
+        cmd.arg(p);
+    }
+    cmd.stdout(Stdio::null()).stderr(Stdio::null()).status()
+}
+
+#[cfg(target_os = "macos")]
 fn uninstall(purge: bool) -> Result<String> {
     require_root()?;
 
@@ -218,27 +224,23 @@ fn uninstall(purge: bool) -> Result<String> {
     }
 
     if std::path::Path::new(SYSTEM_PLIST).exists() {
-        let _ = std::process::Command::new("launchctl")
-            .args(["bootout", "system"])
-            .arg(SYSTEM_PLIST)
-            .status();
-        let _ =
-            std::process::Command::new("launchctl").args(["unload", "-w", SYSTEM_PLIST]).status();
+        let _ = quiet_launchctl(&["bootout", "system"], Some(std::path::Path::new(SYSTEM_PLIST)));
         fs_err::remove_file(SYSTEM_PLIST)?;
         msgs.push(format!("removed {SYSTEM_PLIST}"));
     }
 
     if let Ok(user) = std::env::var("SUDO_USER") {
-        let legacy = std::path::PathBuf::from(format!(
-            "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
-        ));
-        if legacy.exists() {
-            let _ = std::process::Command::new("launchctl")
-                .args(["unload", "-w"])
-                .arg(&legacy)
-                .status();
-            let _ = fs_err::remove_file(&legacy);
-            msgs.push(format!("removed legacy LaunchAgent {}", legacy.display()));
+        if user != "root" {
+            let legacy = std::path::PathBuf::from(format!(
+                "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
+            ));
+            if legacy.exists() {
+                if let Some((uid, _)) = paths::sudo_user_ids() {
+                    let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}")], Some(&legacy));
+                }
+                let _ = fs_err::remove_file(&legacy);
+                msgs.push(format!("removed legacy LaunchAgent {}", legacy.display()));
+            }
         }
     }
 
@@ -330,9 +332,9 @@ fn cleanup_hosts() {
     use crate::blocker::{backends::BlockerBackend, Blocker};
     if let Ok(mut blocker) = crate::blocker::HostsBlocker::build() {
         if let Err(e) = blocker.revert() {
-            tracing::warn!(?e, "hosts cleanup failed during uninstall");
+            tracing::warn!(?e, "hosts revert failed");
         } else {
-            tracing::info!("hosts cleaned up during uninstall");
+            tracing::info!("hosts reverted (cleared monk markers)");
         }
     }
 }

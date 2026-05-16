@@ -176,18 +176,25 @@ fn parse_duration_opt(raw: &str) -> std::result::Result<String, String> {
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    let _daemon_guard = match &cli.command {
-        Command::Daemon(DaemonCmd::Run) => crate::telemetry::init_daemon(),
-        _ => {
-            crate::telemetry::init();
-            None
-        }
+    let is_daemon_run = matches!(cli.command, Command::Daemon(DaemonCmd::Run));
+
+    let _daemon_guard = if is_daemon_run {
+        crate::telemetry::init_daemon()
+    } else {
+        crate::telemetry::init();
+        None
     };
 
-    let cfg_locale = crate::config::Config::load().ok().and_then(|c| c.general.locale.clone());
-    crate::i18n::init(cfg_locale.as_deref(), cli.locale.as_deref());
-
-    maybe_first_run_onboarding(&cli.command, cli.locale.as_deref())?;
+    // Skip locale + onboarding probes in the daemon path: Config::load creates
+    // the default config.toml if missing, which would defeat migration. The
+    // daemon handles locale and migration itself in server::run.
+    if !is_daemon_run {
+        let cfg_locale = crate::config::Config::load().ok().and_then(|c| c.general.locale.clone());
+        crate::i18n::init(cfg_locale.as_deref(), cli.locale.as_deref());
+        maybe_first_run_onboarding(&cli.command, cli.locale.as_deref())?;
+    } else {
+        crate::i18n::init(None, cli.locale.as_deref());
+    }
 
     let result: crate::Result<()> = match cli.command {
         Command::Init {

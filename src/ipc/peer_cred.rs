@@ -290,8 +290,9 @@ mod tests {
     fn test_get_allowed_uid() {
         #[cfg(unix)]
         {
-            let uid = get_allowed_uid();
-            assert!(uid > 0, "UID should be positive");
+            // Valid uid (root=0 is legitimate when daemon owns config_dir in
+            // system mode). Just exercise the resolver.
+            let _ = get_allowed_uid();
         }
     }
 }
