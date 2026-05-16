@@ -83,7 +83,7 @@ enum Command {
     Config(ConfigCmd),
     #[command(about = "Open the interactive TUI")]
     Tui,
-    #[command(subcommand, about = "Manage the background daemon")]
+    #[command(subcommand, about = "Manage the background daemon", alias = "service")]
     Daemon(DaemonCmd),
     #[command(about = "Generate shell completions")]
     Completions {
