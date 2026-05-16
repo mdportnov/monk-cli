@@ -117,6 +117,17 @@ impl TextInput {
 pub struct MultiSelectItem {
     pub id: String,
     pub label: String,
+    /// Pre-computed lowercase label. Avoids re-allocating on every filter pass
+    /// (visible_indices is called per render + per keystroke).
+    label_lower: String,
+}
+
+impl MultiSelectItem {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        let label = label.into();
+        let label_lower = label.to_lowercase();
+        Self { id: id.into(), label, label_lower }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -125,6 +136,12 @@ pub struct MultiSelectList {
     pub selected: BTreeSet<usize>,
     pub cursor: usize,
     pub filter: String,
+    /// Cached `filter.to_lowercase()`; kept in sync with `filter`.
+    filter_lower: String,
+    /// Memoized visible indices for the current `filter_lower`.
+    visible_cache: Vec<usize>,
+    /// True when `visible_cache` matches the current filter.
+    visible_dirty: bool,
 }
 
 impl MultiSelectList {
@@ -134,7 +151,25 @@ impl MultiSelectList {
             .enumerate()
             .filter_map(|(i, it)| preselected.contains(&it.id).then_some(i))
             .collect();
-        Self { items, selected, cursor: 0, filter: String::new() }
+        let visible_cache = (0..items.len()).collect();
+        Self {
+            items,
+            selected,
+            cursor: 0,
+            filter: String::new(),
+            filter_lower: String::new(),
+            visible_cache,
+            visible_dirty: false,
+        }
+    }
+
+    pub fn filter_clear(&mut self) {
+        if !self.filter.is_empty() {
+            self.filter.clear();
+            self.filter_lower.clear();
+            self.visible_dirty = true;
+            self.clamp_cursor();
+        }
     }
 
     pub fn handle(&mut self, key: KeyEvent) -> bool {
@@ -143,8 +178,8 @@ impl MultiSelectList {
         }
         match key.code {
             KeyCode::Char(' ') => {
-                let visible = self.visible_indices();
-                if !visible.is_empty() {
+                self.rebuild_visible_if_dirty();
+                if !self.visible_cache.is_empty() {
                     self.toggle(self.cursor);
                     return true;
                 }
@@ -152,11 +187,15 @@ impl MultiSelectList {
             }
             KeyCode::Char(c) => {
                 self.filter.push(c);
+                self.filter_lower.extend(c.to_lowercase());
+                self.visible_dirty = true;
                 self.clamp_cursor();
                 return true;
             }
             KeyCode::Backspace => {
                 if self.filter.pop().is_some() {
+                    self.filter_lower = self.filter.to_lowercase();
+                    self.visible_dirty = true;
                     self.clamp_cursor();
                     return true;
                 }
@@ -164,25 +203,27 @@ impl MultiSelectList {
             }
             _ => {}
         }
-        let visible = self.visible_indices();
-        if visible.is_empty() {
+        self.rebuild_visible_if_dirty();
+        if self.visible_cache.is_empty() {
             return false;
         }
         match key.code {
             KeyCode::Up => {
-                if let Some(pos) = visible.iter().position(|&i| i == self.cursor) {
-                    self.cursor = visible[pos.checked_sub(1).unwrap_or(visible.len() - 1)];
-                } else {
-                    self.cursor = visible[0];
-                }
+                let v = &self.visible_cache;
+                let pos = v.iter().position(|&i| i == self.cursor);
+                self.cursor = match pos {
+                    Some(p) => v[p.checked_sub(1).unwrap_or(v.len() - 1)],
+                    None => v[0],
+                };
                 false
             }
             KeyCode::Down => {
-                if let Some(pos) = visible.iter().position(|&i| i == self.cursor) {
-                    self.cursor = visible[(pos + 1) % visible.len()];
-                } else {
-                    self.cursor = visible[0];
-                }
+                let v = &self.visible_cache;
+                let pos = v.iter().position(|&i| i == self.cursor);
+                self.cursor = match pos {
+                    Some(p) => v[(p + 1) % v.len()],
+                    None => v[0],
+                };
                 false
             }
             _ => false,
@@ -190,12 +231,12 @@ impl MultiSelectList {
     }
 
     fn clamp_cursor(&mut self) {
-        let visible = self.visible_indices();
-        if visible.is_empty() {
+        self.rebuild_visible_if_dirty();
+        if self.visible_cache.is_empty() {
             return;
         }
-        if !visible.contains(&self.cursor) {
-            self.cursor = visible[0];
+        if !self.visible_cache.contains(&self.cursor) {
+            self.cursor = self.visible_cache[0];
         }
     }
 
@@ -209,30 +250,46 @@ impl MultiSelectList {
         self.selected.iter().filter_map(|i| self.items.get(*i).map(|it| it.id.clone())).collect()
     }
 
-    fn visible_indices(&self) -> Vec<usize> {
-        if self.filter.is_empty() {
-            return (0..self.items.len()).collect();
+    fn rebuild_visible_if_dirty(&mut self) {
+        if !self.visible_dirty {
+            return;
         }
-        let needle = self.filter.to_lowercase();
-        self.items
-            .iter()
-            .enumerate()
-            .filter(|(_, it)| it.label.to_lowercase().contains(&needle))
-            .map(|(i, _)| i)
-            .collect()
+        self.visible_cache.clear();
+        if self.filter_lower.is_empty() {
+            self.visible_cache.extend(0..self.items.len());
+        } else {
+            for (i, it) in self.items.iter().enumerate() {
+                if it.label_lower.contains(&self.filter_lower) {
+                    self.visible_cache.push(i);
+                }
+            }
+        }
+        self.visible_dirty = false;
+    }
+
+    pub fn visible_indices(&self) -> &[usize] {
+        // Read path used by render. Render takes &self; we accept a tiny
+        // inconsistency window: if dirty, fall back to a fresh scan into a
+        // throwaway buffer through the mutable cache via interior mutability
+        // would complicate this — instead callers (handle/clamp) keep cache
+        // fresh, and render observes the last good cache. The widget is
+        // single-threaded so a stale read is at worst one frame.
+        &self.visible_cache
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, block: Block<'_>, focused: bool) {
-        let items: Vec<ListItem> = self
-            .visible_indices()
-            .into_iter()
-            .map(|i| {
-                let it = &self.items[i];
+        let v = &self.visible_cache;
+        // Defensive: cache may be stale if `items` was mutated directly
+        // (e.g. cleared) without going through the widget API.
+        let items: Vec<ListItem> = v
+            .iter()
+            .filter_map(|&i| {
+                let it = self.items.get(i)?;
                 let mark = if self.selected.contains(&i) { "[x]" } else { "[ ]" };
-                ListItem::new(Line::from(vec![
+                Some(ListItem::new(Line::from(vec![
                     Span::raw(format!(" {mark} ")),
                     Span::raw(it.label.clone()),
-                ]))
+                ])))
             })
             .collect();
         let highlight = if focused {
@@ -242,9 +299,8 @@ impl MultiSelectList {
         };
         let list = List::new(items).block(block).highlight_style(highlight).highlight_symbol("▶ ");
         let mut state = ListState::default();
-        let visible = self.visible_indices();
-        let pos = visible.iter().position(|&i| i == self.cursor).unwrap_or(0);
-        state.select(Some(pos));
+        let pos = v.iter().position(|&i| i == self.cursor);
+        state.select(pos);
         StatefulWidget::render(list, area, buf, &mut state);
     }
 }
@@ -286,9 +342,9 @@ mod tests {
     #[test]
     fn multi_select_filter_typing() {
         let items = vec![
-            MultiSelectItem { id: "a".into(), label: "Instagram".into() },
-            MultiSelectItem { id: "b".into(), label: "Facebook".into() },
-            MultiSelectItem { id: "c".into(), label: "Telegram".into() },
+            MultiSelectItem::new("a", "Instagram"),
+            MultiSelectItem::new("b", "Facebook"),
+            MultiSelectItem::new("c", "Telegram"),
         ];
         let mut m = MultiSelectList::new(items, &[]);
         m.handle(k(KeyCode::Char('t')));
@@ -302,10 +358,7 @@ mod tests {
 
     #[test]
     fn multi_select_toggle() {
-        let items = vec![
-            MultiSelectItem { id: "a".into(), label: "Alpha".into() },
-            MultiSelectItem { id: "b".into(), label: "Beta".into() },
-        ];
+        let items = vec![MultiSelectItem::new("a", "Alpha"), MultiSelectItem::new("b", "Beta")];
         let mut m = MultiSelectList::new(items, &["a".to_string()]);
         assert_eq!(m.selected_ids(), vec!["a".to_string()]);
         m.handle(k(KeyCode::Char(' ')));

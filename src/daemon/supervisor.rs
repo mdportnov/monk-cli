@@ -765,7 +765,15 @@ mod tests {
     fn test_start_fails_when_hosts_apply_fails() {
         let mut config = crate::config::Config::default();
         config.profiles.insert("test".into(), crate::config::Profile::default());
-        let supervisor = Supervisor::new(config).unwrap();
+        let mut supervisor = Supervisor::new(config).unwrap();
+
+        // Isolate the lock store under a tempdir so we don't observe
+        // production session.lock from a system-installed daemon.
+        let dir = tempfile::tempdir().unwrap();
+        supervisor.store = std::sync::Arc::new(crate::session::LockStore::with_paths(
+            dir.path().join("session.lock"),
+            vec![dir.path().join("a/session.lock"), dir.path().join("b/session.lock")],
+        ));
 
         *supervisor.hosts.lock() = Box::new(MockBlocker::new(true));
 

@@ -84,6 +84,7 @@ tui:
     stop: "Stop session"
     panic: "Panic escape"
     modes: "Modes"
+    add_preset: "Add from preset"
     settings: "Settings"
     doctor: "Doctor"
     quit: "Quit"

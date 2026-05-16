@@ -21,17 +21,19 @@ pub enum MenuItem {
     Stop,
     Panic,
     Profiles,
+    AddPreset,
     Settings,
     Doctor,
     Quit,
 }
 
 impl MenuItem {
-    pub const ALL: [MenuItem; 7] = [
+    pub const ALL: [MenuItem; 8] = [
         MenuItem::Start,
         MenuItem::Stop,
         MenuItem::Panic,
         MenuItem::Profiles,
+        MenuItem::AddPreset,
         MenuItem::Settings,
         MenuItem::Doctor,
         MenuItem::Quit,
@@ -43,6 +45,7 @@ impl MenuItem {
             MenuItem::Stop => "tui.menu.stop",
             MenuItem::Panic => "tui.menu.panic",
             MenuItem::Profiles => "tui.menu.modes",
+            MenuItem::AddPreset => "tui.menu.add_preset",
             MenuItem::Settings => "tui.menu.settings",
             MenuItem::Doctor => "tui.menu.doctor",
             MenuItem::Quit => "tui.menu.quit",
@@ -56,6 +59,7 @@ impl MenuItem {
             MenuItem::Stop => "end the active session (soft mode only)",
             MenuItem::Panic => "request a delayed hard-mode escape",
             MenuItem::Profiles => "list configured modes",
+            MenuItem::AddPreset => "create a new mode from a built-in preset",
             MenuItem::Settings => "general settings and data reset",
             MenuItem::Doctor => "check environment and daemon health",
             MenuItem::Quit => "leave the TUI",
@@ -411,9 +415,9 @@ impl EditorState {
     }
 
     fn clear_picker_filters(&mut self) {
-        self.apps.filter.clear();
-        self.groups.filter.clear();
-        self.brands.filter.clear();
+        self.apps.filter_clear();
+        self.groups.filter_clear();
+        self.brands.filter_clear();
     }
 
     fn sync_focus(&mut self) {
@@ -622,19 +626,18 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, Multi
             cache
                 .apps
                 .into_iter()
-                .map(|a| MultiSelectItem {
-                    id: a.id.clone(),
-                    label: format!("{} [{}]", a.label, a.id),
-                })
+                .map(|a| MultiSelectItem::new(a.id.clone(), format!("{} [{}]", a.label, a.id)))
                 .collect()
         })
         .unwrap_or_default();
     let groups_items = crate::sites::all_groups()
         .map(|gs| {
             gs.into_iter()
-                .map(|g| MultiSelectItem {
-                    id: g.qualified(),
-                    label: format!("{} ({} hosts)", g.qualified(), g.hosts.len()),
+                .map(|g| {
+                    MultiSelectItem::new(
+                        g.qualified(),
+                        format!("{} ({} hosts)", g.qualified(), g.hosts.len()),
+                    )
                 })
                 .collect()
         })
@@ -642,14 +645,16 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, Multi
     let brands_items = crate::brands::all_brands()
         .map(|bs| {
             bs.into_iter()
-                .map(|b| MultiSelectItem {
-                    label: format!(
-                        "{} {} [{}]",
-                        b.icon.as_deref().unwrap_or("●"),
-                        b.name,
-                        b.qualified()
-                    ),
-                    id: b.qualified(),
+                .map(|b| {
+                    MultiSelectItem::new(
+                        b.qualified(),
+                        format!(
+                            "{} {} [{}]",
+                            b.icon.as_deref().unwrap_or("●"),
+                            b.name,
+                            b.qualified()
+                        ),
+                    )
                 })
                 .collect()
         })
@@ -814,6 +819,40 @@ pub enum Screen {
     ModeEditor(Box<EditorState>),
     Settings(Box<SettingsState>),
     Doctor(Box<DoctorState>),
+    PresetPicker(PresetPickerState),
+}
+
+#[derive(Debug)]
+pub struct PresetPickerState {
+    pub names: Vec<&'static str>,
+    pub selected: usize,
+    pub error: Option<String>,
+}
+
+impl Default for PresetPickerState {
+    fn default() -> Self {
+        Self { names: crate::onboarding::PRESET_NAMES.to_vec(), selected: 0, error: None }
+    }
+}
+
+impl PresetPickerState {
+    pub fn move_up(&mut self) {
+        if self.names.is_empty() {
+            return;
+        }
+        self.selected = if self.selected == 0 { self.names.len() - 1 } else { self.selected - 1 };
+    }
+
+    pub fn move_down(&mut self) {
+        if self.names.is_empty() {
+            return;
+        }
+        self.selected = (self.selected + 1) % self.names.len();
+    }
+
+    pub fn current(&self) -> Option<&'static str> {
+        self.names.get(self.selected).copied()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -901,6 +940,18 @@ pub struct Globals {
     pub next_scheduled: Option<(String, chrono::DateTime<chrono::Utc>)>,
 }
 
+/// Live snapshot of daemon-side state, updated by the refresh worker.
+#[derive(Default, Clone, Debug)]
+pub struct Snapshot {
+    pub daemon_running: bool,
+    pub active: Option<Session>,
+    pub hard_mode: Option<HardModeInfo>,
+    pub active_mode: Option<ModeSummary>,
+    pub active_profile_detail: Option<Profile>,
+    pub cached_modes: Vec<ModeSummary>,
+    pub next_scheduled: Option<(String, chrono::DateTime<chrono::Utc>)>,
+}
+
 impl Globals {
     pub fn set_flash(&mut self, message: impl Into<String>, level: FlashLevel) {
         let ttl_frames = match level {
@@ -931,6 +982,8 @@ pub struct App {
     pub should_quit: bool,
     pub effect: Option<tachyonfx::Effect>,
     pub last_effect_tick: Option<std::time::Instant>,
+    pub snapshot: std::sync::Arc<parking_lot::RwLock<Snapshot>>,
+    pub refresh_kick: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl std::fmt::Debug for App {
@@ -973,56 +1026,25 @@ impl App {
         self.trigger_enter_effect();
     }
 
-    pub async fn refresh(&mut self) {
-        match ipc::send(&Request::Status).await {
-            Ok(Response::Status { active, hard_mode, .. }) => {
-                self.globals.daemon_running = true;
-                self.globals.active = active.map(|b| *b);
-                self.globals.hard_mode = hard_mode.map(|b| *b);
-            }
-            _ => {
-                self.globals.daemon_running = false;
-                self.globals.active = None;
-                self.globals.hard_mode = None;
-                self.globals.active_mode = None;
-                self.globals.active_profile_detail = None;
-            }
-        }
-        if self.globals.daemon_running {
-            if let Ok(Response::Modes { modes }) = ipc::send(&Request::ListModes).await {
-                if let Some(session) = &self.globals.active {
-                    self.globals.active_mode =
-                        modes.iter().find(|m| m.name == session.profile).cloned();
-                } else {
-                    self.globals.active_mode = None;
-                }
-                self.globals.cached_modes = modes;
-            }
-            if let Some(session) = &self.globals.active {
-                if let Ok(Response::Config(cfg)) = ipc::send(&Request::GetConfig).await {
-                    self.globals.active_profile_detail =
-                        cfg.profiles.get(&session.profile).cloned();
-                }
-            } else {
-                self.globals.active_profile_detail = None;
-            }
-            if self.globals.active.is_none() {
-                if let Ok(Response::NextScheduled { profile: Some(p), at: Some(t) }) =
-                    ipc::send(&Request::NextScheduled).await
-                {
-                    self.globals.next_scheduled = Some((p, t));
-                } else {
-                    self.globals.next_scheduled = None;
-                }
-            } else {
-                self.globals.next_scheduled = None;
-            }
-        } else {
-            self.globals.active_mode = None;
-            self.globals.active_profile_detail = None;
-            self.globals.cached_modes.clear();
-            self.globals.next_scheduled = None;
-        }
+    /// Pull the latest snapshot from the refresh worker into Globals so the
+    /// view layer can keep reading from `app.globals` unchanged. Cheap: one
+    /// rwlock-read + clones.
+    pub fn pull_snapshot(&mut self) {
+        let s = self.snapshot.read().clone();
+        self.globals.daemon_running = s.daemon_running;
+        self.globals.active = s.active;
+        self.globals.hard_mode = s.hard_mode;
+        self.globals.active_mode = s.active_mode;
+        self.globals.active_profile_detail = s.active_profile_detail;
+        self.globals.cached_modes = s.cached_modes;
+        self.globals.next_scheduled = s.next_scheduled;
+    }
+
+    /// Ask the background worker to refresh ASAP — called after actions that
+    /// change daemon state (start, stop, save, delete, panic). Returns
+    /// immediately; UI sees fresh state on the next snapshot poll.
+    pub fn kick_refresh(&self) {
+        self.refresh_kick.notify_one();
     }
 
     pub async fn handle_key(&mut self, key: KeyEvent) {
@@ -1051,6 +1073,7 @@ impl App {
             Screen::ModeEditor(_) => self.handle_editor_key(key).await,
             Screen::Settings(_) => self.handle_settings_key(key).await,
             Screen::Doctor(_) => self.handle_doctor_key(key).await,
+            Screen::PresetPicker(_) => self.handle_preset_picker_key(key).await,
         }
     }
 
@@ -1094,6 +1117,7 @@ impl App {
             KeyCode::Char('r') => self.refresh_picker().await,
             KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker().await,
             KeyCode::Char('n') => self.open_editor_new(),
+            KeyCode::Char('a') => self.open_preset_picker(),
             KeyCode::Char('e') => self.open_editor_edit(),
             KeyCode::Char('d') => self.delete_current_mode().await,
             _ => {}
@@ -1102,6 +1126,46 @@ impl App {
 
     fn open_editor_new(&mut self) {
         self.set_screen(Screen::ModeEditor(Box::new(EditorState::new_mode())));
+    }
+
+    fn open_preset_picker(&mut self) {
+        self.set_screen(Screen::PresetPicker(PresetPickerState::default()));
+    }
+
+    async fn handle_preset_picker_key(&mut self, key: KeyEvent) {
+        let Screen::PresetPicker(state) = &mut self.screen else { return };
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.open_picker().await;
+            }
+            KeyCode::Up | KeyCode::Char('k') => state.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => state.move_down(),
+            KeyCode::Enter | KeyCode::Char(' ') => self.instantiate_preset().await,
+            _ => {}
+        }
+    }
+
+    async fn instantiate_preset(&mut self) {
+        let preset_name = {
+            let Screen::PresetPicker(state) = &self.screen else { return };
+            match state.current() {
+                Some(n) => n.to_string(),
+                None => return,
+            }
+        };
+        let profile = match crate::onboarding::load_preset(&preset_name) {
+            Ok(p) => p,
+            Err(e) => {
+                if let Screen::PresetPicker(s) = &mut self.screen {
+                    s.error = Some(e.to_string());
+                }
+                return;
+            }
+        };
+        let existing: std::collections::BTreeSet<String> =
+            self.globals.cached_modes.iter().map(|m| m.name.clone()).collect();
+        let unique = unique_mode_name(&preset_name, &existing);
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(unique, profile))));
     }
 
     fn open_editor_edit(&mut self) {
@@ -1334,6 +1398,7 @@ impl App {
                 }
             }
         }
+        self.kick_refresh();
     }
 
     async fn open_doctor(&mut self) {
@@ -1571,6 +1636,7 @@ impl App {
             MenuItem::Stop => self.do_stop().await,
             MenuItem::Panic => self.do_panic().await,
             MenuItem::Profiles => self.open_picker().await,
+            MenuItem::AddPreset => self.open_preset_picker(),
             MenuItem::Settings => self.open_settings().await,
             MenuItem::Doctor => self.open_doctor().await,
             MenuItem::Quit => self.should_quit = true,
@@ -1625,6 +1691,7 @@ impl App {
                 .set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
+        self.kick_refresh();
     }
 
     async fn do_start(&mut self) {
@@ -1657,6 +1724,7 @@ impl App {
                 .set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
+        self.kick_refresh();
     }
 
     async fn do_stop(&mut self) {
@@ -1676,6 +1744,7 @@ impl App {
             ),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
+        self.kick_refresh();
     }
 
     async fn do_panic(&mut self) {
@@ -1695,7 +1764,23 @@ impl App {
             ),
             Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
         }
+        self.kick_refresh();
     }
+}
+
+/// Return `base` if it isn't taken, else `base-2`, `base-3`, ... whichever
+/// is free first.
+pub fn unique_mode_name(base: &str, taken: &std::collections::BTreeSet<String>) -> String {
+    if !taken.contains(base) {
+        return base.to_string();
+    }
+    for n in 2..=u32::MAX {
+        let candidate = format!("{base}-{n}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+    }
+    base.to_string()
 }
 
 #[cfg(unix)]
@@ -1788,16 +1873,16 @@ pub async fn run() -> Result<()> {
 async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
     let mut app = App::new();
     let start = std::time::Instant::now();
-    let mut last_refresh = std::time::Instant::now()
-        .checked_sub(Duration::from_secs(10))
-        .unwrap_or_else(std::time::Instant::now);
+
+    let shutdown = std::sync::Arc::new(tokio::sync::Notify::new());
+    let worker =
+        spawn_refresh_worker(app.snapshot.clone(), app.refresh_kick.clone(), shutdown.clone());
+    // Kick once so we have data before the first frame.
+    app.refresh_kick.notify_one();
 
     loop {
         let now = std::time::Instant::now();
-        if now.duration_since(last_refresh) >= Duration::from_millis(800) {
-            app.refresh().await;
-            last_refresh = now;
-        }
+        app.pull_snapshot();
         app.globals.frame = now.duration_since(start).as_millis() as u64 / 200;
         app.globals.tick_flash();
         let dt = app.last_effect_tick.map(|t| now.duration_since(t)).unwrap_or(Duration::ZERO);
@@ -1818,7 +1903,60 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
             break;
         }
     }
+
+    shutdown.notify_waiters();
+    let _ = worker.await;
     Ok(())
+}
+
+fn spawn_refresh_worker(
+    snapshot: std::sync::Arc<parking_lot::RwLock<Snapshot>>,
+    kick: std::sync::Arc<tokio::sync::Notify>,
+    shutdown: std::sync::Arc<tokio::sync::Notify>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let next = refresh_once().await;
+            *snapshot.write() = next;
+
+            tokio::select! {
+                _ = shutdown.notified() => break,
+                _ = kick.notified() => {} // immediate refresh
+                _ = tokio::time::sleep(Duration::from_millis(800)) => {} // periodic
+            }
+        }
+    })
+}
+
+async fn refresh_once() -> Snapshot {
+    let mut snap = Snapshot::default();
+    match ipc::send(&Request::Status).await {
+        Ok(Response::Status { active, hard_mode, .. }) => {
+            snap.daemon_running = true;
+            snap.active = active.map(|b| *b);
+            snap.hard_mode = hard_mode.map(|b| *b);
+        }
+        _ => return snap,
+    }
+    if let Ok(Response::Modes { modes }) = ipc::send(&Request::ListModes).await {
+        if let Some(session) = &snap.active {
+            snap.active_mode = modes.iter().find(|m| m.name == session.profile).cloned();
+        }
+        snap.cached_modes = modes;
+    }
+    if let Some(session) = &snap.active {
+        if let Ok(Response::Config(cfg)) = ipc::send(&Request::GetConfig).await {
+            snap.active_profile_detail = cfg.profiles.get(&session.profile).cloned();
+        }
+    }
+    if snap.active.is_none() {
+        if let Ok(Response::NextScheduled { profile: Some(p), at: Some(t) }) =
+            ipc::send(&Request::NextScheduled).await
+        {
+            snap.next_scheduled = Some((p, t));
+        }
+    }
+    snap
 }
 
 #[cfg(test)]

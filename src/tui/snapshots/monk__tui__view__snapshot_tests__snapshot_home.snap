@@ -10,10 +10,10 @@ expression: "render(&app, 90, 28)"
 │    Stop session                                ││                  *       *           │
 │    Panic escape                                ││                       ___            │
 │    Modes                                       ││                      /   \           │
-│    Settings                                    ││                      \___/           │
-│    Doctor                                      ││                    __| |__           │
-│    Quit                                        ││                   /       \          │
-│                                                ││                 /    \    \          │
+│    Add from preset                             ││                      \___/           │
+│    Settings                                    ││                    __| |__           │
+│    Doctor                                      ││                   /       \          │
+│    Quit                                        ││                 /    \    \          │
 │                                                ││                |      \    |         │
 │                                                ││                |       \   |         │
 │                                                ││                 \_________/          │

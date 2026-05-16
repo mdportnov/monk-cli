@@ -84,6 +84,7 @@ tui:
     stop: "Остановить"
     panic: "Panic-выход"
     modes: "Режимы"
+    add_preset: "Добавить из пресета"
     settings: "Настройки"
     doctor: "Диагностика"
     quit: "Выход"

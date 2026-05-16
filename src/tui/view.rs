@@ -14,7 +14,7 @@ use crate::{
     ipc::ModeSummary,
     tui::app::{
         App, ConfirmState, DoctorState, EditorField, EditorState, HomeState, MenuItem, PickerState,
-        Screen, SettingsField, SettingsState, LOCALES,
+        PresetPickerState, Screen, SettingsField, SettingsState, LOCALES,
     },
 };
 
@@ -48,6 +48,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::ModeEditor(editor) => draw_editor(f, app, editor.as_ref()),
         Screen::Settings(st) => draw_settings(f, app, st.as_ref()),
         Screen::Doctor(st) => draw_doctor(f, app, st.as_ref()),
+        Screen::PresetPicker(state) => draw_preset_picker(f, app, state),
     }
     if app.globals.help_open {
         draw_help_overlay(f, app);
@@ -79,7 +80,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from(""),
             Line::from("  ↑/↓ · j/k    navigate"),
             Line::from("  enter        configure & start"),
-            Line::from("  n · e · d    new · edit · delete"),
+            Line::from("  n · a · e · d  new · add from preset · edit · delete"),
             Line::from("  r            refresh"),
             Line::from("  esc · q      back to home"),
         ],
@@ -127,6 +128,16 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  f            jump to first failure"),
             Line::from("  r            rerun"),
             Line::from("  esc · q      back to home"),
+        ],
+        Screen::PresetPicker(_) => vec![
+            Line::from(Span::styled(
+                "presets",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("  ↑/↓ · j/k    navigate presets"),
+            Line::from("  enter        prefill editor with preset"),
+            Line::from("  esc · q      back to picker"),
         ],
     };
     let width = 44.min(area.width.saturating_sub(4));
@@ -611,6 +622,124 @@ pub fn fmt_short(d: Duration) -> String {
         format!("{m}m")
     } else {
         format!("{secs}s")
+    }
+}
+
+fn draw_preset_picker(f: &mut Frame, app: &App, state: &PresetPickerState) {
+    let area = f.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+        .split(area);
+
+    draw_header(f, outer[0], app);
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(outer[1]);
+
+    let items: Vec<ListItem> = state
+        .names
+        .iter()
+        .map(|n| {
+            ListItem::new(Line::from(Span::styled((*n).to_string(), Style::default().fg(TEXT))))
+        })
+        .collect();
+    let list = List::new(items)
+        .block(picker_block(" presets "))
+        .highlight_style(Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ");
+    let mut list_state = ListState::default();
+    list_state.select(Some(state.selected));
+    f.render_stateful_widget(list, body[0], &mut list_state);
+
+    let detail_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(DIM))
+        .title(Span::styled(" preview ", Style::default().fg(ACCENT)));
+
+    let preview = match state.current() {
+        Some(name) => preset_preview_lines(name),
+        None => vec![Line::from("no preset")],
+    };
+    let p = Paragraph::new(preview).wrap(Wrap { trim: true }).block(detail_block);
+    f.render_widget(p, body[1]);
+
+    let footer_text = if let Some(err) = &state.error {
+        format!(" {err} ")
+    } else {
+        " enter pick · esc back ".to_string()
+    };
+    let footer = Paragraph::new(Span::styled(footer_text, Style::default().fg(DIM)))
+        .alignment(Alignment::Center);
+    f.render_widget(footer, outer[2]);
+}
+
+fn preset_preview_lines(name: &str) -> Vec<Line<'static>> {
+    match crate::onboarding::load_preset(name) {
+        Ok(p) => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    name.to_string(),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+            ];
+            if !p.site_groups.is_empty() {
+                lines.push(Line::from(Span::styled("site groups:", Style::default().fg(DIM))));
+                for g in &p.site_groups {
+                    lines.push(Line::from(format!("  · {g}")));
+                }
+                lines.push(Line::from(""));
+            }
+            if !p.sites.is_empty() {
+                lines.push(Line::from(Span::styled("custom sites:", Style::default().fg(DIM))));
+                for s in &p.sites {
+                    lines.push(Line::from(format!("  · {s}")));
+                }
+                lines.push(Line::from(""));
+            }
+            if !p.brands.is_empty() {
+                lines.push(Line::from(Span::styled("brands:", Style::default().fg(DIM))));
+                for b in &p.brands {
+                    lines.push(Line::from(format!("  · {b}")));
+                }
+                lines.push(Line::from(""));
+            }
+            let limits = &p.limits;
+            if limits.max_duration.is_some()
+                || limits.min_duration.is_some()
+                || limits.cooldown.is_some()
+                || limits.daily_cap.is_some()
+            {
+                lines.push(Line::from(Span::styled("limits:", Style::default().fg(DIM))));
+                if let Some(d) = limits.max_duration {
+                    lines.push(Line::from(format!("  · max {}", humantime::format_duration(d))));
+                }
+                if let Some(d) = limits.min_duration {
+                    lines.push(Line::from(format!("  · min {}", humantime::format_duration(d))));
+                }
+                if let Some(d) = limits.cooldown {
+                    lines.push(Line::from(format!(
+                        "  · cooldown {}",
+                        humantime::format_duration(d)
+                    )));
+                }
+                if let Some(d) = limits.daily_cap {
+                    lines.push(Line::from(format!(
+                        "  · daily cap {}",
+                        humantime::format_duration(d)
+                    )));
+                }
+            }
+            lines
+        }
+        Err(e) => vec![Line::from(Span::styled(
+            format!("preset load failed: {e}"),
+            Style::default().fg(ALERT),
+        ))],
     }
 }
 
