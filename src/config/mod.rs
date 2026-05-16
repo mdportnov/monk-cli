@@ -244,14 +244,12 @@ pub struct Hooks {
 }
 
 impl Config {
+    /// Load config if present; return default (in-memory only, no save) if not.
+    /// Callers that need the file materialized should call `save()` explicitly.
     pub fn load() -> Result<Self> {
         let path = paths::config_file()?;
         if !path.exists() {
-            let cfg = Self::default();
-            if let Err(e) = cfg.save_to(&path) {
-                tracing::debug!(?e, path = %path.display(), "config save failed (read-only context)");
-            }
-            return Ok(cfg);
+            return Ok(Self::default());
         }
         Self::load_from(&path)
     }

@@ -267,8 +267,9 @@ fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Res
         cmd,
         Command::Init { .. }
             | Command::Completions { .. }
-            | Command::Daemon(DaemonCmd::Run)
+            | Command::Daemon(_)
             | Command::Lang { .. }
+            | Command::Doctor
     ) {
         return Ok(());
     }

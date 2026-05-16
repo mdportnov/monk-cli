@@ -37,6 +37,15 @@ pub async fn run() -> Result<()> {
     let _pid_guard = pid;
 
     let config = Config::load()?;
+    // Daemon owns the canonical config file; materialize if missing so the
+    // user can find it on disk.
+    if let Ok(path) = crate::paths::config_file() {
+        if !path.exists() {
+            if let Err(e) = config.save_to(&path) {
+                tracing::warn!(?e, path = %path.display(), "could not write default config");
+            }
+        }
+    }
     let supervisor = Arc::new(Supervisor::new(config)?);
     supervisor.restore()?;
     let shutdown = Arc::new(Notify::new());
