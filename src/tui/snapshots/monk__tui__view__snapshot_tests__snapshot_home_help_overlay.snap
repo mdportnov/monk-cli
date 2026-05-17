@@ -6,22 +6,22 @@ expression: "render(&app, 90, 28)"
                                                                                           
 ──────────────────────────────────────────────────────────────────────────────────────────
 ╭ menu ──────────────────────────────────────────╮╭ companion ───────────────────────────╮
-│▶   Start session                               ││                   ·   *   ·          │
-│    Stop session                                ││                 *         *          │
-│    Panic escape                                ││                       ___            │
-│    Modes             ╭ help ────────────────────────────────────╮      /   \           │
-│    Add from preset   │home                                      │    | -.- |           │
-│    Settings          │                                          │      \___/           │
-│    Doctor            │  ↑/↓ · j/k    navigate menu              │       |_|            │
-│    Quit              │  enter        activate item              │      __|__           │
-│                      │  s · x · p    start · stop · panic       │    /     \           │
-│                      │  m            open modes picker          │   /       \          │
-│                      │  1..9         quick-start mode by slot   │ |         |          │
-│                      │  ?            toggle help                │ |         |          │
-│                      │  q · esc      quit                       │   \       /          │
-│                      │                                          │    \_____/           │
-│                      │                                          │   (_______)          │
-╰──────────────────────╰──────────────────────────────────────────╯    ~~~~~~~           │
+│▶   Start session                               ││               ·   *   ·              │
+│    Stop session                                ││              *         *             │
+│    Panic escape                                ││                  ___                 │
+│    Modes             ╭ help ────────────────────────────────────╮ /   \                │
+│    Add from preset   │home                                      │( -.- )               │
+│    Settings          │                                          │ \___/                │
+│    Doctor            │  ↑/↓ · j/k    navigate menu              │  |_|                 │
+│    Quit              │  enter        activate item              │__|_|__               │
+│                      │  s · x · p    start · stop · panic       │       \              │
+│                      │  m            open modes picker          │  ___   |             │
+│                      │  1..9         quick-start mode by slot   │ /   \  |             │
+│                      │  ?            toggle help                │ \___/  |             │
+│                      │  q · esc      quit                       │       /              │
+│                      │                                          │________\             │
+│                      │                                          │_________)            │
+╰──────────────────────╰──────────────────────────────────────────╯~~~~~~~               │
 ╭ status ────────────────────────────────────────╮│                                      │
 │daemon  running                                 ││             breathe in …             │
 │session idle                                    ││                                      │
