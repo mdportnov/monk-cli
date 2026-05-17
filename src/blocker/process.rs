@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -14,6 +14,13 @@ use crate::{
 
 /// Grace period between asking an app to quit and force-killing it.
 const QUIT_GRACE: Duration = Duration::from_secs(3);
+
+/// Our own pid, computed once. We never want to match ourselves —
+/// `is_system_path` doesn't cover `/usr/local/libexec` where the daemon
+/// lives, so guard explicitly.
+fn self_pid() -> sysinfo::Pid {
+    sysinfo::Pid::from_u32(std::process::id())
+}
 
 #[derive(Debug)]
 pub struct ProcessGuard {
@@ -57,9 +64,13 @@ impl ProcessGuard {
 
         let current_uid = get_current_uid();
         let now = Instant::now();
+        let me = self_pid();
 
         let mut matches: Vec<(sysinfo::Pid, AppKind, String, String, Option<PathBuf>)> = Vec::new();
         for proc in self.sys.processes().values() {
+            if proc.pid() == me {
+                continue;
+            }
             if !should_consider_process(proc, current_uid) {
                 continue;
             }
@@ -85,6 +96,11 @@ impl ProcessGuard {
             ));
         }
 
+        // Bundle apps often spawn multiple helper processes (Spotify Helper,
+        // Telegram Helper, etc.). One AppleScript Quit to the parent bundle
+        // exits the helpers too. Dedupe so we don't spawn N osascript
+        // subprocesses per call.
+        let mut quit_sent_for: HashSet<String> = HashSet::new();
         let mut killed = 0;
         for (pid, kind, app_id, name, exe) in matches {
             match self.pending_quit.get(&pid).copied() {
@@ -105,7 +121,20 @@ impl ProcessGuard {
                 Some(_) => {}
                 // First contact — ask politely.
                 None => {
-                    let asked = request_graceful_quit(&self.sys, pid, kind, &app_id);
+                    let asked = if matches!(kind, AppKind::MacBundle)
+                        && quit_sent_for.contains(&app_id)
+                    {
+                        // Already sent AppleScript quit for this bundle in
+                        // this call. The event reaches every helper via the
+                        // parent. Just track this pid so escalation works.
+                        true
+                    } else {
+                        let ok = request_graceful_quit(&self.sys, pid, kind, &app_id);
+                        if ok && matches!(kind, AppKind::MacBundle) {
+                            quit_sent_for.insert(app_id.clone());
+                        }
+                        ok
+                    };
                     if asked {
                         info!(?pid, %name, %app_id, kind = ?kind, "requested graceful quit");
                         self.pending_quit.insert(pid, now);
@@ -138,10 +167,16 @@ fn request_graceful_quit(
     #[cfg(target_os = "macos")]
     if matches!(kind, AppKind::MacBundle) {
         // AppleScript "quit" delivers a real Apple Event so the app saves
-        // state and exits normally. osascript returns immediately; the app
-        // takes a beat to actually terminate, which we wait out via
-        // QUIT_GRACE on the next tick.
-        let script = format!(r#"tell application id "{}" to quit"#, app_id);
+        // state and exits normally. `ignoring application responses` makes
+        // it fire-and-forget — without it osascript blocks until the target
+        // acks the event, which can hang for an unresponsive app and stall
+        // the supervisor mutex.
+        let script = format!(
+            r#"ignoring application responses
+   tell application id "{}" to quit
+end ignoring"#,
+            app_id
+        );
         let result = std::process::Command::new("osascript")
             .arg("-e")
             .arg(&script)
