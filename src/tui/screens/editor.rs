@@ -262,6 +262,26 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
         app.save_editor().await;
         return;
     }
+    // ↑/↓ move between fields for everything that isn't a multi-select
+    // (Apps/Groups/Brands swallow vertical arrows for their own list nav).
+    let focus = ed.focus;
+    let is_multiselect = matches!(
+        focus,
+        EditorField::Apps | EditorField::Groups | EditorField::Brands
+    );
+    if !is_multiselect {
+        match key.code {
+            KeyCode::Up => {
+                ed.prev_field();
+                return;
+            }
+            KeyCode::Down => {
+                ed.next_field();
+                return;
+            }
+            _ => {}
+        }
+    }
     match key.code {
         KeyCode::Esc => {
             if ed.is_dirty() {
@@ -328,7 +348,7 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     let help = if editor.confirm_cancel {
         "discard unsaved changes?   y  yes   n  keep editing"
     } else {
-        "tab/shift-tab fields   ctrl+s save   esc cancel"
+        "↑/↓ · tab fields   ctrl+s save   esc cancel"
     };
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)

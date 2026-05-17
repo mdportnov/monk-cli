@@ -294,7 +294,7 @@ pub fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), status_row);
 
-    let help = "tab/shift-tab fields   ctrl+s save   esc cancel";
+    let help = "↑/↓ · tab fields   ctrl+s save   esc cancel";
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
