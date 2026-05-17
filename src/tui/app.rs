@@ -516,8 +516,12 @@ impl App {
             let Screen::ModeEditor(ed) = &mut self.screen else { return };
             match ed.build_profile() {
                 Ok(v) => v,
-                Err(e) => {
-                    ed.error = Some(e);
+                Err((field, msg)) => {
+                    ed.error = Some(msg);
+                    ed.error_field = field;
+                    if let Some(f) = field {
+                        ed.focus = f;
+                    }
                     return;
                 }
             }
@@ -534,12 +538,14 @@ impl App {
             Ok(Response::Error { message }) => {
                 if let Screen::ModeEditor(ed) = &mut self.screen {
                     ed.error = Some(message);
+                    ed.error_field = None;
                 }
             }
             Ok(_) => {}
             Err(e) => {
                 if let Screen::ModeEditor(ed) = &mut self.screen {
                     ed.error = Some(e.to_string());
+                    ed.error_field = None;
                 }
             }
         }
@@ -777,8 +783,26 @@ impl App {
                 return;
             }
         };
+
+        // If the default profile is empty or has been deleted/renamed, the
+        // daemon would return a cryptic "unknown profile" error. Take the
+        // user to the picker instead so they can choose explicitly.
+        let default_name = cfg.general.default_profile.clone();
+        if default_name.trim().is_empty() || cfg.profile(&default_name).is_none() {
+            self.globals.set_flash(
+                if default_name.trim().is_empty() {
+                    "no default profile set — pick one to start".to_string()
+                } else {
+                    format!("default profile `{default_name}` is missing — pick one")
+                },
+                FlashLevel::Warn,
+            );
+            self.open_picker().await;
+            return;
+        }
+
         let req = Request::Start {
-            profile: cfg.general.default_profile.clone(),
+            profile: default_name,
             duration: cfg.general.default_duration,
             hard_mode: cfg.general.hard_mode,
             reason: None,

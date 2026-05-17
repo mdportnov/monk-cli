@@ -37,6 +37,8 @@ pub struct EditorState {
     pub focus: EditorField,
     pub snapshot: Profile,
     pub error: Option<String>,
+    /// The field that triggered `error`, if any. Used to draw a red label.
+    pub error_field: Option<EditorField>,
     pub confirm_cancel: bool,
 }
 
@@ -85,6 +87,7 @@ impl EditorState {
             focus: EditorField::Name,
             snapshot: Profile::default(),
             error: None,
+            error_field: None,
             confirm_cancel: false,
         };
         s.sync_focus();
@@ -113,6 +116,7 @@ impl EditorState {
             focus: EditorField::Name,
             snapshot: profile,
             error: None,
+            error_field: None,
             confirm_cancel: false,
         };
         s.sync_focus();
@@ -165,23 +169,28 @@ impl EditorState {
         }
     }
 
-    pub fn build_profile(&self) -> std::result::Result<(String, Profile), String> {
+    pub fn build_profile(
+        &self,
+    ) -> std::result::Result<(String, Profile), (Option<EditorField>, String)> {
         let name = self.name.value.trim().to_string();
         if name.is_empty() {
-            return Err("name is required".into());
+            return Err((Some(EditorField::Name), "name is required".into()));
         }
         if name.chars().count() > 30 {
-            return Err("name must be ≤ 30 chars".into());
+            return Err((Some(EditorField::Name), "name must be ≤ 30 chars".into()));
         }
-        let limits = Limits {
-            max_duration: parse_opt_humantime(&self.max)?,
-            min_duration: parse_opt_humantime(&self.min)?,
-            cooldown: parse_opt_humantime(&self.cooldown)?,
-            daily_cap: parse_opt_humantime(&self.daily_cap)?,
-        };
+        let max_duration = parse_opt_humantime(&self.max)
+            .map_err(|e| (Some(EditorField::Max), e))?;
+        let min_duration = parse_opt_humantime(&self.min)
+            .map_err(|e| (Some(EditorField::Min), e))?;
+        let cooldown = parse_opt_humantime(&self.cooldown)
+            .map_err(|e| (Some(EditorField::Cooldown), e))?;
+        let daily_cap = parse_opt_humantime(&self.daily_cap)
+            .map_err(|e| (Some(EditorField::DailyCap), e))?;
+        let limits = Limits { max_duration, min_duration, cooldown, daily_cap };
         if let (Some(mn), Some(mx)) = (limits.min_duration, limits.max_duration) {
             if mn > mx {
-                return Err("min must be ≤ max".into());
+                return Err((Some(EditorField::Min), "min must be ≤ max".into()));
             }
         }
         let sites: Vec<String> = self
@@ -195,6 +204,8 @@ impl EditorState {
             before: split_cmds(&self.hook_before.value),
             after: split_cmds(&self.hook_after.value),
         };
+        let schedule = parse_schedule_spec(&self.schedule.value)
+            .map_err(|e| (Some(EditorField::Schedule), e.to_string()))?;
         let profile = Profile {
             sites,
             site_groups: self.groups.selected_ids(),
@@ -204,7 +215,7 @@ impl EditorState {
             hooks,
             limits,
             color: palette_value(self.color_idx),
-            schedule: parse_schedule_spec(&self.schedule.value).map_err(|e| e.to_string())?,
+            schedule,
         };
         Ok((name, profile))
     }
@@ -286,6 +297,7 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
                 }
             }
             ed.error = None;
+            ed.error_field = None;
         }
     }
 }
@@ -366,7 +378,10 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
 
 fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: EditorField) {
     let focused = editor.focus == field;
-    let label_style = if focused {
+    let is_error = editor.error_field == Some(field);
+    let label_style = if is_error {
+        Style::default().fg(ALERT).add_modifier(Modifier::BOLD)
+    } else if focused {
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(DIM)
