@@ -60,7 +60,7 @@ impl ProcessGuard {
                 let name = proc.name().to_string_lossy().to_lowercase();
 
                 if let Some(app) =
-                    apps.iter().find(|app| matches_process(app, exe.as_deref(), &name))
+                    apps.iter().find(|app| matches_process(app, exe.as_deref(), &name, proc.pid()))
                 {
                     if let Some(exe_path) = &exe {
                         if is_system_path(exe_path) {
@@ -108,7 +108,12 @@ impl ProcessGuard {
     }
 }
 
-fn matches_process(app: &InstalledApp, exe: Option<&Path>, name_lower: &str) -> bool {
+fn matches_process(
+    app: &InstalledApp,
+    exe: Option<&Path>,
+    name_lower: &str,
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] pid: sysinfo::Pid,
+) -> bool {
     match app.kind {
         AppKind::MacBundle => {
             if let Some(exe_path) = exe {
@@ -135,7 +140,7 @@ fn matches_process(app: &InstalledApp, exe: Option<&Path>, name_lower: &str) -> 
                 #[cfg(target_os = "linux")]
                 {
                     if is_flatpak_or_snap_wrapper(&app.exec_path) {
-                        return matches_sandboxed_app(app, proc.pid());
+                        return matches_sandboxed_app(app, pid);
                     }
                 }
             }

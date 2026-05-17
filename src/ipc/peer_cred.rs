@@ -2,6 +2,7 @@ use crate::Result;
 use tracing::{debug, warn};
 
 pub fn check_peer_auth(stream: &interprocess::local_socket::tokio::Stream) -> Result<()> {
+    #[cfg(debug_assertions)]
     if std::env::var("MONK_DISABLE_PEER_CHECK").as_deref() == Ok("1") {
         warn!("peer auth check disabled via MONK_DISABLE_PEER_CHECK=1");
         return Ok(());

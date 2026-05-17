@@ -101,7 +101,16 @@ impl Blocker for ResolverDirBlocker {
         for stale in existing.difference(&desired) {
             let p = self.file_for(stale);
             if Self::is_ours(&p) {
-                let _ = fs_err::remove_file(&p);
+                match fs_err::remove_file(&p) {
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        // File already gone is success
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                        return Err(Error::Permission(format!("cannot remove {}", p.display())));
+                    }
+                    Err(e) => return Err(Error::Io(e)),
+                    Ok(_) => {}
+                }
             }
         }
 

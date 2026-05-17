@@ -36,9 +36,23 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
             Error::Io(e)
         }
     };
-    fs_err::write(&tmp, contents).map_err(|e| map_err(e, &tmp))?;
+
+    let mut opts = fs_err::OpenOptions::new();
+    opts.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use fs_err::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(&tmp).map_err(|e| map_err(e, &tmp))?;
+    use std::io::Write;
+    file.write_all(contents).map_err(|e| map_err(e, &tmp))?;
+    drop(file);
+
     if let Err(e) = fs_err::rename(&tmp, path) {
-        let _ = fs_err::remove_file(&tmp);
+        if let Err(remove_err) = fs_err::remove_file(&tmp) {
+            tracing::warn!("failed to clean up temp file {}: {}", tmp.display(), remove_err);
+        }
         return Err(map_err(e, path));
     }
     Ok(())

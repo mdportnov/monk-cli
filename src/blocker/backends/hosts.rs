@@ -131,7 +131,7 @@ impl Blocker for HostsBlocker {
         let result = self.write(&next);
         if result.is_ok() {
             #[cfg(target_os = "macos")]
-            flush_dns_cache();
+            return flush_dns_cache();
         }
         result
     }
@@ -147,11 +147,9 @@ impl Blocker for HostsBlocker {
         };
         let cleaned = Self::strip_block(&current);
         let result = self.write(cleaned.trim_end());
-        if result.is_ok() {
-            #[cfg(target_os = "macos")]
-            flush_dns_cache();
-        }
         result?;
+        #[cfg(target_os = "macos")]
+        flush_dns_cache()?;
         self.backup = None;
         Ok(())
     }
@@ -174,17 +172,33 @@ impl BlockerBackend for HostsBlocker {
 }
 
 #[cfg(target_os = "macos")]
-fn flush_dns_cache() {
+fn flush_dns_cache() -> Result<()> {
     debug!("Flushing DNS cache");
+    let mut dsc_ok = false;
+    let mut mdns_ok = false;
+
     match std::process::Command::new("dscacheutil").arg("-flushcache").status() {
-        Ok(status) if status.success() => debug!("dscacheutil -flushcache: ok"),
+        Ok(status) if status.success() => {
+            debug!("dscacheutil -flushcache: ok");
+            dsc_ok = true;
+        }
         Ok(status) => warn!("dscacheutil -flushcache exited with: {}", status),
         Err(e) => warn!("Failed to run dscacheutil -flushcache: {}", e),
     }
+
     match std::process::Command::new("killall").arg("-HUP").arg("mDNSResponder").status() {
-        Ok(status) if status.success() => debug!("killall -HUP mDNSResponder: ok"),
+        Ok(status) if status.success() => {
+            debug!("killall -HUP mDNSResponder: ok");
+            mdns_ok = true;
+        }
         Ok(status) => warn!("killall -HUP mDNSResponder exited with: {}", status),
         Err(e) => warn!("Failed to run killall -HUP mDNSResponder: {}", e),
+    }
+
+    if dsc_ok || mdns_ok {
+        Ok(())
+    } else {
+        Err(Error::Other("Failed to flush DNS cache with both dscacheutil and killall".into()))
     }
 }
 
