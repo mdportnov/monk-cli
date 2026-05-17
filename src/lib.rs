@@ -12,6 +12,7 @@ pub mod i18n;
 pub mod ipc;
 pub mod onboarding;
 pub mod paths;
+pub mod platform;
 pub mod session;
 pub mod sites;
 pub mod storage;
