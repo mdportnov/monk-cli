@@ -175,13 +175,22 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     let info = Paragraph::new(info_lines).alignment(Alignment::Center);
     f.render_widget(info, layout[3]);
 
-    let help = if app.globals.hard_mode.is_some() {
-        "stop disabled during hard mode — use panic if needed"
+    let footer_line = if let Some(hard) = &app.globals.hard_mode {
+        Line::from(vec![
+            Span::styled("hard mode · panic phrase  ", Style::default().fg(DIM)),
+            Span::styled(
+                hard.panic_phrase.clone(),
+                Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  ·  press p", Style::default().fg(DIM)),
+        ])
     } else {
-        "x end  p panic"
+        Line::from(Span::styled(
+            "x end  p panic",
+            Style::default().fg(DIM),
+        ))
     };
-    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
-        .alignment(Alignment::Center);
+    let footer = Paragraph::new(footer_line).alignment(Alignment::Center);
     f.render_widget(footer, layout[5]);
 }
 

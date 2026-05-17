@@ -72,7 +72,7 @@ tui:
     deleted: "deleted `{profile}`"
     config_error: "config error: {message}"
     no_slot: "no mode at slot {slot}"
-    hard_stop_denied: "hard mode active — stop denied"
+    hard_stop_denied: "hard mode active — stop denied (press p to panic)"
     nothing_to_stop: "nothing to stop"
     no_hard_session: "no hard-mode session"
     panic_release_at: "panic release at {at}"

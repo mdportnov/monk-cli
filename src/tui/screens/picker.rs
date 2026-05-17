@@ -19,6 +19,23 @@ use crate::{
 
 pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
     let Screen::ModePicker(picker) = &mut app.screen else { return };
+
+    // Two-step delete: if a confirmation is in flight, intercept all keys
+    // here so navigation can't bypass the prompt.
+    if picker.confirm_delete.is_some() {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                picker.confirm_delete = None;
+                app.delete_current_mode().await;
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                picker.confirm_delete = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
             app.set_screen(Screen::Home(HomeState::default()));
@@ -30,7 +47,11 @@ pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('n') => open_editor_new(app),
         KeyCode::Char('a') => open_preset_picker(app),
         KeyCode::Char('e') => app.open_editor_edit(),
-        KeyCode::Char('d') => app.delete_current_mode().await,
+        KeyCode::Char('d') => {
+            if let Some(m) = picker.current() {
+                picker.confirm_delete = Some(m.name.clone());
+            }
+        }
         _ => {}
     }
 }
@@ -144,7 +165,7 @@ fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "press n to create your first (soon)",
+                "press n for a fresh mode · a to start from a preset",
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )),
         ];
@@ -288,9 +309,26 @@ fn picker_block(title: &str) -> Block<'_> {
         .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
-fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState) {
-    let help = "↑/↓ select   r refresh   esc back";
-    let p = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
+fn draw_picker_footer(f: &mut Frame, area: Rect, picker: &PickerState) {
+    let (help, color) = if let Some(name) = &picker.confirm_delete {
+        (
+            format!("delete `{name}`?   y  yes   n  cancel"),
+            ALERT,
+        )
+    } else {
+        (
+            "↑/↓ select   ⏎ configure   n new   a preset   e edit   d delete   r refresh   esc back"
+                .to_string(),
+            DIM,
+        )
+    };
+    let style = Style::default().fg(color);
+    let style = if picker.confirm_delete.is_some() {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    };
+    let p = Paragraph::new(Span::styled(help, style))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);

@@ -101,6 +101,9 @@ pub struct PickerState {
     pub selected: usize,
     pub loading: bool,
     pub error: Option<String>,
+    /// When Some, the picker is asking for confirmation before deleting the
+    /// named mode. y/Y commits, esc/n cancels.
+    pub confirm_delete: Option<String>,
 }
 
 impl PickerState {

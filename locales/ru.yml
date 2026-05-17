@@ -72,7 +72,7 @@ tui:
     deleted: "удалено `{profile}`"
     config_error: "ошибка конфига: {message}"
     no_slot: "нет режима в слоте {slot}"
-    hard_stop_denied: "hard mode активен — остановка запрещена"
+    hard_stop_denied: "hard mode активен — остановка запрещена (нажми p для panic)"
     nothing_to_stop: "нечего останавливать"
     no_hard_session: "нет hard-mode сессии"
     panic_release_at: "panic выход в {at}"

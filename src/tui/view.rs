@@ -342,7 +342,13 @@ mod snapshot_tests {
         let mut app = base_app();
         let modes = app.globals.cached_modes.clone();
         app.screen =
-            Screen::ModePicker(PickerState { modes, selected: 0, loading: false, error: None });
+            Screen::ModePicker(PickerState {
+                modes,
+                selected: 0,
+                loading: false,
+                error: None,
+                confirm_delete: None,
+            });
         insta::assert_snapshot!(render(&app, 100, 30));
     }
 
