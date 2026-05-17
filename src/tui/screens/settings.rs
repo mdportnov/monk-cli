@@ -276,12 +276,7 @@ pub fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
 
     let status_row = rows[fields.len()];
     let mut lines: Vec<Line> = Vec::new();
-    if st.confirm_reset {
-        lines.push(Line::from(Span::styled(
-            "wipe config and audit log?   y  yes   n  cancel",
-            Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
-        )));
-    } else if let Some(err) = &st.error {
+    if let Some(err) = &st.error {
         lines.push(Line::from(Span::styled(
             err.clone(),
             Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
@@ -299,6 +294,42 @@ pub fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(footer, outer[2]);
+
+    if st.confirm_reset {
+        crate::tui::view::draw_confirm_modal(
+            f,
+            "reset all data?",
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "this wipes:",
+                    Style::default().fg(TEXT),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "· all modes you've configured",
+                    Style::default().fg(DIM),
+                )),
+                Line::from(Span::styled(
+                    "· all settings",
+                    Style::default().fg(DIM),
+                )),
+                Line::from(Span::styled(
+                    "· the full session audit log",
+                    Style::default().fg(DIM),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "there is no undo.",
+                    Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+            ],
+            "reset everything",
+            "cancel",
+            true,
+        );
+    }
 }
 
 fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: SettingsField) {

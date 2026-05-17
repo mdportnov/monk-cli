@@ -345,15 +345,34 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     draw_editor_fields(f, body[0], editor);
     draw_editor_aux(f, body[1], editor);
 
-    let help = if editor.confirm_cancel {
-        "discard unsaved changes?   y  yes   n  keep editing"
-    } else {
-        "↑/↓ · tab fields   ctrl+s save   esc cancel"
-    };
+    let help = "↑/↓ · tab fields   ctrl+s save   esc cancel";
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(footer, outer[2]);
+
+    if editor.confirm_cancel {
+        crate::tui::view::draw_confirm_modal(
+            f,
+            "discard changes?",
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "you have unsaved edits to this mode.",
+                    Style::default().fg(TEXT),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "discard them and go back to the picker?",
+                    Style::default().fg(DIM),
+                )),
+                Line::from(""),
+            ],
+            "discard",
+            "keep editing",
+            true,
+        );
+    }
 }
 
 fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {

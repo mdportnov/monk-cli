@@ -165,6 +165,68 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
 }
 
 
+/// Render a centered yes/no confirmation modal over the current screen.
+/// Used by editor (discard unsaved changes), picker (delete mode),
+/// settings (reset all data). Caller is responsible for handling the
+/// y/n key events outside; this just draws.
+pub fn draw_confirm_modal(
+    f: &mut Frame,
+    title: &str,
+    body: Vec<Line<'static>>,
+    yes_label: &str,
+    no_label: &str,
+    destructive: bool,
+) {
+    let area = f.area();
+    let width = 56.min(area.width.saturating_sub(4));
+    let height = ((body.len() as u16) + 6).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let rect = Rect { x, y, width, height };
+
+    f.render_widget(ratatui::widgets::Clear, rect);
+
+    let border_color = if destructive { ALERT } else { ACCENT };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(border_color).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let layout = ratatui::layout::Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([
+            ratatui::layout::Constraint::Min(1),
+            ratatui::layout::Constraint::Length(1),
+            ratatui::layout::Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let para = Paragraph::new(body)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true });
+    f.render_widget(para, layout[0]);
+
+    let yes_style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
+    let dim = Style::default().fg(DIM);
+    let actions = Line::from(vec![
+        Span::styled("y  ", yes_style),
+        Span::styled(yes_label.to_string(), Style::default().fg(TEXT)),
+        Span::styled("    ·    ", dim),
+        Span::styled("n  ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+        Span::styled(no_label.to_string(), Style::default().fg(TEXT)),
+    ]);
+    f.render_widget(
+        Paragraph::new(actions).alignment(Alignment::Center),
+        layout[2],
+    );
+}
+
 pub fn fmt_short(d: Duration) -> String {
     let secs = d.as_secs();
     if secs == 0 {

@@ -86,6 +86,32 @@ pub fn draw_picker(f: &mut Frame, app: &App, picker: &PickerState) {
     draw_picker_list(f, body[0], picker);
     draw_picker_details(f, body[1], picker);
     draw_picker_footer(f, outer[2], picker);
+
+    if let Some(name) = &picker.confirm_delete {
+        crate::tui::view::draw_confirm_modal(
+            f,
+            "delete mode?",
+            vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("about to remove  ", Style::default().fg(DIM)),
+                    Span::styled(
+                        format!("`{name}`"),
+                        Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "this can't be undone.",
+                    Style::default().fg(DIM),
+                )),
+                Line::from(""),
+            ],
+            "delete",
+            "cancel",
+            true,
+        );
+    }
 }
 
 pub fn draw_preset_picker(f: &mut Frame, app: &App, state: &PresetPickerState) {
@@ -309,26 +335,10 @@ fn picker_block(title: &str) -> Block<'_> {
         .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
-fn draw_picker_footer(f: &mut Frame, area: Rect, picker: &PickerState) {
-    let (help, color) = if let Some(name) = &picker.confirm_delete {
-        (
-            format!("delete `{name}`?   y  yes   n  cancel"),
-            ALERT,
-        )
-    } else {
-        (
-            "↑/↓ select   ⏎ configure   n new   a preset   e edit   d delete   r refresh   esc back"
-                .to_string(),
-            DIM,
-        )
-    };
-    let style = Style::default().fg(color);
-    let style = if picker.confirm_delete.is_some() {
-        style.add_modifier(Modifier::BOLD)
-    } else {
-        style
-    };
-    let p = Paragraph::new(Span::styled(help, style))
+fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState) {
+    let help =
+        "↑/↓ select   ⏎ configure   n new   a preset   e edit   d delete   r refresh   esc back";
+    let p = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);
