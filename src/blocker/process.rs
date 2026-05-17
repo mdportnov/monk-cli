@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::{ProcessesToUpdate, Signal, System};
 use tracing::{info, warn};
 
 use crate::{
@@ -11,10 +12,13 @@ use crate::{
     Result,
 };
 
+/// Grace period between asking an app to quit and force-killing it.
+const QUIT_GRACE: Duration = Duration::from_secs(3);
+
 #[derive(Debug)]
 pub struct ProcessGuard {
     sys: System,
-    last_refresh: Instant,
+    pending_quit: HashMap<sysinfo::Pid, Instant>,
 }
 
 impl Default for ProcessGuard {
@@ -25,87 +29,139 @@ impl Default for ProcessGuard {
 
 impl ProcessGuard {
     pub fn new() -> Self {
-        use std::time::Duration;
-        Self { sys: System::new(), last_refresh: Instant::now() - Duration::from_secs(10) }
+        Self { sys: System::new(), pending_quit: HashMap::new() }
     }
 
+    /// Ask blocked apps to terminate. Mac bundles get an AppleScript Quit
+    /// Apple Event so they exit normally without tripping crash-recovery
+    /// dialogs (e.g. Telegram's "keeps crashing → log out" prompt). Other
+    /// kinds get SIGTERM. If the process is still alive `QUIT_GRACE` later
+    /// we escalate to SIGKILL.
+    ///
+    /// Returns the number of processes actually killed (force-terminated)
+    /// on this call. Graceful-quit requests don't count toward the total
+    /// since the process is still alive when we return.
     pub fn kill_matching(&mut self, apps: &[InstalledApp]) -> Result<usize> {
         if apps.is_empty() {
             return Ok(0);
         }
 
+        // Refresh on every call — caller invokes us roughly once per second.
+        // The 5-second cache the previous implementation used caused 3-5s
+        // detection lag for newly-spawned apps.
+        self.sys.refresh_processes(ProcessesToUpdate::All, false);
+
+        // Drop tracking entries for processes that already exited (either by
+        // our graceful quit, by the user, or naturally).
+        self.pending_quit.retain(|pid, _| self.sys.process(*pid).is_some());
+
         let current_uid = get_current_uid();
-        let mut total_killed = 0;
+        let now = Instant::now();
 
-        for attempt in 0..2 {
-            if attempt == 0 {
-                let now = Instant::now();
-                if now.duration_since(self.last_refresh).as_secs() >= 5 {
-                    self.sys.refresh_processes(ProcessesToUpdate::All, true);
-                    self.last_refresh = now;
-                }
-            } else {
-                self.sys.refresh_processes(ProcessesToUpdate::All, true);
-                self.last_refresh = Instant::now();
+        let mut matches: Vec<(sysinfo::Pid, AppKind, String, String, Option<PathBuf>)> = Vec::new();
+        for proc in self.sys.processes().values() {
+            if !should_consider_process(proc, current_uid) {
+                continue;
             }
-
-            let mut to_kill = Vec::new();
-
-            for proc in self.sys.processes().values() {
-                if !should_consider_process(proc, current_uid) {
+            let exe = proc.exe().map(Path::to_path_buf);
+            let name_lower = proc.name().to_string_lossy().to_lowercase();
+            let Some(app) =
+                apps.iter().find(|a| matches_process(a, exe.as_deref(), &name_lower, proc.pid()))
+            else {
+                continue;
+            };
+            if let Some(p) = &exe {
+                if is_system_path(p) {
+                    warn!(pid = ?proc.pid(), name = %name_lower, "skip system process");
                     continue;
                 }
-
-                let exe = proc.exe().map(Path::to_path_buf);
-                let name = proc.name().to_string_lossy().to_lowercase();
-
-                if let Some(app) =
-                    apps.iter().find(|app| matches_process(app, exe.as_deref(), &name, proc.pid()))
-                {
-                    if let Some(exe_path) = &exe {
-                        if is_system_path(exe_path) {
-                            warn!(
-                                "Skipping system process: pid={}, name={:?}, path={:?}",
-                                proc.pid(),
-                                proc.name(),
-                                exe_path
-                            );
-                            continue;
-                        }
-                    }
-
-                    to_kill.push((
-                        proc.pid(),
-                        proc.name().to_string_lossy().to_string(),
-                        exe.clone(),
-                        app.id.clone(),
-                    ));
-                }
             }
+            matches.push((
+                proc.pid(),
+                app.kind,
+                app.id.clone(),
+                proc.name().to_string_lossy().to_string(),
+                exe,
+            ));
+        }
 
-            let killed = tokio::task::block_in_place(|| {
-                let mut count = 0;
-                for (pid, name, exe, app_id) in to_kill {
+        let mut killed = 0;
+        for (pid, kind, app_id, name, exe) in matches {
+            match self.pending_quit.get(&pid).copied() {
+                // Past the grace window — force-kill.
+                Some(asked_at) if now.duration_since(asked_at) >= QUIT_GRACE => {
                     if let Some(proc) = self.sys.process(pid) {
                         if proc.kill() {
                             info!(
-                                "Killed process: pid={}, name={}, app_id={}, path={:?}",
-                                pid, name, app_id, exe
+                                ?pid, %name, %app_id, ?exe,
+                                "force-killed after graceful quit timed out"
                             );
-                            count += 1;
+                            killed += 1;
+                            self.pending_quit.remove(&pid);
                         }
                     }
                 }
-                count
-            });
-
-            total_killed += killed;
-            if killed == 0 {
-                break;
+                // Already asked, still within grace window — leave it alone.
+                Some(_) => {}
+                // First contact — ask politely.
+                None => {
+                    let asked = request_graceful_quit(&self.sys, pid, kind, &app_id);
+                    if asked {
+                        info!(?pid, %name, %app_id, kind = ?kind, "requested graceful quit");
+                        self.pending_quit.insert(pid, now);
+                    } else {
+                        // Graceful path unavailable — fall back to SIGKILL.
+                        if let Some(proc) = self.sys.process(pid) {
+                            if proc.kill() {
+                                info!(
+                                    ?pid, %name, %app_id, ?exe,
+                                    "killed (graceful unavailable)"
+                                );
+                                killed += 1;
+                            }
+                        }
+                    }
+                }
             }
         }
-        Ok(total_killed)
+
+        Ok(killed)
     }
+}
+
+fn request_graceful_quit(
+    sys: &System,
+    pid: sysinfo::Pid,
+    kind: AppKind,
+    app_id: &str,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    if matches!(kind, AppKind::MacBundle) {
+        // AppleScript "quit" delivers a real Apple Event so the app saves
+        // state and exits normally. osascript returns immediately; the app
+        // takes a beat to actually terminate, which we wait out via
+        // QUIT_GRACE on the next tick.
+        let script = format!(r#"tell application id "{}" to quit"#, app_id);
+        let result = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if matches!(result, Ok(s) if s.success()) {
+            return true;
+        }
+        // osascript failed (no app registered with that id, scripting
+        // disabled, etc.) — fall through to SIGTERM.
+    }
+    let _ = (kind, app_id);
+    if let Some(proc) = sys.process(pid) {
+        // kill_with returns None if the signal isn't supported on this
+        // platform; treat that as "graceful unavailable" and let the caller
+        // fall back to SIGKILL.
+        return proc.kill_with(Signal::Term).unwrap_or(false);
+    }
+    false
 }
 
 fn matches_process(
