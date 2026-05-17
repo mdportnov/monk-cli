@@ -302,7 +302,10 @@ impl Supervisor {
             profile: profile.clone(),
             duration,
             hard_mode,
-            panic_delay: cfg.general.panic_delay,
+            panic_delay: profile_def
+                .limits
+                .panic_delay
+                .unwrap_or(cfg.general.panic_delay),
             panic_phrase,
             reason,
             boot_id: clock::boot_id(),

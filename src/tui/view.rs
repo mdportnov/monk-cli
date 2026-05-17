@@ -293,6 +293,7 @@ mod snapshot_tests {
                 min_duration: Some(Duration::from_secs(15 * 60)),
                 cooldown: Some(Duration::from_secs(30 * 60)),
                 daily_cap: Some(Duration::from_secs(4 * 3600)),
+                panic_delay: None,
             },
             stats: ModeStats {
                 used_24h: Duration::from_secs(45 * 60),

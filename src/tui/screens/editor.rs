@@ -27,6 +27,7 @@ pub struct EditorState {
     pub min: TextInput,
     pub cooldown: TextInput,
     pub daily_cap: TextInput,
+    pub panic_delay: TextInput,
     pub schedule: TextInput,
     pub sites: TextInput,
     pub hook_before: TextInput,
@@ -77,6 +78,7 @@ impl EditorState {
             min: TextInput::new(""),
             cooldown: TextInput::new(""),
             daily_cap: TextInput::new(""),
+            panic_delay: TextInput::new(""),
             schedule: TextInput::new(""),
             sites: TextInput::new(""),
             hook_before: TextInput::new(""),
@@ -106,6 +108,7 @@ impl EditorState {
             min: TextInput::new(fmt_opt_humantime(limits.min_duration)),
             cooldown: TextInput::new(fmt_opt_humantime(limits.cooldown)),
             daily_cap: TextInput::new(fmt_opt_humantime(limits.daily_cap)),
+            panic_delay: TextInput::new(fmt_opt_humantime(limits.panic_delay)),
             schedule: TextInput::new(format_schedule_spec(profile.schedule.as_ref())),
             sites: TextInput::new(profile.sites.join(", ")),
             hook_before: TextInput::new(profile.hooks.before.join(" && ")),
@@ -130,6 +133,7 @@ impl EditorState {
             EditorField::Min => Some(&mut self.min),
             EditorField::Cooldown => Some(&mut self.cooldown),
             EditorField::DailyCap => Some(&mut self.daily_cap),
+            EditorField::PanicDelay => Some(&mut self.panic_delay),
             EditorField::Schedule => Some(&mut self.schedule),
             EditorField::Sites => Some(&mut self.sites),
             EditorField::HookBefore => Some(&mut self.hook_before),
@@ -187,7 +191,9 @@ impl EditorState {
             .map_err(|e| (Some(EditorField::Cooldown), e))?;
         let daily_cap = parse_opt_humantime(&self.daily_cap)
             .map_err(|e| (Some(EditorField::DailyCap), e))?;
-        let limits = Limits { max_duration, min_duration, cooldown, daily_cap };
+        let panic_delay = parse_opt_humantime(&self.panic_delay)
+            .map_err(|e| (Some(EditorField::PanicDelay), e))?;
+        let limits = Limits { max_duration, min_duration, cooldown, daily_cap, panic_delay };
         if let (Some(mn), Some(mx)) = (limits.min_duration, limits.max_duration) {
             if mn > mx {
                 return Err((Some(EditorField::Min), "min must be ≤ max".into()));
@@ -405,6 +411,7 @@ fn draw_editor_field(f: &mut Frame, area: Rect, editor: &EditorState, field: Edi
         EditorField::Min => &editor.min,
         EditorField::Cooldown => &editor.cooldown,
         EditorField::DailyCap => &editor.daily_cap,
+        EditorField::PanicDelay => &editor.panic_delay,
         EditorField::Schedule => &editor.schedule,
         EditorField::Sites => &editor.sites,
         EditorField::HookBefore => &editor.hook_before,

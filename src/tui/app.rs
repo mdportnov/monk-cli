@@ -139,6 +139,7 @@ pub enum EditorField {
     Min,
     Cooldown,
     DailyCap,
+    PanicDelay,
     Schedule,
     Sites,
     HookBefore,
@@ -149,13 +150,14 @@ pub enum EditorField {
 }
 
 impl EditorField {
-    pub const ORDER: [EditorField; 13] = [
+    pub const ORDER: [EditorField; 14] = [
         EditorField::Name,
         EditorField::Color,
         EditorField::Max,
         EditorField::Min,
         EditorField::Cooldown,
         EditorField::DailyCap,
+        EditorField::PanicDelay,
         EditorField::Schedule,
         EditorField::Sites,
         EditorField::HookBefore,
@@ -173,6 +175,7 @@ impl EditorField {
             EditorField::Min => "min duration",
             EditorField::Cooldown => "cooldown",
             EditorField::DailyCap => "daily cap",
+            EditorField::PanicDelay => "panic delay",
             EditorField::Schedule => "schedule",
             EditorField::Sites => "custom sites",
             EditorField::HookBefore => "hook before",
@@ -191,6 +194,7 @@ impl EditorField {
             EditorField::Min => "shorter doesn't count as a session",
             EditorField::Cooldown => "protects against compulsive restart",
             EditorField::DailyCap => "daily focus budget — prevents burnout",
+            EditorField::PanicDelay => "delay before hard-mode panic releases (empty = global default)",
             EditorField::Schedule => "auto-start: `mon-fri 09:00-17:00` or `daily 22:00-23:00 UTC`",
             EditorField::Sites => "comma-separated hosts to block",
             EditorField::HookBefore => "shell command run before session",

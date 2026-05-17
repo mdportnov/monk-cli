@@ -69,7 +69,7 @@ impl Default for General {
 }
 
 fn default_panic_delay() -> Duration {
-    Duration::from_secs(15 * 60)
+    Duration::from_secs(5 * 60)
 }
 fn default_tamper_penalty() -> Duration {
     Duration::from_secs(15 * 60)
@@ -211,6 +211,11 @@ pub struct Limits {
     pub cooldown: Option<Duration>,
     #[serde(default, with = "humantime_serde_opt")]
     pub daily_cap: Option<Duration>,
+    /// Per-mode override of General.panic_delay. None ⇒ fall back to the
+    /// global setting. Useful for "no-distractions during a critical meeting"
+    /// modes where the user wants a longer escape friction.
+    #[serde(default, with = "humantime_serde_opt")]
+    pub panic_delay: Option<Duration>,
 }
 
 mod humantime_serde_opt {
