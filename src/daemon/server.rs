@@ -194,6 +194,9 @@ async fn handle(
         return Ok(());
     }
 
+    let conn_id = short_id();
+    tracing::debug!(conn_id = %conn_id, "ipc connection accepted");
+
     let (reader, writer) = stream.split();
     let mut source = FramedRead::new(reader, codec());
     let mut sink = FramedWrite::new(writer, codec());
@@ -209,6 +212,7 @@ async fn handle(
                 let env: Envelope<Request> = match serde_json::from_slice(&bytes) {
                     Ok(e) => e,
                     Err(e) => {
+                        tracing::warn!(?e, "bad envelope");
                         let resp = Response::Error { message: format!("bad envelope: {e}") };
                         let out = Envelope { v: PROTOCOL_VERSION, body: resp };
                         let payload = serde_json::to_vec(&out)?;
@@ -217,6 +221,7 @@ async fn handle(
                     }
                 };
                 if env.v != PROTOCOL_VERSION {
+                    tracing::warn!(client_v = env.v, daemon_v = PROTOCOL_VERSION, "protocol mismatch");
                     let resp = Response::Error {
                         message: format!(
                             "protocol version mismatch: client={}, daemon={}",
@@ -228,7 +233,18 @@ async fn handle(
                     let _ = sink.send(payload.into()).await;
                     return Ok(());
                 }
-                let resp = dispatch(env.body, &sup, &shutdown);
+                let req_id = short_id();
+                let kind = request_kind(&env.body);
+                let span = tracing::info_span!("ipc.req", conn = %conn_id, id = %req_id, kind);
+                let (resp, elapsed_us, ok) = span.in_scope(|| {
+                    let start = std::time::Instant::now();
+                    let resp = dispatch(env.body, &sup, &shutdown);
+                    let elapsed_us = start.elapsed().as_micros();
+                    let ok = !matches!(resp, Response::Error { .. });
+                    tracing::debug!(elapsed_us, ok, "ipc request handled");
+                    (resp, elapsed_us, ok)
+                });
+                let _ = (elapsed_us, ok);
                 let out = Envelope { v: PROTOCOL_VERSION, body: resp };
                 let payload = serde_json::to_vec(&out)?;
                 sink.send(payload.into()).await.map_err(|e| Error::Ipc(e.to_string()))?;
@@ -237,6 +253,37 @@ async fn handle(
         }
     }
     Ok(())
+}
+
+fn short_id() -> String {
+    let u = uuid::Uuid::new_v4();
+    u.simple().to_string()[..8].to_string()
+}
+
+fn request_kind(req: &Request) -> &'static str {
+    match req {
+        Request::Ping => "Ping",
+        Request::Status => "Status",
+        Request::Start { .. } => "Start",
+        Request::Stop { .. } => "Stop",
+        Request::Panic { .. } => "Panic",
+        Request::List => "List",
+        Request::Shutdown => "Shutdown",
+        Request::Pause { .. } => "Pause",
+        Request::Resume { .. } => "Resume",
+        Request::ListModes => "ListModes",
+        Request::ModeStats { .. } => "ModeStats",
+        Request::ModeDetail { .. } => "ModeDetail",
+        Request::SaveMode { .. } => "SaveMode",
+        Request::DeleteMode { .. } => "DeleteMode",
+        Request::GetGeneral => "GetGeneral",
+        Request::UpdateGeneral { .. } => "UpdateGeneral",
+        Request::ResetAll => "ResetAll",
+        Request::GetConfig => "GetConfig",
+        Request::SaveConfig { .. } => "SaveConfig",
+        Request::NextScheduled => "NextScheduled",
+        Request::Unknown => "Unknown",
+    }
 }
 
 fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Response {
