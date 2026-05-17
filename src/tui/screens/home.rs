@@ -176,14 +176,29 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(info, layout[3]);
 
     let footer_line = if let Some(hard) = &app.globals.hard_mode {
-        Line::from(vec![
-            Span::styled("hard mode · panic phrase  ", Style::default().fg(DIM)),
-            Span::styled(
-                hard.panic_phrase.clone(),
-                Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("  ·  press p", Style::default().fg(DIM)),
-        ])
+        if let Some(at) = hard.panic_releases_at {
+            // Panic already scheduled — show countdown to release instead of
+            // the phrase. Phrase is no longer relevant; the release is locked
+            // in (cancellable with `monk panic --cancel` but not from TUI).
+            let now = chrono::Utc::now();
+            let remaining = (at - now).to_std().unwrap_or(std::time::Duration::ZERO);
+            Line::from(vec![
+                Span::styled("panic scheduled · release in  ", Style::default().fg(DIM)),
+                Span::styled(
+                    fmt_short(remaining),
+                    Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled("hard mode · panic phrase  ", Style::default().fg(DIM)),
+                Span::styled(
+                    hard.panic_phrase.clone(),
+                    Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  ·  press p", Style::default().fg(DIM)),
+            ])
+        }
     } else {
         Line::from(Span::styled(
             "x end  p panic",

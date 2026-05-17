@@ -76,6 +76,7 @@ tui:
     nothing_to_stop: "nothing to stop"
     no_hard_session: "no hard-mode session"
     panic_release_at: "panic release at {at}"
+    panic_release_in: "panic scheduled — release in %{duration}"
     panic_cancelled: "panic cancelled"
     unexpected: "unexpected response"
     settings_saved: "settings saved"

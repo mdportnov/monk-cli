@@ -42,6 +42,8 @@ enum Command {
         #[arg(long)]
         reset: bool,
     },
+    #[command(about = "Open the interactive TUI")]
+    Tui,
     #[command(about = "Set the interface language")]
     Lang {
         #[arg(value_parser = ["en", "ru"])]
@@ -81,8 +83,6 @@ enum Command {
     Doctor,
     #[command(subcommand, about = "Manage configuration")]
     Config(ConfigCmd),
-    #[command(about = "Open the interactive TUI")]
-    Tui,
     #[command(subcommand, about = "Manage the background daemon", alias = "service")]
     Daemon(DaemonCmd),
     #[command(about = "Generate shell completions")]

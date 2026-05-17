@@ -888,8 +888,16 @@ impl App {
         match ipc::send(&Request::Panic { phrase, cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
-                    Some(at) => crate::i18n::t!("tui.flash.panic_release_at", at = at.to_rfc3339())
-                        .to_string(),
+                    Some(at) => {
+                        let remaining = (at - chrono::Utc::now())
+                            .to_std()
+                            .unwrap_or(std::time::Duration::ZERO);
+                        crate::i18n::t!(
+                            "tui.flash.panic_release_in",
+                            duration = humantime::format_duration(remaining).to_string()
+                        )
+                        .to_string()
+                    }
                     None => crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
                 };
                 self.globals.set_flash(msg, FlashLevel::Success);

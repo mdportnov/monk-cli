@@ -76,6 +76,7 @@ tui:
     nothing_to_stop: "нечего останавливать"
     no_hard_session: "нет hard-mode сессии"
     panic_release_at: "panic выход в {at}"
+    panic_release_in: "panic запрошен — выход через %{duration}"
     panic_cancelled: "panic отменён"
     unexpected: "неожиданный ответ"
     settings_saved: "настройки сохранены"
