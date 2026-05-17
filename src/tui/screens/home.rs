@@ -23,7 +23,7 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Up | KeyCode::Char('k') => home.move_up(),
         KeyCode::Down | KeyCode::Char('j') => home.move_down(),
         KeyCode::Enter | KeyCode::Char(' ') => activate_home(app).await,
-        KeyCode::Char('m') => open_picker(app).await,
+        KeyCode::Char('m') => app.open_picker(),
         KeyCode::Char('s') => {
             home.selected = 0;
             activate_home(app).await;
@@ -299,7 +299,7 @@ async fn activate_home(app: &mut App) {
         MenuItem::Start => app.do_start().await,
         MenuItem::Stop => app.do_stop().await,
         MenuItem::Panic => app.do_panic().await,
-        MenuItem::Profiles => open_picker(app).await,
+        MenuItem::Profiles => app.open_picker(),
         MenuItem::AddPreset => app.open_preset_picker(),
         MenuItem::Settings => app.open_settings().await,
         MenuItem::Doctor => app.open_doctor().await,
@@ -307,9 +307,4 @@ async fn activate_home(app: &mut App) {
     }
 }
 
-async fn open_picker(app: &mut App) {
-    use crate::tui::app::{PickerState, Screen};
-    app.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
-    app.refresh_picker().await;
-}
 

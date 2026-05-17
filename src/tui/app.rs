@@ -388,6 +388,18 @@ impl App {
         self.globals.hard_mode = s.hard_mode;
         self.globals.active_mode = s.active_mode;
         self.globals.active_profile_detail = s.active_profile_detail;
+        // Mirror the cached mode list into the picker if we're currently on
+        // it. Lets us avoid awaiting an IPC call on open_picker, which would
+        // otherwise stall the main render loop.
+        if let Screen::ModePicker(picker) = &mut self.screen {
+            picker.modes = s.cached_modes.clone();
+            if picker.selected >= picker.modes.len() {
+                picker.selected = picker.modes.len().saturating_sub(1);
+            }
+            if !picker.modes.is_empty() {
+                picker.loading = false;
+            }
+        }
         self.globals.cached_modes = s.cached_modes;
         self.globals.next_scheduled = s.next_scheduled;
     }
@@ -494,7 +506,7 @@ impl App {
                     crate::i18n::t!("tui.flash.deleted", profile = name).to_string(),
                     FlashLevel::Success,
                 );
-                self.refresh_picker().await;
+                self.kick_refresh();
             }
             Ok(Response::Error { message }) => {
                 if let Screen::ModePicker(p) = &mut self.screen {
@@ -533,7 +545,7 @@ impl App {
                     crate::i18n::t!("tui.flash.saved", profile = name).to_string(),
                     FlashLevel::Success,
                 );
-                self.open_picker().await;
+                self.open_picker();
             }
             Ok(Response::Error { message }) => {
                 if let Screen::ModeEditor(ed) = &mut self.screen {
@@ -697,9 +709,20 @@ impl App {
         }
     }
 
-    pub async fn open_picker(&mut self) {
-        self.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
-        self.refresh_picker().await;
+    /// Switch to the picker screen without blocking the main event loop on
+    /// IPC. Seeds the list from the cached snapshot (so the user sees their
+    /// modes immediately) and kicks the background refresh worker for fresh
+    /// data; the snapshot pull on the next frame will overwrite picker.modes
+    /// via `pull_snapshot`.
+    pub fn open_picker(&mut self) {
+        let cached = self.globals.cached_modes.clone();
+        let loading = cached.is_empty();
+        self.set_screen(Screen::ModePicker(PickerState {
+            modes: cached,
+            loading,
+            ..Default::default()
+        }));
+        self.kick_refresh();
     }
 
     pub async fn refresh_picker(&mut self) {
@@ -797,7 +820,7 @@ impl App {
                 },
                 FlashLevel::Warn,
             );
-            self.open_picker().await;
+            self.open_picker();
             return;
         }
 

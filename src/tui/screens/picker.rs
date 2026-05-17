@@ -60,7 +60,7 @@ pub async fn handle_preset_picker_key(app: &mut App, key: KeyEvent) {
     let Screen::PresetPicker(state) = &mut app.screen else { return };
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => {
-            open_picker(app).await;
+            app.open_picker();
         }
         KeyCode::Up | KeyCode::Char('k') => state.move_up(),
         KeyCode::Down | KeyCode::Char('j') => state.move_down(),
@@ -343,7 +343,3 @@ fn open_preset_picker(app: &mut App) {
     app.set_screen(Screen::PresetPicker(PresetPickerState::default()));
 }
 
-async fn open_picker(app: &mut App) {
-    app.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
-    app.refresh_picker().await;
-}

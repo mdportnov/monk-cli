@@ -117,7 +117,7 @@ pub async fn handle_confirm_key(app: &mut App, key: KeyEvent) {
         let Screen::ModeConfirm(confirm) = &mut app.screen else { return };
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                app.open_picker().await;
+                app.open_picker();
                 return;
             }
             KeyCode::Enter | KeyCode::Char(' ') => {

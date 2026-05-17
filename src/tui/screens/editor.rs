@@ -243,7 +243,7 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
     if ed.confirm_cancel {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
-                app.open_picker().await;
+                app.open_picker();
             }
             KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                 ed.confirm_cancel = false;
@@ -261,7 +261,7 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
             if ed.is_dirty() {
                 ed.confirm_cancel = true;
             } else {
-                app.open_picker().await;
+                app.open_picker();
             }
         }
         KeyCode::Tab => ed.next_field(),
