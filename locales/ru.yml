@@ -10,6 +10,7 @@ onboarding:
   press_enter: "Нажми Enter, чтобы продолжить"
   pick_language: "Выбери язык"
   pick_preset: "Выбери один или несколько стартовых профилей"
+  preset: "%{preset}"
   preset_deepwork: "Deep Work — соцсети, видео, новости"
   preset_no_chat: "No Chat — Slack, Discord, Telegram, Messenger"
   preset_no_news: "No News — новостные сайты, X/Twitter"

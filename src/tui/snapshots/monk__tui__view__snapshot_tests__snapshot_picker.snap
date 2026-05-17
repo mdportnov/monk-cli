@@ -6,8 +6,8 @@ expression: "render(&app, 100, 30)"
                                                                                                     
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ modes ──────────────────────────────────────────────╮╭ details ──────────────────────────────────╮
-│▶  ● deepwork         45m / 4h           ready ·defau││deepwork                                   │
-│   ● reading          45m / 4h           ready ·defau││                                           │
+│▶   ● deepwork  ★                         ready      ││deepwork                                   │
+│    ● reading  ★                          ready      ││                                           │
 │                                                     ││apps       1                               │
 │                                                     ││sites      1                               │
 │                                                     ││groups     1                               │

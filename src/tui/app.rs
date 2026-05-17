@@ -1,19 +1,24 @@
 use std::{io, time::Duration};
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
-    config::{Config, Hooks, Limits, Profile},
+    config::{Config, Profile},
     ipc::{self, HardModeInfo, ModeSummary, Request, Response},
     session::Session,
-    tui::widgets::{MultiSelectItem, MultiSelectList, TextInput},
+    tui::screens,
     Result,
 };
+
+pub use screens::editor::EditorState;
+pub use screens::confirm::ConfirmState;
+pub use screens::doctor::DoctorState;
+pub use screens::settings::SettingsState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItem {
@@ -122,95 +127,6 @@ impl PickerState {
     }
 }
 
-#[derive(Debug)]
-pub struct ConfirmState {
-    pub mode: ModeSummary,
-    pub duration: Duration,
-    pub requested: Duration,
-    pub hard: bool,
-    pub clamped: bool,
-    pub error: Option<String>,
-    pub detail: Option<crate::ipc::ModeDetailPayload>,
-}
-
-impl ConfirmState {
-    pub const STEP: Duration = Duration::from_secs(5 * 60);
-    pub const MIN_BOUND: Duration = Duration::from_secs(5 * 60);
-    pub const MAX_BOUND: Duration = Duration::from_secs(8 * 3600);
-
-    pub fn from_mode(mode: ModeSummary, default: Duration, hard_default: bool) -> Self {
-        let mut state = Self {
-            requested: default,
-            duration: default,
-            hard: hard_default,
-            clamped: false,
-            error: None,
-            mode,
-            detail: None,
-        };
-        state.reclamp();
-        state
-    }
-
-    pub fn reclamp(&mut self) {
-        let mut d = self.requested.max(Self::MIN_BOUND).min(Self::MAX_BOUND);
-        let ceiling = self.effective_max();
-        let mut clamped = false;
-        if d > ceiling {
-            d = ceiling;
-            clamped = true;
-        }
-        if let Some(min) = self.mode.limits.min_duration {
-            if d < min {
-                d = min;
-            }
-        }
-        self.duration = d;
-        self.clamped = clamped;
-    }
-
-    pub fn effective_max(&self) -> Duration {
-        self.mode.limits.max_duration.unwrap_or(Self::MAX_BOUND)
-    }
-
-    pub fn inc(&mut self) {
-        self.requested = self.requested.saturating_add(Self::STEP);
-        self.reclamp();
-    }
-
-    pub fn dec(&mut self) {
-        self.requested = self.requested.checked_sub(Self::STEP).unwrap_or(Self::MIN_BOUND);
-        self.reclamp();
-    }
-
-    pub fn blocked_reason(&self) -> Option<String> {
-        if let Some(rem) = self.mode.stats.cooldown_remaining {
-            return Some(format!("cooldown — available in {}", super::view::fmt_short(rem)));
-        }
-        if let (Some(_cap), Some(rem)) =
-            (self.mode.limits.daily_cap, self.mode.stats.daily_cap_remaining)
-        {
-            if rem.is_zero() {
-                return Some("daily cap reached — budget restores tomorrow".into());
-            }
-        }
-        None
-    }
-
-    pub fn slider_fraction(&self) -> f32 {
-        let max = self.effective_max().as_secs() as f32;
-        let min = Self::MIN_BOUND.as_secs() as f32;
-        let cur = self.duration.as_secs() as f32;
-        if max <= min {
-            return 1.0;
-        }
-        ((cur - min) / (max - min)).clamp(0.0, 1.0)
-    }
-
-    pub fn limits(&self) -> &Limits {
-        &self.mode.limits
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorField {
@@ -285,533 +201,12 @@ impl EditorField {
     }
 }
 
-pub const COLOR_PALETTE: &[(&str, &str)] = &[
-    ("none", "—"),
-    ("blue", "blue"),
-    ("cyan", "cyan"),
-    ("green", "green"),
-    ("amber", "amber"),
-    ("violet", "violet"),
-    ("red", "red"),
-];
 
-pub fn palette_index(color: &Option<String>) -> usize {
-    let key = color.as_deref().unwrap_or("none");
-    COLOR_PALETTE.iter().position(|(k, _)| *k == key).unwrap_or(0)
-}
 
-pub fn palette_value(idx: usize) -> Option<String> {
-    let (k, _) = COLOR_PALETTE[idx % COLOR_PALETTE.len()];
-    if k == "none" {
-        None
-    } else {
-        Some(k.to_string())
-    }
-}
 
-#[derive(Debug)]
-pub struct EditorState {
-    pub original_name: Option<String>,
-    pub name: TextInput,
-    pub color_idx: usize,
-    pub max: TextInput,
-    pub min: TextInput,
-    pub cooldown: TextInput,
-    pub daily_cap: TextInput,
-    pub schedule: TextInput,
-    pub sites: TextInput,
-    pub hook_before: TextInput,
-    pub hook_after: TextInput,
-    pub apps: MultiSelectList,
-    pub groups: MultiSelectList,
-    pub brands: MultiSelectList,
-    pub focus: EditorField,
-    pub snapshot: Profile,
-    pub error: Option<String>,
-    pub confirm_cancel: bool,
-}
-
-impl EditorState {
-    pub fn new_mode() -> Self {
-        let (apps, groups, brands) = load_picklists(&Profile::default());
-        let mut s = Self {
-            original_name: None,
-            name: TextInput::new(""),
-            color_idx: 0,
-            max: TextInput::new(""),
-            min: TextInput::new(""),
-            cooldown: TextInput::new(""),
-            daily_cap: TextInput::new(""),
-            schedule: TextInput::new(""),
-            sites: TextInput::new(""),
-            hook_before: TextInput::new(""),
-            hook_after: TextInput::new(""),
-            apps,
-            groups,
-            brands,
-            focus: EditorField::Name,
-            snapshot: Profile::default(),
-            error: None,
-            confirm_cancel: false,
-        };
-        s.sync_focus();
-        s
-    }
-
-    pub fn edit(name: String, profile: Profile) -> Self {
-        let (apps, groups, brands) = load_picklists(&profile);
-        let limits = profile.limits.clone();
-        let color_idx = palette_index(&profile.color);
-        let mut s = Self {
-            original_name: Some(name.clone()),
-            name: TextInput::new(name),
-            color_idx,
-            max: TextInput::new(fmt_opt_humantime(limits.max_duration)),
-            min: TextInput::new(fmt_opt_humantime(limits.min_duration)),
-            cooldown: TextInput::new(fmt_opt_humantime(limits.cooldown)),
-            daily_cap: TextInput::new(fmt_opt_humantime(limits.daily_cap)),
-            schedule: TextInput::new(format_schedule_spec(profile.schedule.as_ref())),
-            sites: TextInput::new(profile.sites.join(", ")),
-            hook_before: TextInput::new(profile.hooks.before.join(" && ")),
-            hook_after: TextInput::new(profile.hooks.after.join(" && ")),
-            apps,
-            groups,
-            brands,
-            focus: EditorField::Name,
-            snapshot: profile,
-            error: None,
-            confirm_cancel: false,
-        };
-        s.sync_focus();
-        s
-    }
-
-    pub fn input_mut(&mut self, f: EditorField) -> Option<&mut TextInput> {
-        match f {
-            EditorField::Name => Some(&mut self.name),
-            EditorField::Max => Some(&mut self.max),
-            EditorField::Min => Some(&mut self.min),
-            EditorField::Cooldown => Some(&mut self.cooldown),
-            EditorField::DailyCap => Some(&mut self.daily_cap),
-            EditorField::Schedule => Some(&mut self.schedule),
-            EditorField::Sites => Some(&mut self.sites),
-            EditorField::HookBefore => Some(&mut self.hook_before),
-            EditorField::HookAfter => Some(&mut self.hook_after),
-            _ => None,
-        }
-    }
-
-    pub fn next_field(&mut self) {
-        self.clear_picker_filters();
-        let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
-        self.focus = EditorField::ORDER[(idx + 1) % EditorField::ORDER.len()];
-        self.sync_focus();
-    }
-
-    pub fn prev_field(&mut self) {
-        self.clear_picker_filters();
-        let idx = EditorField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
-        self.focus =
-            EditorField::ORDER[(idx + EditorField::ORDER.len() - 1) % EditorField::ORDER.len()];
-        self.sync_focus();
-    }
-
-    fn clear_picker_filters(&mut self) {
-        self.apps.filter_clear();
-        self.groups.filter_clear();
-        self.brands.filter_clear();
-    }
-
-    fn sync_focus(&mut self) {
-        let focus = self.focus;
-        for f in EditorField::ORDER {
-            let is = f == focus;
-            if let Some(inp) = self.input_mut(f) {
-                inp.focused = is;
-            }
-        }
-    }
-
-    pub fn build_profile(&self) -> std::result::Result<(String, Profile), String> {
-        let name = self.name.value.trim().to_string();
-        if name.is_empty() {
-            return Err("name is required".into());
-        }
-        if name.chars().count() > 30 {
-            return Err("name must be ≤ 30 chars".into());
-        }
-        let limits = Limits {
-            max_duration: parse_opt_humantime(&self.max)?,
-            min_duration: parse_opt_humantime(&self.min)?,
-            cooldown: parse_opt_humantime(&self.cooldown)?,
-            daily_cap: parse_opt_humantime(&self.daily_cap)?,
-        };
-        if let (Some(mn), Some(mx)) = (limits.min_duration, limits.max_duration) {
-            if mn > mx {
-                return Err("min must be ≤ max".into());
-            }
-        }
-        let sites: Vec<String> = self
-            .sites
-            .value
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect();
-        let hooks = Hooks {
-            before: split_cmds(&self.hook_before.value),
-            after: split_cmds(&self.hook_after.value),
-        };
-        let profile = Profile {
-            sites,
-            site_groups: self.groups.selected_ids(),
-            brands: self.brands.selected_ids(),
-            apps: self.apps.selected_ids(),
-            allow: self.snapshot.allow.clone(),
-            hooks,
-            limits,
-            color: palette_value(self.color_idx),
-            schedule: parse_schedule_spec(&self.schedule.value).map_err(|e| e.to_string())?,
-        };
-        Ok((name, profile))
-    }
-
-    pub fn is_dirty(&self) -> bool {
-        match self.build_profile() {
-            Ok((name, p)) => {
-                if self.original_name.as_deref() != Some(name.as_str())
-                    && self.original_name.is_some()
-                {
-                    return true;
-                }
-                if self.original_name.is_none() {
-                    return true;
-                }
-                !profile_eq(&p, &self.snapshot)
-            }
-            Err(_) => true,
-        }
-    }
-}
-
-fn fmt_opt_humantime(d: Option<Duration>) -> String {
-    match d {
-        Some(v) => humantime::format_duration(v).to_string(),
-        None => String::new(),
-    }
-}
-
-fn parse_opt_humantime(input: &TextInput) -> std::result::Result<Option<Duration>, String> {
-    let raw = input.value.trim();
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    humantime::parse_duration(raw).map(Some).map_err(|e| format!("invalid duration: {e}"))
-}
-
-fn split_cmds(raw: &str) -> Vec<String> {
-    raw.split("&&").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
-}
-
-fn profile_eq(a: &Profile, b: &Profile) -> bool {
-    a.sites == b.sites
-        && a.site_groups == b.site_groups
-        && a.brands == b.brands
-        && a.apps == b.apps
-        && a.allow == b.allow
-        && a.hooks.before == b.hooks.before
-        && a.hooks.after == b.hooks.after
-        && a.limits.max_duration == b.limits.max_duration
-        && a.limits.min_duration == b.limits.min_duration
-        && a.limits.cooldown == b.limits.cooldown
-        && a.limits.daily_cap == b.limits.daily_cap
-        && a.color == b.color
-        && a.schedule == b.schedule
-}
-
-pub fn format_schedule_spec(s: Option<&crate::config::Schedule>) -> String {
-    let Some(s) = s else { return String::new() };
-    use crate::config::Weekday::*;
-    let order = [Mon, Tue, Wed, Thu, Fri, Sat, Sun];
-    let labels = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-    let days: String = order
-        .iter()
-        .zip(labels.iter())
-        .filter(|(d, _)| s.days.contains(d))
-        .map(|(_, l)| *l)
-        .collect::<Vec<_>>()
-        .join(",");
-    let prefix = if s.enabled { "" } else { "off " };
-    let tz = if s.tz == "local" { String::new() } else { format!(" {}", s.tz) };
-    format!("{prefix}{days} {}-{}{tz}", s.start, s.end)
-}
-
-pub fn parse_schedule_spec(
-    raw: &str,
-) -> std::result::Result<Option<crate::config::Schedule>, String> {
-    use crate::config::{Schedule, Weekday};
-    let s = raw.trim();
-    if s.is_empty() {
-        return Ok(None);
-    }
-    let mut tokens: Vec<&str> = s.split_whitespace().collect();
-    let enabled = if tokens.first().is_some_and(|t| t.eq_ignore_ascii_case("off")) {
-        tokens.remove(0);
-        false
-    } else {
-        true
-    };
-    if tokens.len() < 2 {
-        return Err("expected `<days> <start>-<end> [tz]`".into());
-    }
-    let days_tok = tokens.remove(0);
-    let window = tokens.remove(0);
-    let tz = tokens.first().map(|s| (*s).to_string()).unwrap_or_else(|| "local".into());
-
-    let (start, end) =
-        window.split_once('-').ok_or_else(|| "window must be HH:MM-HH:MM".to_string())?;
-    let parse_day = |t: &str| -> std::result::Result<Weekday, String> {
-        Ok(match t.to_ascii_lowercase().as_str() {
-            "mon" | "mo" => Weekday::Mon,
-            "tue" | "tu" => Weekday::Tue,
-            "wed" | "we" => Weekday::Wed,
-            "thu" | "th" => Weekday::Thu,
-            "fri" | "fr" => Weekday::Fri,
-            "sat" | "sa" => Weekday::Sat,
-            "sun" | "su" => Weekday::Sun,
-            other => return Err(format!("unknown day `{other}`")),
-        })
-    };
-    let order = [
-        Weekday::Mon,
-        Weekday::Tue,
-        Weekday::Wed,
-        Weekday::Thu,
-        Weekday::Fri,
-        Weekday::Sat,
-        Weekday::Sun,
-    ];
-    let mut days: Vec<Weekday> = Vec::new();
-    let lower = days_tok.to_ascii_lowercase();
-    match lower.as_str() {
-        "daily" | "everyday" | "all" => days.extend(order),
-        "weekdays" | "workdays" => days.extend(&order[..5]),
-        "weekends" => days.extend(&order[5..]),
-        _ => {
-            for part in lower.split(',') {
-                if let Some((a, b)) = part.split_once('-') {
-                    let from = parse_day(a)?;
-                    let to = parse_day(b)?;
-                    let i = order.iter().position(|d| *d == from).unwrap();
-                    let j = order.iter().position(|d| *d == to).unwrap();
-                    if i <= j {
-                        days.extend(&order[i..=j]);
-                    } else {
-                        return Err("day range must be ascending".into());
-                    }
-                } else {
-                    days.push(parse_day(part)?);
-                }
-            }
-        }
-    }
-    days.sort_by_key(|d| order.iter().position(|x| x == d).unwrap());
-    days.dedup();
-    let sch = Schedule { enabled, days, start: start.into(), end: end.into(), tz };
-    sch.validate().map_err(|e| e.to_string())?;
-    Ok(Some(sch))
-}
-
-fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, MultiSelectList) {
-    let apps_items = crate::apps::load_or_scan(false)
-        .map(|cache| {
-            cache
-                .apps
-                .into_iter()
-                .map(|a| MultiSelectItem::new(a.id.clone(), format!("{} [{}]", a.label, a.id)))
-                .collect()
-        })
-        .unwrap_or_default();
-    let groups_items = crate::sites::all_groups()
-        .map(|gs| {
-            gs.into_iter()
-                .map(|g| {
-                    MultiSelectItem::new(
-                        g.qualified(),
-                        format!("{} ({} hosts)", g.qualified(), g.hosts.len()),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let brands_items = crate::brands::all_brands()
-        .map(|bs| {
-            bs.into_iter()
-                .map(|b| {
-                    MultiSelectItem::new(
-                        b.qualified(),
-                        format!(
-                            "{} {} [{}]",
-                            b.icon.as_deref().unwrap_or("●"),
-                            b.name,
-                            b.qualified()
-                        ),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    (
-        MultiSelectList::new(apps_items, &profile.apps),
-        MultiSelectList::new(groups_items, &profile.site_groups),
-        MultiSelectList::new(brands_items, &profile.brands),
-    )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsField {
-    DefaultProfile,
-    DefaultDuration,
-    HardMode,
-    Autostart,
-    Locale,
-    PanicDelay,
-    TamperPenalty,
-    Reset,
-}
-
-impl SettingsField {
-    pub const ORDER: [SettingsField; 8] = [
-        SettingsField::DefaultProfile,
-        SettingsField::DefaultDuration,
-        SettingsField::HardMode,
-        SettingsField::Autostart,
-        SettingsField::Locale,
-        SettingsField::PanicDelay,
-        SettingsField::TamperPenalty,
-        SettingsField::Reset,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            SettingsField::DefaultProfile => "default profile",
-            SettingsField::DefaultDuration => "default duration",
-            SettingsField::HardMode => "hard mode by default",
-            SettingsField::Autostart => "autostart at login",
-            SettingsField::Locale => "locale",
-            SettingsField::PanicDelay => "panic delay",
-            SettingsField::TamperPenalty => "tamper penalty",
-            SettingsField::Reset => "reset all data",
-        }
-    }
-
-    pub fn help(self) -> &'static str {
-        match self {
-            SettingsField::DefaultProfile => "mode used when you press Start",
-            SettingsField::DefaultDuration => "e.g. 25m, 50m, 1h30m",
-            SettingsField::HardMode => "space to toggle",
-            SettingsField::Autostart => "space to toggle",
-            SettingsField::Locale => "← → en / ru",
-            SettingsField::PanicDelay => "delay before panic releases hard-mode",
-            SettingsField::TamperPenalty => "time added to session on tamper",
-            SettingsField::Reset => "enter to wipe config and audit log",
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct SettingsState {
-    pub original: crate::config::General,
-    pub default_profile: TextInput,
-    pub default_duration: TextInput,
-    pub hard_mode: bool,
-    pub autostart: bool,
-    pub locale_idx: usize,
-    pub panic_delay: TextInput,
-    pub tamper_penalty: TextInput,
-    pub focus: SettingsField,
-    pub error: Option<String>,
-    pub confirm_reset: bool,
-}
 
 pub const LOCALES: &[&str] = &["en", "ru"];
 
-impl SettingsState {
-    pub fn from_general(g: crate::config::General) -> Self {
-        let locale_idx =
-            g.locale.as_deref().and_then(|l| LOCALES.iter().position(|x| *x == l)).unwrap_or(0);
-        let mut s = Self {
-            default_profile: TextInput::new(g.default_profile.clone()),
-            default_duration: TextInput::new(
-                humantime::format_duration(g.default_duration).to_string(),
-            ),
-            hard_mode: g.hard_mode,
-            autostart: g.autostart,
-            locale_idx,
-            panic_delay: TextInput::new(humantime::format_duration(g.panic_delay).to_string()),
-            tamper_penalty: TextInput::new(
-                humantime::format_duration(g.tamper_penalty).to_string(),
-            ),
-            focus: SettingsField::DefaultProfile,
-            error: None,
-            confirm_reset: false,
-            original: g,
-        };
-        s.sync_focus();
-        s
-    }
-
-    pub fn input_mut(&mut self, f: SettingsField) -> Option<&mut TextInput> {
-        match f {
-            SettingsField::DefaultProfile => Some(&mut self.default_profile),
-            SettingsField::DefaultDuration => Some(&mut self.default_duration),
-            SettingsField::PanicDelay => Some(&mut self.panic_delay),
-            SettingsField::TamperPenalty => Some(&mut self.tamper_penalty),
-            _ => None,
-        }
-    }
-
-    pub fn next_field(&mut self) {
-        let idx = SettingsField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
-        self.focus = SettingsField::ORDER[(idx + 1) % SettingsField::ORDER.len()];
-        self.sync_focus();
-    }
-
-    pub fn prev_field(&mut self) {
-        let idx = SettingsField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
-        self.focus = SettingsField::ORDER
-            [(idx + SettingsField::ORDER.len() - 1) % SettingsField::ORDER.len()];
-        self.sync_focus();
-    }
-
-    fn sync_focus(&mut self) {
-        let focus = self.focus;
-        for f in SettingsField::ORDER {
-            let is = f == focus;
-            if let Some(inp) = self.input_mut(f) {
-                inp.focused = is;
-            }
-        }
-    }
-
-    pub fn build(&self) -> std::result::Result<crate::config::General, String> {
-        let mut g = self.original.clone();
-        g.default_profile = self.default_profile.value.trim().to_string();
-        if g.default_profile.is_empty() {
-            return Err("default profile is required".into());
-        }
-        g.default_duration = humantime::parse_duration(self.default_duration.value.trim())
-            .map_err(|e| format!("default duration: {e}"))?;
-        g.panic_delay = humantime::parse_duration(self.panic_delay.value.trim())
-            .map_err(|e| format!("panic delay: {e}"))?;
-        g.tamper_penalty = humantime::parse_duration(self.tamper_penalty.value.trim())
-            .map_err(|e| format!("tamper penalty: {e}"))?;
-        g.hard_mode = self.hard_mode;
-        g.autostart = self.autostart;
-        g.locale = Some(LOCALES[self.locale_idx].to_string());
-        Ok(g)
-    }
-}
 
 #[derive(Debug)]
 pub enum Screen {
@@ -857,55 +252,6 @@ impl PresetPickerState {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct DoctorState {
-    pub loading: bool,
-    pub report: Option<crate::doctor::Report>,
-    pub order: Vec<usize>,
-    pub selected: usize,
-}
-
-impl DoctorState {
-    pub fn set_report(&mut self, report: crate::doctor::Report) {
-        self.order = report.display_order();
-        self.report = Some(report);
-        self.selected = 0;
-    }
-
-    pub fn move_up(&mut self) {
-        if self.order.is_empty() {
-            return;
-        }
-        if self.selected == 0 {
-            self.selected = self.order.len() - 1;
-        } else {
-            self.selected -= 1;
-        }
-    }
-
-    pub fn move_down(&mut self) {
-        if self.order.is_empty() {
-            return;
-        }
-        self.selected = (self.selected + 1) % self.order.len();
-    }
-
-    pub fn jump_to_first_failure(&mut self) {
-        let Some(r) = &self.report else { return };
-        for (pos, &idx) in self.order.iter().enumerate() {
-            if r.checks[idx].status == crate::doctor::Status::Fail {
-                self.selected = pos;
-                return;
-            }
-        }
-    }
-
-    pub fn current(&self) -> Option<&crate::doctor::Check> {
-        let r = self.report.as_ref()?;
-        let idx = *self.order.get(self.selected)?;
-        r.checks.get(idx)
-    }
-}
 
 impl Default for Screen {
     fn default() -> Self {
@@ -1023,7 +369,7 @@ impl App {
         self.last_effect_tick = Some(std::time::Instant::now());
     }
 
-    fn set_screen(&mut self, screen: Screen) {
+    pub fn set_screen(&mut self, screen: Screen) {
         self.screen = screen;
         self.trigger_enter_effect();
     }
@@ -1069,85 +415,25 @@ impl App {
             return;
         }
         match &self.screen {
-            Screen::Home(_) => self.handle_home_key(key).await,
-            Screen::ModePicker(_) => self.handle_picker_key(key).await,
-            Screen::ModeConfirm(_) => self.handle_confirm_key(key).await,
-            Screen::ModeEditor(_) => self.handle_editor_key(key).await,
-            Screen::Settings(_) => self.handle_settings_key(key).await,
-            Screen::Doctor(_) => self.handle_doctor_key(key).await,
-            Screen::PresetPicker(_) => self.handle_preset_picker_key(key).await,
+            Screen::Home(_) => screens::home::handle_home_key(self, key).await,
+            Screen::ModePicker(_) => screens::picker::handle_picker_key(self, key).await,
+            Screen::ModeConfirm(_) => screens::confirm::handle_confirm_key(self, key).await,
+            Screen::ModeEditor(_) => screens::editor::handle_editor_key(self, key).await,
+            Screen::Settings(_) => screens::settings::handle_settings_key(self, key).await,
+            Screen::Doctor(_) => screens::doctor::handle_doctor_key(self, key).await,
+            Screen::PresetPicker(_) => screens::picker::handle_preset_picker_key(self, key).await,
         }
     }
 
-    async fn handle_home_key(&mut self, key: KeyEvent) {
-        let Screen::Home(home) = &mut self.screen else { return };
-        match key.code {
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Esc => self.should_quit = true,
-            KeyCode::Up | KeyCode::Char('k') => home.move_up(),
-            KeyCode::Down | KeyCode::Char('j') => home.move_down(),
-            KeyCode::Enter | KeyCode::Char(' ') => self.activate_home().await,
-            KeyCode::Char('m') => self.open_picker().await,
-            KeyCode::Char('s') => {
-                home.selected = 0;
-                self.activate_home().await;
-            }
-            KeyCode::Char('x') => {
-                home.selected = 1;
-                self.activate_home().await;
-            }
-            KeyCode::Char('p') => {
-                home.selected = 2;
-                self.activate_home().await;
-            }
-            KeyCode::Char(c @ '1'..='9') => {
-                let idx = (c as u8 - b'1') as usize;
-                self.quick_start(idx).await;
-            }
-            _ => {}
-        }
-    }
 
-    async fn handle_picker_key(&mut self, key: KeyEvent) {
-        let Screen::ModePicker(picker) = &mut self.screen else { return };
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.set_screen(Screen::Home(HomeState::default()));
-            }
-            KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
-            KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
-            KeyCode::Char('r') => self.refresh_picker().await,
-            KeyCode::Enter | KeyCode::Char(' ') => self.open_confirm_from_picker().await,
-            KeyCode::Char('n') => self.open_editor_new(),
-            KeyCode::Char('a') => self.open_preset_picker(),
-            KeyCode::Char('e') => self.open_editor_edit(),
-            KeyCode::Char('d') => self.delete_current_mode().await,
-            _ => {}
-        }
-    }
 
-    fn open_editor_new(&mut self) {
-        self.set_screen(Screen::ModeEditor(Box::new(EditorState::new_mode())));
-    }
 
-    fn open_preset_picker(&mut self) {
+    pub fn open_preset_picker(&mut self) {
         self.set_screen(Screen::PresetPicker(PresetPickerState::default()));
     }
 
-    async fn handle_preset_picker_key(&mut self, key: KeyEvent) {
-        let Screen::PresetPicker(state) = &mut self.screen else { return };
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.open_picker().await;
-            }
-            KeyCode::Up | KeyCode::Char('k') => state.move_up(),
-            KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-            KeyCode::Enter | KeyCode::Char(' ') => self.instantiate_preset().await,
-            _ => {}
-        }
-    }
 
-    async fn instantiate_preset(&mut self) {
+    pub async fn instantiate_preset(&mut self) {
         let preset_name = {
             let Screen::PresetPicker(state) = &self.screen else { return };
             match state.current() {
@@ -1170,7 +456,7 @@ impl App {
         self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(unique, profile))));
     }
 
-    fn open_editor_edit(&mut self) {
+    pub fn open_editor_edit(&mut self) {
         let Screen::ModePicker(picker) = &self.screen else { return };
         let Some(mode) = picker.current() else { return };
         let cfg = match Config::load() {
@@ -1189,7 +475,7 @@ impl App {
         ))));
     }
 
-    async fn delete_current_mode(&mut self) {
+    pub async fn delete_current_mode(&mut self) {
         let name = {
             let Screen::ModePicker(picker) = &self.screen else { return };
             match picker.current() {
@@ -1219,70 +505,8 @@ impl App {
         }
     }
 
-    async fn handle_editor_key(&mut self, key: KeyEvent) {
-        let Screen::ModeEditor(ed) = &mut self.screen else { return };
-        if ed.confirm_cancel {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    self.open_picker().await;
-                }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    ed.confirm_cancel = false;
-                }
-                _ => {}
-            }
-            return;
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
-            self.save_editor().await;
-            return;
-        }
-        match key.code {
-            KeyCode::Esc => {
-                if ed.is_dirty() {
-                    ed.confirm_cancel = true;
-                } else {
-                    self.open_picker().await;
-                }
-            }
-            KeyCode::Tab => ed.next_field(),
-            KeyCode::BackTab => ed.prev_field(),
-            _ => {
-                let focus = ed.focus;
-                match focus {
-                    EditorField::Apps => {
-                        ed.apps.handle(key);
-                    }
-                    EditorField::Groups => {
-                        ed.groups.handle(key);
-                    }
-                    EditorField::Brands => {
-                        ed.brands.handle(key);
-                    }
-                    EditorField::Color => {
-                        let n = COLOR_PALETTE.len();
-                        match key.code {
-                            KeyCode::Left | KeyCode::Char('h') => {
-                                ed.color_idx = (ed.color_idx + n - 1) % n;
-                            }
-                            KeyCode::Right | KeyCode::Char('l') => {
-                                ed.color_idx = (ed.color_idx + 1) % n;
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {
-                        if let Some(input) = ed.input_mut(focus) {
-                            input.handle(key);
-                        }
-                    }
-                }
-                ed.error = None;
-            }
-        }
-    }
 
-    async fn save_editor(&mut self) {
+    pub async fn save_editor(&mut self) {
         let (name, profile) = {
             let Screen::ModeEditor(ed) = &mut self.screen else { return };
             match ed.build_profile() {
@@ -1316,7 +540,7 @@ impl App {
         }
     }
 
-    async fn open_confirm_from_picker(&mut self) {
+    pub async fn open_confirm_from_picker(&mut self) {
         let Screen::ModePicker(picker) = &self.screen else { return };
         let Some(mode) = picker.current().cloned() else { return };
         let cfg = Config::load().ok();
@@ -1334,37 +558,8 @@ impl App {
         self.set_screen(Screen::ModeConfirm(Box::new(state)));
     }
 
-    async fn handle_confirm_key(&mut self, key: KeyEvent) {
-        let mut clamped = false;
-        {
-            let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    self.open_picker().await;
-                    return;
-                }
-                KeyCode::Left | KeyCode::Char('h') => {
-                    confirm.dec();
-                    clamped = confirm.clamped;
-                }
-                KeyCode::Right | KeyCode::Char('l') => {
-                    confirm.inc();
-                    clamped = confirm.clamped;
-                }
-                KeyCode::Char('H') => confirm.hard = !confirm.hard,
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    self.start_from_confirm().await;
-                    return;
-                }
-                _ => {}
-            }
-        }
-        if clamped {
-            self.trigger_clamp_effect();
-        }
-    }
 
-    async fn start_from_confirm(&mut self) {
+    pub async fn start_from_confirm(&mut self) {
         let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
         if let Some(reason) = confirm.blocked_reason() {
             confirm.error = Some(reason);
@@ -1403,7 +598,7 @@ impl App {
         self.kick_refresh();
     }
 
-    async fn open_doctor(&mut self) {
+    pub async fn open_doctor(&mut self) {
         if !matches!(self.screen, Screen::Doctor(_)) {
             self.set_screen(Screen::Doctor(Box::new(DoctorState {
                 loading: true,
@@ -1419,58 +614,7 @@ impl App {
         }
     }
 
-    async fn handle_doctor_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
-                self.set_screen(Screen::Home(HomeState::default()));
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if let Screen::Doctor(st) = &mut self.screen {
-                    st.move_up();
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if let Screen::Doctor(st) = &mut self.screen {
-                    st.move_down();
-                }
-            }
-            KeyCode::Char('f') => {
-                if let Screen::Doctor(st) = &mut self.screen {
-                    st.jump_to_first_failure();
-                }
-            }
-            KeyCode::Char('r') => self.open_doctor().await,
-            KeyCode::Char(c) => {
-                let action = if let Screen::Doctor(st) = &self.screen {
-                    st.current().and_then(|ch| ch.actions.iter().find(|a| a.key == c).copied())
-                } else {
-                    None
-                };
-                if let Some(action) = action {
-                    let kind = action.kind;
-                    match kind.run() {
-                        Ok(msg) => self.globals.set_flash(msg, FlashLevel::Success),
-                        Err(e) => self.globals.set_flash(e, FlashLevel::Error),
-                    }
-                    use crate::doctor::ActionKind;
-                    if matches!(kind, ActionKind::StartDaemon | ActionKind::StopDaemon) {
-                        for _ in 0..20 {
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            let want_up = matches!(kind, ActionKind::StartDaemon);
-                            let up = ipc::send(&Request::Ping).await.is_ok();
-                            if up == want_up {
-                                break;
-                            }
-                        }
-                    }
-                    self.open_doctor().await;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    async fn open_settings(&mut self) {
+    pub async fn open_settings(&mut self) {
         match ipc::send(&Request::GetGeneral).await {
             Ok(Response::General(g)) => {
                 self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(g))));
@@ -1488,76 +632,10 @@ impl App {
         }
     }
 
-    async fn handle_settings_key(&mut self, key: KeyEvent) {
-        let Screen::Settings(st) = &mut self.screen else { return };
-        if st.confirm_reset {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    st.confirm_reset = false;
-                    self.reset_all().await;
-                }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    st.confirm_reset = false;
-                }
-                _ => {}
-            }
-            return;
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
-            self.save_settings().await;
-            return;
-        }
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.set_screen(Screen::Home(HomeState::default()));
-            }
-            KeyCode::Tab | KeyCode::Down => st.next_field(),
-            KeyCode::BackTab | KeyCode::Up => st.prev_field(),
-            _ => {
-                let focus = st.focus;
-                match focus {
-                    SettingsField::HardMode => {
-                        if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
-                            st.hard_mode = !st.hard_mode;
-                        }
-                    }
-                    SettingsField::Autostart => {
-                        if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
-                            st.autostart = !st.autostart;
-                        }
-                    }
-                    SettingsField::Locale => {
-                        let n = LOCALES.len();
-                        match key.code {
-                            KeyCode::Left | KeyCode::Char('h') => {
-                                st.locale_idx = (st.locale_idx + n - 1) % n;
-                            }
-                            KeyCode::Right | KeyCode::Char('l') => {
-                                st.locale_idx = (st.locale_idx + 1) % n;
-                            }
-                            _ => {}
-                        }
-                    }
-                    SettingsField::Reset => {
-                        if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
-                            st.confirm_reset = true;
-                        }
-                    }
-                    _ => {
-                        if let Some(input) = st.input_mut(focus) {
-                            input.handle(key);
-                        }
-                    }
-                }
-                st.error = None;
-            }
-        }
-    }
-
-    async fn save_settings(&mut self) {
+    pub async fn save_settings(&mut self) {
         let general = {
             let Screen::Settings(st) = &mut self.screen else { return };
-            match st.build() {
+            match st.build_general() {
                 Ok(g) => g,
                 Err(e) => {
                     st.error = Some(e);
@@ -1591,7 +669,7 @@ impl App {
         }
     }
 
-    async fn reset_all(&mut self) {
+    pub async fn reset_all(&mut self) {
         match ipc::send(&Request::ResetAll).await {
             Ok(Response::Ok) => {
                 self.globals.set_flash(
@@ -1608,12 +686,12 @@ impl App {
         }
     }
 
-    async fn open_picker(&mut self) {
+    pub async fn open_picker(&mut self) {
         self.set_screen(Screen::ModePicker(PickerState { loading: true, ..Default::default() }));
         self.refresh_picker().await;
     }
 
-    async fn refresh_picker(&mut self) {
+    pub async fn refresh_picker(&mut self) {
         let result = ipc::send(&Request::ListModes).await;
         let Screen::ModePicker(picker) = &mut self.screen else { return };
         picker.loading = false;
@@ -1631,21 +709,8 @@ impl App {
         }
     }
 
-    async fn activate_home(&mut self) {
-        let Screen::Home(home) = &self.screen else { return };
-        match home.selected_item() {
-            MenuItem::Start => self.do_start().await,
-            MenuItem::Stop => self.do_stop().await,
-            MenuItem::Panic => self.do_panic().await,
-            MenuItem::Profiles => self.open_picker().await,
-            MenuItem::AddPreset => self.open_preset_picker(),
-            MenuItem::Settings => self.open_settings().await,
-            MenuItem::Doctor => self.open_doctor().await,
-            MenuItem::Quit => self.should_quit = true,
-        }
-    }
 
-    async fn quick_start(&mut self, idx: usize) {
+    pub async fn quick_start(&mut self, idx: usize) {
         let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
             self.globals.set_flash(
                 crate::i18n::t!("tui.flash.no_slot", slot = (idx + 1)).to_string(),
@@ -1696,7 +761,7 @@ impl App {
         self.kick_refresh();
     }
 
-    async fn do_start(&mut self) {
+    pub async fn do_start(&mut self) {
         let cfg = match Config::load() {
             Ok(c) => c,
             Err(e) => {
@@ -1729,7 +794,7 @@ impl App {
         self.kick_refresh();
     }
 
-    async fn do_stop(&mut self) {
+    pub async fn do_stop(&mut self) {
         match ipc::send(&Request::Stop { id: None }).await {
             Ok(Response::Session(s)) => self.globals.set_flash(
                 crate::i18n::t!("tui.flash.stopped", profile = s.profile).to_string(),
@@ -1749,7 +814,7 @@ impl App {
         self.kick_refresh();
     }
 
-    async fn do_panic(&mut self) {
+    pub async fn do_panic(&mut self) {
         match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
@@ -1963,7 +1028,7 @@ async fn refresh_once() -> Snapshot {
 
 #[cfg(test)]
 mod schedule_spec_tests {
-    use super::{format_schedule_spec, parse_schedule_spec};
+    use crate::tui::screens::editor::{format_schedule_spec, parse_schedule_spec};
 
     #[test]
     fn round_trip() {
