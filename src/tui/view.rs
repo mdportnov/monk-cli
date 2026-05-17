@@ -38,6 +38,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Settings(st) => screens::settings::draw_settings(f, app, st.as_ref()),
         Screen::Doctor(st) => screens::doctor::draw_doctor(f, app, st.as_ref()),
         Screen::PresetPicker(state) => screens::picker::draw_preset_picker(f, app, state),
+        Screen::Panic(st) => {
+            // Render the home screen behind the modal so context remains
+            // visible (timer, blocklist, etc.).
+            let home = crate::tui::app::HomeState::default();
+            screens::home::draw_home(f, app, &home);
+            screens::panic::draw_panic(f, app, st.as_ref());
+        }
     }
     if app.globals.help_open {
         draw_help_overlay(f, app);
@@ -117,6 +124,16 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  f            jump to first failure"),
             Line::from("  r            rerun"),
             Line::from("  esc · q      back to home"),
+        ],
+        Screen::Panic(_) => vec![
+            Line::from(Span::styled(
+                "panic",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("  type phrase    confirm release"),
+            Line::from("  enter          submit"),
+            Line::from("  esc            cancel"),
         ],
         Screen::PresetPicker(_) => vec![
             Line::from(Span::styled(

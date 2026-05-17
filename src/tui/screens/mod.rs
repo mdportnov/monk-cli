@@ -5,3 +5,4 @@ pub mod editor;
 pub mod confirm;
 pub mod settings;
 pub mod doctor;
+pub mod panic;

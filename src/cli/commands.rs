@@ -124,6 +124,8 @@ pub async fn status() -> Result<()> {
             }
             if let Some(h) = hard_mode {
                 println!("hard mode: on ({} remaining)", humantime::format_duration(h.remaining));
+                println!("panic phrase: {}", h.panic_phrase);
+                println!("    invoke: monk panic \"{}\"", h.panic_phrase);
                 if let Some(at) = h.panic_releases_at {
                     println!("panic releases at: {}", at.to_rfc3339());
                 }

@@ -217,6 +217,7 @@ pub enum Screen {
     Settings(Box<SettingsState>),
     Doctor(Box<DoctorState>),
     PresetPicker(PresetPickerState),
+    Panic(Box<screens::panic::PanicState>),
 }
 
 #[derive(Debug)]
@@ -408,7 +409,7 @@ impl App {
         if matches!(key.code, KeyCode::Char('?'))
             && !matches!(
                 self.screen,
-                Screen::ModeEditor(_) | Screen::Settings(_) | Screen::Doctor(_)
+                Screen::ModeEditor(_) | Screen::Settings(_) | Screen::Doctor(_) | Screen::Panic(_)
             )
         {
             self.globals.help_open = true;
@@ -422,6 +423,7 @@ impl App {
             Screen::Settings(_) => screens::settings::handle_settings_key(self, key).await,
             Screen::Doctor(_) => screens::doctor::handle_doctor_key(self, key).await,
             Screen::PresetPicker(_) => screens::picker::handle_preset_picker_key(self, key).await,
+            Screen::Panic(_) => screens::panic::handle_panic_key(self, key).await,
         }
     }
 
@@ -814,8 +816,26 @@ impl App {
         self.kick_refresh();
     }
 
+    /// Open the panic-confirm modal. The phrase comes from HardModeInfo
+    /// (already in our snapshot) so the user sees exactly what to type.
+    /// If there's no hard mode active, surface that as a flash and stay on
+    /// the current screen — panic only makes sense for hard sessions.
     pub async fn do_panic(&mut self) {
-        match ipc::send(&Request::Panic { phrase: String::new(), cancel: false }).await {
+        let Some(hard) = self.globals.hard_mode.clone() else {
+            self.globals.set_flash(
+                crate::i18n::t!("tui.flash.no_hard_session").to_string(),
+                FlashLevel::Warn,
+            );
+            return;
+        };
+        let st = screens::panic::PanicState::new(hard.panic_phrase.clone());
+        self.set_screen(Screen::Panic(Box::new(st)));
+    }
+
+    /// Send the user-typed phrase to the daemon. Called from the panic
+    /// screen after local validation passes.
+    pub async fn submit_panic(&mut self, phrase: String) {
+        match ipc::send(&Request::Panic { phrase, cancel: false }).await {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
                     Some(at) => crate::i18n::t!("tui.flash.panic_release_at", at = at.to_rfc3339())
@@ -823,8 +843,15 @@ impl App {
                     None => crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
                 };
                 self.globals.set_flash(msg, FlashLevel::Success);
+                self.set_screen(Screen::Home(HomeState::default()));
             }
-            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
+            Ok(Response::Error { message }) => {
+                if let Screen::Panic(st) = &mut self.screen {
+                    st.error = Some(message);
+                } else {
+                    self.globals.set_flash(message, FlashLevel::Info);
+                }
+            }
             Ok(_) => self.globals.set_flash(
                 crate::i18n::t!("tui.flash.no_hard_session").to_string(),
                 FlashLevel::Warn,
