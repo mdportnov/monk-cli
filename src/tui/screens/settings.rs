@@ -53,7 +53,7 @@ impl SettingsField {
 
     pub fn help(self) -> &'static str {
         match self {
-            SettingsField::DefaultProfile => "mode used when you press Start",
+            SettingsField::DefaultProfile => "← → cycle through your modes",
             SettingsField::DefaultDuration => "e.g. 25m, 50m, 1h30m",
             SettingsField::HardMode => "space to toggle",
             SettingsField::Autostart => "space to toggle",
@@ -68,7 +68,11 @@ impl SettingsField {
 #[derive(Debug)]
 pub struct SettingsState {
     pub original: crate::config::General,
-    pub default_profile: TextInput,
+    /// All existing profile names, in display order. Default profile is
+    /// cycled by index over this list — selecting a profile that doesn't
+    /// exist is no longer possible.
+    pub profile_names: Vec<String>,
+    pub default_profile_idx: usize,
     pub default_duration: TextInput,
     pub hard_mode: bool,
     pub autostart: bool,
@@ -81,11 +85,14 @@ pub struct SettingsState {
 }
 
 impl SettingsState {
-    pub fn from_general(g: crate::config::General) -> Self {
+    pub fn from_general(g: crate::config::General, profile_names: Vec<String>) -> Self {
         let locale_idx =
             g.locale.as_deref().and_then(|l| LOCALES.iter().position(|x| *x == l)).unwrap_or(0);
+        let default_profile_idx =
+            profile_names.iter().position(|n| n == &g.default_profile).unwrap_or(0);
         let mut s = Self {
-            default_profile: TextInput::new(g.default_profile.clone()),
+            profile_names,
+            default_profile_idx,
             default_duration: TextInput::new(
                 humantime::format_duration(g.default_duration).to_string(),
             ),
@@ -120,9 +127,24 @@ impl SettingsState {
         self.sync_focus();
     }
 
+    pub fn cycle_default_profile(&mut self, delta: i32) {
+        if self.profile_names.is_empty() {
+            return;
+        }
+        let n = self.profile_names.len() as i32;
+        let next = (self.default_profile_idx as i32 + delta).rem_euclid(n);
+        self.default_profile_idx = next as usize;
+    }
+
+    pub fn default_profile_name(&self) -> &str {
+        self.profile_names
+            .get(self.default_profile_idx)
+            .map(String::as_str)
+            .unwrap_or("")
+    }
+
     fn sync_focus(&mut self) {
         let focus = self.focus;
-        self.default_profile.focused = focus == SettingsField::DefaultProfile;
         self.default_duration.focused = focus == SettingsField::DefaultDuration;
         self.panic_delay.focused = focus == SettingsField::PanicDelay;
         self.tamper_penalty.focused = focus == SettingsField::TamperPenalty;
@@ -139,7 +161,7 @@ impl SettingsState {
         let locale = Some(LOCALES[self.locale_idx].to_string());
 
         Ok(crate::config::General {
-            default_profile: self.default_profile.value.trim().to_string(),
+            default_profile: self.default_profile_name().to_string(),
             default_duration,
             hard_mode: self.hard_mode,
             autostart: self.autostart,
@@ -171,8 +193,8 @@ pub async fn handle_settings_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.set_screen(Screen::Home(crate::tui::app::HomeState::default()));
         }
-        KeyCode::Tab => settings.next_field(),
-        KeyCode::BackTab => settings.prev_field(),
+        KeyCode::Tab | KeyCode::Down => settings.next_field(),
+        KeyCode::BackTab | KeyCode::Up => settings.prev_field(),
         KeyCode::Enter => {
             if settings.focus == SettingsField::Reset {
                 settings.confirm_reset = true;
@@ -183,9 +205,11 @@ pub async fn handle_settings_key(app: &mut App, key: KeyEvent) {
         _ => {
             let focus = settings.focus;
             match focus {
-                SettingsField::DefaultProfile => {
-                    settings.default_profile.handle(key);
-                }
+                SettingsField::DefaultProfile => match key.code {
+                    KeyCode::Left | KeyCode::Char('h') => settings.cycle_default_profile(-1),
+                    KeyCode::Right | KeyCode::Char('l') => settings.cycle_default_profile(1),
+                    _ => {}
+                },
                 SettingsField::DefaultDuration => {
                     settings.default_duration.handle(key);
                 }
@@ -302,7 +326,21 @@ fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: Set
 
     match field {
         SettingsField::DefaultProfile => {
-            st.default_profile.render(rows[1], f.buffer_mut(), value_style);
+            if st.profile_names.is_empty() {
+                let warn = Style::default().fg(ALERT).add_modifier(Modifier::ITALIC);
+                f.render_widget(Paragraph::new(Span::styled("no modes — create one first", warn)), rows[1]);
+            } else {
+                let name = st.default_profile_name();
+                let spans = vec![
+                    Span::styled("←  ", Style::default().fg(DIM)),
+                    Span::styled(
+                        name.to_string(),
+                        value_style.add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("  →", Style::default().fg(DIM)),
+                ];
+                f.render_widget(Paragraph::new(Line::from(spans)), rows[1]);
+            }
         }
         SettingsField::DefaultDuration => {
             st.default_duration.render(rows[1], f.buffer_mut(), value_style);

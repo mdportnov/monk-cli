@@ -26,19 +26,17 @@ pub enum MenuItem {
     Stop,
     Panic,
     Profiles,
-    AddPreset,
     Settings,
     Doctor,
     Quit,
 }
 
 impl MenuItem {
-    pub const ALL: [MenuItem; 8] = [
+    pub const ALL: [MenuItem; 7] = [
         MenuItem::Start,
         MenuItem::Stop,
         MenuItem::Panic,
         MenuItem::Profiles,
-        MenuItem::AddPreset,
         MenuItem::Settings,
         MenuItem::Doctor,
         MenuItem::Quit,
@@ -50,7 +48,6 @@ impl MenuItem {
             MenuItem::Stop => "tui.menu.stop",
             MenuItem::Panic => "tui.menu.panic",
             MenuItem::Profiles => "tui.menu.modes",
-            MenuItem::AddPreset => "tui.menu.add_preset",
             MenuItem::Settings => "tui.menu.settings",
             MenuItem::Doctor => "tui.menu.doctor",
             MenuItem::Quit => "tui.menu.quit",
@@ -63,8 +60,7 @@ impl MenuItem {
             MenuItem::Start => "begin a focus session with the default mode",
             MenuItem::Stop => "end the active session (soft mode only)",
             MenuItem::Panic => "request a delayed hard-mode escape",
-            MenuItem::Profiles => "list configured modes",
-            MenuItem::AddPreset => "create a new mode from a built-in preset",
+            MenuItem::Profiles => "list / create / edit / delete modes (a = from preset)",
             MenuItem::Settings => "general settings and data reset",
             MenuItem::Doctor => "check environment and daemon health",
             MenuItem::Quit => "leave the TUI",
@@ -449,11 +445,6 @@ impl App {
 
 
 
-    pub fn open_preset_picker(&mut self) {
-        self.set_screen(Screen::PresetPicker(PresetPickerState::default()));
-    }
-
-
     pub async fn instantiate_preset(&mut self) {
         let preset_name = {
             let Screen::PresetPicker(state) = &self.screen else { return };
@@ -644,7 +635,15 @@ impl App {
     pub async fn open_settings(&mut self) {
         match ipc::send(&Request::GetGeneral).await {
             Ok(Response::General(g)) => {
-                self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(g))));
+                let names: Vec<String> = self
+                    .globals
+                    .cached_modes
+                    .iter()
+                    .map(|m| m.name.clone())
+                    .collect();
+                self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(
+                    g, names,
+                ))));
             }
             Ok(Response::Error { message }) => {
                 self.globals.set_flash(message, FlashLevel::Error);

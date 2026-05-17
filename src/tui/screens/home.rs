@@ -315,7 +315,6 @@ async fn activate_home(app: &mut App) {
         MenuItem::Stop => app.do_stop().await,
         MenuItem::Panic => app.do_panic().await,
         MenuItem::Profiles => app.open_picker(),
-        MenuItem::AddPreset => app.open_preset_picker(),
         MenuItem::Settings => app.open_settings().await,
         MenuItem::Doctor => app.open_doctor().await,
         MenuItem::Quit => app.should_quit = true,
