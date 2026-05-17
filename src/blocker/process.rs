@@ -197,6 +197,12 @@ fn get_current_uid() -> Option<u32> {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn should_consider_process(proc: &sysinfo::Process, current_uid: Option<u32>) -> bool {
+    // System-mode daemon runs as root and must reach every user's blocked
+    // apps. is_system_path() filters out OS binaries separately, so allowing
+    // root to see all PIDs here is safe.
+    if current_uid == Some(0) {
+        return true;
+    }
     if let (Some(proc_uid), Some(current)) = (proc.user_id(), current_uid) {
         if **proc_uid != current {
             return false;
