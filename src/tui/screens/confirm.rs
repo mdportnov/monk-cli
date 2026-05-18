@@ -340,32 +340,67 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
         }
     }
     lines.push(Line::from(""));
-    let sites = &detail.expanded_sites;
-    lines.push(Line::from(vec![Span::styled(
-        format!("sites · {}", sites.len()),
-        Style::default().fg(ACCENT),
-    )]));
-    if !detail.profile.site_groups.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled("  groups  ", Style::default().fg(DIM)),
-            Span::styled(detail.profile.site_groups.join(", "), Style::default().fg(TEXT)),
-        ]));
+
+    // Groups — show each as a collapsed entry with host count. Loading the
+    // full registry per render is fine: ~590 entries, parsed via include_str!
+    // from a static TOML, costs <1ms on warm cache and we render at ~8 fps.
+    let groups = &detail.profile.site_groups;
+    if !groups.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            format!("site groups · {}", groups.len()),
+            Style::default().fg(ACCENT),
+        )]));
+        let registry = crate::sites::all_groups().ok();
+        for q in groups {
+            let size = registry
+                .as_ref()
+                .and_then(|all| all.iter().find(|g| &g.qualified() == q))
+                .map(|g| g.hosts.len())
+                .unwrap_or(0);
+            lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(DIM)),
+                Span::styled(q.clone(), Style::default().fg(TEXT)),
+                Span::styled(
+                    format!("  ({size} hosts)"),
+                    Style::default().fg(DIM),
+                ),
+            ]));
+        }
+        lines.push(Line::from(""));
     }
-    let capacity = inner.height.saturating_sub(lines.len() as u16) as usize;
-    let shown = capacity.min(sites.len());
-    for host in sites.iter().take(shown) {
-        let short: String = host.trim_start_matches("www.").to_string();
-        lines.push(Line::from(vec![
-            Span::styled("  • ", Style::default().fg(DIM)),
-            Span::styled(short, Style::default().fg(TEXT)),
-        ]));
+
+    // Custom sites — only what the user explicitly added on top of groups.
+    let custom = &detail.profile.sites;
+    if !custom.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            format!("custom sites · {}", custom.len()),
+            Style::default().fg(ACCENT),
+        )]));
+        let used = lines.len() as u16;
+        let capacity = inner.height.saturating_sub(used + 2) as usize;
+        let shown = capacity.min(custom.len());
+        for host in custom.iter().take(shown) {
+            let short = host.trim_start_matches("www.").to_string();
+            lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(DIM)),
+                Span::styled(short, Style::default().fg(TEXT)),
+            ]));
+        }
+        if custom.len() > shown {
+            lines.push(Line::from(Span::styled(
+                format!("  +{} more", custom.len() - shown),
+                Style::default().fg(DIM),
+            )));
+        }
+        lines.push(Line::from(""));
     }
-    if sites.len() > shown {
-        lines.push(Line::from(Span::styled(
-            format!("  +{} more", sites.len() - shown),
-            Style::default().fg(DIM),
-        )));
-    }
+
+    // Footer: total blocked hosts after group expansion.
+    lines.push(Line::from(Span::styled(
+        format!("total · {} hosts", detail.expanded_sites.len()),
+        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+    )));
+
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
