@@ -416,9 +416,19 @@ impl App {
             return;
         }
         if self.globals.help_open {
-            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')) {
+            if matches!(
+                key.code,
+                KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') | KeyCode::F(1)
+            ) {
                 self.globals.help_open = false;
             }
+            return;
+        }
+        // F1 works on every screen — text-input screens (editor/settings/
+        // panic) eat '?' as a literal character, so F1 is the always-safe
+        // fallback to surface the help overlay. '?' still works elsewhere.
+        if matches!(key.code, KeyCode::F(1)) {
+            self.globals.help_open = true;
             return;
         }
         if matches!(key.code, KeyCode::Char('?'))
@@ -517,6 +527,54 @@ impl App {
         }
     }
 
+    pub async fn duplicate_current_mode(&mut self) {
+        let name = {
+            let Screen::ModePicker(picker) = &self.screen else { return };
+            match picker.current() {
+                Some(m) => m.name.clone(),
+                None => return,
+            }
+        };
+
+        // Fetch the profile via IPC
+        let profile = match ipc::send(&Request::ModeDetail { name: name.clone(), days: 1 }).await {
+            Ok(Response::ModeDetailData(detail)) => detail.profile,
+            Ok(Response::Error { message }) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some(message);
+                }
+                return;
+            }
+            Ok(_) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some("unexpected response".into());
+                }
+                return;
+            }
+            Err(e) => {
+                if let Screen::ModePicker(p) = &mut self.screen {
+                    p.error = Some(e.to_string());
+                }
+                return;
+            }
+        };
+
+        // Generate unique name
+        let existing: std::collections::BTreeSet<String> = self
+            .globals
+            .cached_modes
+            .iter()
+            .map(|m| m.name.clone())
+            .collect();
+        let base = format!("{}-2", name);
+        let unique_name = unique_mode_name(&base, &existing);
+
+        // Open editor with the duplicated profile
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(
+            unique_name,
+            profile,
+        ))));
+    }
 
     pub async fn save_editor(&mut self) {
         let (name, profile) = {
@@ -541,6 +599,81 @@ impl App {
                     FlashLevel::Success,
                 );
                 self.open_picker();
+            }
+            Ok(Response::Error { message }) => {
+                if let Screen::ModeEditor(ed) = &mut self.screen {
+                    ed.error = Some(message);
+                    ed.error_field = None;
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if let Screen::ModeEditor(ed) = &mut self.screen {
+                    ed.error = Some(e.to_string());
+                    ed.error_field = None;
+                }
+            }
+        }
+    }
+
+    pub async fn save_editor_and_open_confirm(&mut self) {
+        let (name, profile) = {
+            let Screen::ModeEditor(ed) = &mut self.screen else { return };
+            match ed.build_profile() {
+                Ok(v) => v,
+                Err((field, msg)) => {
+                    ed.error = Some(msg);
+                    ed.error_field = field;
+                    if let Some(f) = field {
+                        ed.focus = f;
+                    }
+                    return;
+                }
+            }
+        };
+        match ipc::send(&Request::SaveMode { name: name.clone(), profile: Box::new(profile) }).await
+        {
+            Ok(Response::Ok) => {
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.saved", profile = name).to_string(),
+                    FlashLevel::Success,
+                );
+
+                // Fetch mode details and open confirm screen
+                match ipc::send(&Request::ModeDetail { name: name.clone(), days: 14 }).await {
+                    Ok(Response::ModeDetailData(detail)) => {
+                        let cfg = Config::load().ok();
+                        let default_dur = cfg
+                            .as_ref()
+                            .map(|c| c.general.default_duration)
+                            .unwrap_or(Duration::from_secs(25 * 60));
+                        let hard = cfg.as_ref().map(|c| c.general.hard_mode).unwrap_or(false);
+
+                        let mode = ModeSummary {
+                            name: name.clone(),
+                            color: detail.profile.color.clone(),
+                            blocked_apps: detail.profile.apps.len(),
+                            blocked_sites: detail.profile.sites.len(),
+                            blocked_groups: detail.profile.site_groups.len(),
+                            limits: detail.profile.limits.clone(),
+                            stats: crate::audit::stats::ModeStats::default(),
+                            is_default: false,
+                            has_schedule: detail.profile.schedule.is_some(),
+                        };
+
+                        let mut state = ConfirmState::from_mode(mode, default_dur, hard);
+                        state.detail = Some(*detail);
+                        self.set_screen(Screen::ModeConfirm(Box::new(state)));
+                    }
+                    Ok(_) | Err(_) => {
+                        // Fallback to picker with flash on fetch failure
+                        self.globals.set_flash(
+                            "saved mode, but couldn't open start screen".to_string(),
+                            FlashLevel::Warn,
+                        );
+                        self.open_picker();
+                    }
+                }
             }
             Ok(Response::Error { message }) => {
                 if let Screen::ModeEditor(ed) = &mut self.screen {

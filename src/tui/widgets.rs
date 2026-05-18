@@ -177,6 +177,19 @@ impl MultiSelectList {
             return false;
         }
         match key.code {
+            // Esc consumes only when there's an active filter to clear —
+            // otherwise it passes through so the editor can decide what to
+            // do (e.g. trigger the discard-changes modal).
+            KeyCode::Esc => {
+                if self.filter.is_empty() {
+                    return false;
+                }
+                self.filter.clear();
+                self.filter_lower.clear();
+                self.visible_dirty = true;
+                self.clamp_cursor();
+                return true;
+            }
             KeyCode::Char(' ') | KeyCode::Enter => {
                 self.rebuild_visible_if_dirty();
                 if !self.visible_cache.is_empty() {

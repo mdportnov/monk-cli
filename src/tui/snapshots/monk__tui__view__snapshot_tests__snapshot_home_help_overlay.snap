@@ -17,7 +17,7 @@ expression: "render(&app, 90, 28)"
 │                      │  s · x · p    start · stop · panic       │       \              │
 │                      │  m            open modes picker          │  ___   |             │
 │                      │  1..9         quick-start mode by slot   │ /   \  |             │
-│                      │  ?            toggle help                │ \___/  |             │
+│                      │  ? · F1       toggle help                │ \___/  |             │
 │                      │  q · esc      quit                       │       /              │
 │                      │                                          │________\             │
 │                      │                                          │_________)            │

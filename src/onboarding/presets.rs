@@ -17,3 +17,7 @@ pub fn load_preset(name: &str) -> Result<Profile> {
     };
     toml::from_str(raw).map_err(Error::from)
 }
+
+pub fn lookup_preset(name: &str) -> Option<Profile> {
+    load_preset(name).ok()
+}

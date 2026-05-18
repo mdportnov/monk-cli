@@ -258,9 +258,18 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
         }
         return;
     }
-    if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
-        app.save_editor().await;
-        return;
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        match key.code {
+            KeyCode::Char('s') => {
+                app.save_editor().await;
+                return;
+            }
+            KeyCode::Enter => {
+                app.save_editor_and_open_confirm().await;
+                return;
+            }
+            _ => {}
+        }
     }
     // ↑/↓ move between fields for everything that isn't a multi-select
     // (Apps/Groups/Brands swallow vertical arrows for their own list nav).
@@ -284,10 +293,18 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
     }
     match key.code {
         KeyCode::Esc => {
-            if ed.is_dirty() {
-                ed.confirm_cancel = true;
-            } else {
-                app.open_picker();
+            let consumed = match ed.focus {
+                EditorField::Apps => ed.apps.handle(key),
+                EditorField::Groups => ed.groups.handle(key),
+                EditorField::Brands => ed.brands.handle(key),
+                _ => false,
+            };
+            if !consumed {
+                if ed.is_dirty() {
+                    ed.confirm_cancel = true;
+                } else {
+                    app.open_picker();
+                }
             }
         }
         KeyCode::Tab => ed.next_field(),
@@ -345,7 +362,7 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     draw_editor_fields(f, body[0], editor);
     draw_editor_aux(f, body[1], editor);
 
-    let help = "↑/↓ · tab fields   ctrl+s save   esc cancel";
+    let help = "↑/↓ · tab fields   ctrl+s save   ctrl+⏎ save & start   esc cancel";
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));

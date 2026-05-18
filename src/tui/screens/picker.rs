@@ -52,6 +52,7 @@ pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
                 picker.confirm_delete = Some(m.name.clone());
             }
         }
+        KeyCode::Char('c') => app.duplicate_current_mode().await,
         _ => {}
     }
 }
@@ -123,22 +124,28 @@ pub fn draw_preset_picker(f: &mut Frame, app: &App, state: &PresetPickerState) {
 
     draw_header(f, outer[0], app);
 
-    let body = outer[1];
-    let centered = Layout::default()
+    let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(60),
-            Constraint::Percentage(20),
-        ])
-        .split(body);
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(outer[1]);
 
+    draw_preset_list(f, body[0], state);
+    draw_preset_preview(f, body[1], state);
+
+    let help = "↑/↓ select   ⏎ add   esc back";
+    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
+    f.render_widget(footer, outer[2]);
+}
+
+fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     if let Some(err) = &state.error {
         let p = Paragraph::new(Span::styled(err.clone(), Style::default().fg(ALERT)))
             .wrap(Wrap { trim: true })
             .alignment(Alignment::Center)
             .block(picker_block(" presets "));
-        f.render_widget(p, centered[1]);
+        f.render_widget(p, area);
     } else {
         let items: Vec<ListItem> = state
             .names
@@ -156,14 +163,102 @@ pub fn draw_preset_picker(f: &mut Frame, app: &App, state: &PresetPickerState) {
 
         let mut list_state = ListState::default();
         list_state.select(Some(state.selected));
-        f.render_stateful_widget(list, centered[1], &mut list_state);
+        f.render_stateful_widget(list, area, &mut list_state);
+    }
+}
+
+fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
+    let block = picker_block(" preview ");
+    let Some(preset_name) = state.current() else {
+        f.render_widget(block, area);
+        return;
+    };
+
+    let Some(profile) = crate::onboarding::lookup_preset(preset_name) else {
+        let p = Paragraph::new(Span::styled("failed to load preset", Style::default().fg(ALERT)))
+            .alignment(Alignment::Center)
+            .block(block);
+        f.render_widget(p, area);
+        return;
+    };
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            crate::i18n::t!("onboarding.preset", preset = preset_name).to_string(),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    // Apps count
+    lines.push(kv("apps", &format!("· {}", profile.apps.len())));
+    if !profile.apps.is_empty() {
+        let display_apps: Vec<String> = profile.apps.iter().take(3).cloned().collect();
+        for app in display_apps {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", app),
+                Style::default().fg(DIM),
+            )));
+        }
+        if profile.apps.len() > 3 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... {} more", profile.apps.len() - 3),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )));
+        }
     }
 
-    let help = "↑/↓ select   ⏎ add   esc back";
-    let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
-    f.render_widget(footer, outer[2]);
+    // Site groups
+    if !profile.site_groups.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(kv("site groups", &format!("· {}", profile.site_groups.len())));
+
+        // Get group registry to show host counts
+        if let Ok(all_groups) = crate::sites::all_groups() {
+            for group_id in profile.site_groups.iter().take(3) {
+                if let Some(group) = all_groups.iter().find(|g| &g.id == group_id) {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {} ({} hosts)", group.id, group.hosts.len()),
+                        Style::default().fg(DIM),
+                    )));
+                }
+            }
+            if profile.site_groups.len() > 3 {
+                lines.push(Line::from(Span::styled(
+                    format!("  ... {} more", profile.site_groups.len() - 3),
+                    Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+                )));
+            }
+        }
+    }
+
+    // Custom sites
+    if !profile.sites.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(kv("sites", &format!("· {}", profile.sites.len())));
+        let display_sites: Vec<String> = profile.sites.iter().take(3).cloned().collect();
+        for site in display_sites {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", site),
+                Style::default().fg(DIM),
+            )));
+        }
+        if profile.sites.len() > 3 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... {} more", profile.sites.len() - 3),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "press enter to instantiate",
+        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+    )));
+
+    let p = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
+    f.render_widget(p, area);
 }
 
 fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
