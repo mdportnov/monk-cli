@@ -41,6 +41,11 @@ pub struct EditorState {
     /// The field that triggered `error`, if any. Used to draw a red label.
     pub error_field: Option<EditorField>,
     pub confirm_cancel: bool,
+    /// When Some, the inline "add custom app" modal is open with this input.
+    /// Enter commits, Esc discards.
+    pub add_custom_app: Option<TextInput>,
+    /// Inline error from the add-custom-app modal (e.g. invalid bundle id).
+    pub add_custom_error: Option<String>,
 }
 
 pub const COLOR_PALETTE: &[(&str, &str)] = &[
@@ -91,6 +96,8 @@ impl EditorState {
             error: None,
             error_field: None,
             confirm_cancel: false,
+            add_custom_app: None,
+            add_custom_error: None,
         };
         s.sync_focus();
         s
@@ -121,6 +128,8 @@ impl EditorState {
             error: None,
             error_field: None,
             confirm_cancel: false,
+            add_custom_app: None,
+            add_custom_error: None,
         };
         s.sync_focus();
         s
@@ -246,6 +255,73 @@ impl EditorState {
 
 pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
     let Screen::ModeEditor(ed) = &mut app.screen else { return };
+
+    // Add-custom modal: while open, all keys go to it. The kind of thing
+    // being added depends on which field the modal was triggered from
+    // (Apps → bundle id, Sites → hostname).
+    if ed.add_custom_app.is_some() {
+        let key_code = key.code;
+        let focus = ed.focus;
+        // Borrow the input mutably only for handle/clone.
+        let input = ed.add_custom_app.as_mut().unwrap();
+        match key_code {
+            KeyCode::Esc => {
+                ed.add_custom_app = None;
+                ed.add_custom_error = None;
+            }
+            KeyCode::Enter => {
+                let raw = input.value.trim().to_string();
+                match focus {
+                    EditorField::Apps => {
+                        if raw.is_empty() {
+                            ed.add_custom_error = Some("bundle id is required".into());
+                        } else if !looks_like_bundle_id(&raw) {
+                            ed.add_custom_error =
+                                Some("expected reverse-DNS form, e.g. com.example.app".into());
+                        } else {
+                            ed.apps.add_item_selected(MultiSelectItem::new(
+                                raw.clone(),
+                                format!("(custom) [{raw}]"),
+                            ));
+                            ed.add_custom_app = None;
+                            ed.add_custom_error = None;
+                        }
+                    }
+                    EditorField::Sites => {
+                        match crate::sites::sanitize_host(&raw) {
+                            Some(host) => {
+                                let current = ed.sites.value.trim();
+                                if current.is_empty() {
+                                    ed.sites.value = host;
+                                } else {
+                                    ed.sites.value = format!("{current}, {host}");
+                                }
+                                ed.sites.cursor = ed.sites.value.chars().count();
+                                ed.add_custom_app = None;
+                                ed.add_custom_error = None;
+                            }
+                            None => {
+                                ed.add_custom_error = Some(
+                                    "not a valid hostname (e.g. example.com or news.bbc.co.uk)"
+                                        .into(),
+                                );
+                            }
+                        }
+                    }
+                    _ => {
+                        ed.add_custom_app = None;
+                        ed.add_custom_error = None;
+                    }
+                }
+            }
+            _ => {
+                input.handle(key);
+                ed.add_custom_error = None;
+            }
+        }
+        return;
+    }
+
     if ed.confirm_cancel {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
@@ -256,6 +332,19 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
             }
             _ => {}
         }
+        return;
+    }
+
+    // `+` on Apps or Sites field opens an inline "add custom" modal.
+    // `+` is not a valid character in either bundle ids or hostnames, so
+    // intercepting it before TextInput / MultiSelectList sees it is safe.
+    if matches!(key.code, KeyCode::Char('+'))
+        && matches!(ed.focus, EditorField::Apps | EditorField::Sites)
+    {
+        let mut input = TextInput::new("");
+        input.focused = true;
+        ed.add_custom_app = Some(input);
+        ed.add_custom_error = None;
         return;
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -390,6 +479,84 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
             true,
         );
     }
+
+    if let Some(input) = &editor.add_custom_app {
+        let (title, hint) = match editor.focus {
+            EditorField::Sites => (
+                " add custom site ",
+                "hostname (e.g. example.com · news.bbc.co.uk)",
+            ),
+            _ => (
+                " add custom app ",
+                "bundle id (e.g. com.example.app · proc.exe)",
+            ),
+        };
+        draw_add_custom_modal(f, title, hint, input, editor.add_custom_error.as_deref());
+    }
+}
+
+fn draw_add_custom_modal(
+    f: &mut Frame,
+    title: &str,
+    hint: &str,
+    input: &TextInput,
+    error: Option<&str>,
+) {
+    let area = f.area();
+    let width = 56.min(area.width.saturating_sub(4));
+    let height = 11u16.min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let rect = Rect { x, y, width, height };
+
+    f.render_widget(ratatui::widgets::Clear, rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            title.to_string(),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let hint_para = Paragraph::new(Span::styled(
+        hint.to_string(),
+        Style::default().fg(DIM),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(hint_para, layout[0]);
+
+    input.render(layout[1], f.buffer_mut(), Style::default().fg(TEXT));
+
+    if let Some(err) = error {
+        let err_line = Paragraph::new(Span::styled(
+            err.to_string(),
+            Style::default().fg(ALERT),
+        ))
+        .alignment(Alignment::Center);
+        f.render_widget(err_line, layout[3]);
+    }
+
+    let actions = Paragraph::new(Span::styled(
+        "enter add · esc cancel",
+        Style::default().fg(DIM),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(actions, layout[4]);
 }
 
 fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
@@ -554,6 +721,17 @@ fn parse_opt_humantime(input: &TextInput) -> std::result::Result<Option<Duration
     humantime::parse_duration(raw).map(Some).map_err(|e| format!("invalid duration: {e}"))
 }
 
+/// Cheap sanity check for a macOS/Linux app identifier (reverse-DNS like
+/// `com.spotify.client`). We don't reject Windows-exe basenames here on
+/// purpose — those can have any shape; if the user knows what they're doing
+/// they can put one in. We just want to reject empty / accidental input.
+fn looks_like_bundle_id(s: &str) -> bool {
+    let s = s.trim();
+    !s.is_empty()
+        && !s.contains(char::is_whitespace)
+        && (s.contains('.') || s.contains('-') || s.ends_with(".exe"))
+}
+
 fn split_cmds(raw: &str) -> Vec<String> {
     raw.split("&&").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
@@ -668,7 +846,7 @@ pub fn parse_schedule_spec(
 }
 
 fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, MultiSelectList) {
-    let apps_items = crate::apps::load_or_scan(false)
+    let mut apps_items: Vec<MultiSelectItem> = crate::apps::load_or_scan(false)
         .map(|cache| {
             cache
                 .apps
@@ -677,6 +855,15 @@ fn load_picklists(profile: &Profile) -> (MultiSelectList, MultiSelectList, Multi
                 .collect()
         })
         .unwrap_or_default();
+    // Preserve custom bundle ids from the saved profile that the cache
+    // doesn't know about (added previously via the inline "+ add custom"
+    // flow, or hand-edited in the toml). Otherwise saving would silently
+    // drop them on the next edit.
+    for id in &profile.apps {
+        if !apps_items.iter().any(|i| i.id == *id) {
+            apps_items.push(MultiSelectItem::new(id.clone(), format!("(custom) [{id}]")));
+        }
+    }
     let groups_items = crate::sites::all_groups()
         .map(|gs| {
             gs.into_iter()

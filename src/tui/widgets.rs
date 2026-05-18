@@ -163,6 +163,27 @@ impl MultiSelectList {
         }
     }
 
+    /// Append a new item to the list, mark it selected, focus it, and clear
+    /// any active filter so the user sees it. Returns true if added; false if
+    /// the id already existed (in which case we just select + focus it).
+    pub fn add_item_selected(&mut self, item: MultiSelectItem) -> bool {
+        let added = if let Some(existing) = self.items.iter().position(|i| i.id == item.id) {
+            self.selected.insert(existing);
+            self.cursor = existing;
+            false
+        } else {
+            let idx = self.items.len();
+            self.items.push(item);
+            self.selected.insert(idx);
+            self.cursor = idx;
+            true
+        };
+        self.filter.clear();
+        self.filter_lower.clear();
+        self.visible_dirty = true;
+        added
+    }
+
     pub fn filter_clear(&mut self) {
         if !self.filter.is_empty() {
             self.filter.clear();

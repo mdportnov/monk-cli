@@ -192,10 +192,10 @@ impl EditorField {
             EditorField::DailyCap => "daily focus budget — prevents burnout",
             EditorField::PanicDelay => "delay before hard-mode panic releases (empty = global default)",
             EditorField::Schedule => "auto-start: `mon-fri 09:00-17:00` or `daily 22:00-23:00 UTC`",
-            EditorField::Sites => "comma-separated hosts to block",
+            EditorField::Sites => "comma-separated hosts to block · + add custom",
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
-            EditorField::Apps => "space/enter toggle · type to filter · ↑/↓ navigate",
+            EditorField::Apps => "space/enter toggle · + add custom · type to filter · ↑/↓ navigate",
             EditorField::Groups => "space/enter toggle · type to filter · ↑/↓ navigate",
             EditorField::Brands => {
                 "space/enter toggle · type to filter · auto-resolves domains + apps"
