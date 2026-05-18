@@ -408,24 +408,44 @@ impl Supervisor {
         if let Some(profile) = cfg.profile(&lock.profile).cloned() {
             match build_block_set(&profile) {
                 Ok(set) => {
+                    const DEGRADED_THRESHOLD: u32 = 10;
                     let mut hosts = self.hosts.lock();
                     if let Err(e) = hosts.apply(&set) {
                         let failures =
                             self.consecutive_hosts_failures.fetch_add(1, Ordering::SeqCst) + 1;
-                        if failures >= 5 {
-                            tracing::error!(
-                                "blocking degraded: {} consecutive hosts.apply failures",
-                                failures
-                            );
-                        }
-                        tracing::warn!(?e, "hosts reapply failed");
+                        tracing::warn!(?e, failures, "hosts reapply failed");
                         self.audit.append(
                             AuditKind::HostsApplyFailed,
                             Some(lock.id),
                             &e.to_string(),
                         );
+                        // Cross into degraded: refuse new sessions until
+                        // recovery. Emit BlockerDegraded once per transition
+                        // so the audit log shows the gap clearly.
+                        if failures == DEGRADED_THRESHOLD {
+                            let reason = format!(
+                                "blocker degraded after {failures} consecutive hosts.apply failures: {e}"
+                            );
+                            tracing::error!(?e, %reason, "blocker entered degraded state");
+                            *self.blocker_fallback_reason.write() = Some(reason.clone());
+                            self.audit.append(
+                                AuditKind::BlockerDegraded,
+                                Some(lock.id),
+                                &reason,
+                            );
+                        }
                     } else {
-                        self.consecutive_hosts_failures.store(0, Ordering::SeqCst);
+                        let prev_failures =
+                            self.consecutive_hosts_failures.swap(0, Ordering::SeqCst);
+                        if prev_failures >= DEGRADED_THRESHOLD {
+                            tracing::info!("blocker recovered after {prev_failures} failures");
+                            *self.blocker_fallback_reason.write() = None;
+                            self.audit.append(
+                                AuditKind::BlockerRecovered,
+                                Some(lock.id),
+                                &format!("recovered after {prev_failures} failures"),
+                            );
+                        }
                         self.audit.append(AuditKind::HostsRepaired, Some(lock.id), "hosts ensured");
                     }
                     drop(hosts);

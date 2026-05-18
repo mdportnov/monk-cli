@@ -32,6 +32,11 @@ pub enum AuditKind {
     ClockAnomaly,
     SessionReconstructed,
     HostsApplyFailed,
+    /// 10+ consecutive HostsApplyFailed events; blocker is now refusing new
+    /// sessions until a Repaired event lands.
+    BlockerDegraded,
+    /// Crossing back from BlockerDegraded → healthy.
+    BlockerRecovered,
     ScheduleFired,
     ScheduleSkipped,
 }
@@ -54,6 +59,8 @@ impl AuditKind {
             Self::ClockAnomaly => "clock_anomaly",
             Self::SessionReconstructed => "session_reconstructed",
             Self::HostsApplyFailed => "hosts_apply_failed",
+            Self::BlockerDegraded => "blocker_degraded",
+            Self::BlockerRecovered => "blocker_recovered",
             Self::ScheduleFired => "schedule_fired",
             Self::ScheduleSkipped => "schedule_skipped",
         }
@@ -76,6 +83,8 @@ impl AuditKind {
             "clock_anomaly" => Self::ClockAnomaly,
             "session_reconstructed" => Self::SessionReconstructed,
             "hosts_apply_failed" => Self::HostsApplyFailed,
+            "blocker_degraded" => Self::BlockerDegraded,
+            "blocker_recovered" => Self::BlockerRecovered,
             "schedule_fired" => Self::ScheduleFired,
             "schedule_skipped" => Self::ScheduleSkipped,
             _ => return None,

@@ -24,10 +24,15 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Report {
     pub checks: Vec<Check>,
+    #[serde(serialize_with = "ser_duration_ms", rename = "duration_ms")]
     pub duration: Duration,
+}
+
+fn ser_duration_ms<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_u128(d.as_millis())
 }
 
 impl Report {

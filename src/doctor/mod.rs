@@ -8,7 +8,8 @@ mod ui;
 
 pub use ui::Report;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Ok,
     Warn,
@@ -29,7 +30,7 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Check {
     pub id: &'static str,
     pub title: String,
@@ -41,7 +42,8 @@ pub struct Check {
     pub actions: Vec<Action>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ActionKind {
     StartDaemon,
     StopDaemon,
@@ -50,7 +52,7 @@ pub enum ActionKind {
     OpenDataDir,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct Action {
     pub key: char,
     pub label: &'static str,

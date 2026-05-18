@@ -132,13 +132,14 @@ impl ConfirmState {
 
     pub fn blocked_reason(&self) -> Option<String> {
         if let Some(rem) = self.mode.stats.cooldown_remaining {
-            return Some(format!("cooldown — available in {}", fmt_short(rem)));
+            let d = fmt_short(rem);
+            return Some(crate::i18n::t!("tui.confirm.cooldown_available_in", duration = d).to_string());
         }
         if let (Some(_cap), Some(rem)) =
             (self.mode.limits.daily_cap, self.mode.stats.daily_cap_remaining)
         {
             if rem.is_zero() {
-                return Some("daily cap reached — budget restores tomorrow".into());
+                return Some(crate::i18n::t!("tui.confirm.daily_cap_reached").to_string());
             }
         }
         None
@@ -268,19 +269,28 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
             .map(|s| s.remaining())
             .unwrap_or_default();
         Line::from(vec![
-            Span::styled("● running  ", Style::default().fg(ALERT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                crate::i18n::t!("tui.confirm.running_badge").to_string(),
+                Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 confirm.mode.name.clone(),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("  ·  {} left", fmt_short(remaining)),
+                {
+                    let d = fmt_short(remaining);
+                    crate::i18n::t!("tui.confirm.time_left", duration = d).to_string()
+                },
                 Style::default().fg(DIM),
             ),
         ])
     } else {
         Line::from(vec![
-            Span::styled("start  ", Style::default().fg(DIM)),
+            Span::styled(
+                crate::i18n::t!("tui.confirm.start_prefix").to_string(),
+                Style::default().fg(DIM),
+            ),
             Span::styled(
                 confirm.mode.name.clone(),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
@@ -313,11 +323,11 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
     draw_confirm_details(f, body[4], confirm);
 
     let help = if is_running {
-        "esc back   ·   already running — stop or panic from home"
+        crate::i18n::t!("tui.confirm.footer_running").to_string()
     } else if confirm.blocked_reason().is_some() {
-        "←/→ duration   esc back   ·   start blocked"
+        crate::i18n::t!("tui.confirm.footer_blocked").to_string()
     } else {
-        "←/→ duration   ↑/↓ group   ⏎ inspect   shift+⏎ start   H hard   esc back"
+        crate::i18n::t!("tui.confirm.footer_default").to_string()
     };
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
@@ -362,7 +372,7 @@ fn draw_group_inspector(f: &mut Frame, group_id: &str, scroll: u16) {
         .split(inner);
 
     let header = Paragraph::new(Span::styled(
-        format!("{} hosts", hosts.len()),
+        crate::i18n::t!("tui.confirm.hosts_count", count = hosts.len()).to_string(),
         Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
     ))
     .alignment(Alignment::Center);
@@ -389,7 +399,7 @@ fn draw_group_inspector(f: &mut Frame, group_id: &str, scroll: u16) {
     );
 
     let hint = Paragraph::new(Span::styled(
-        "↑/↓ scroll · pgup/pgdn page · esc close",
+        crate::i18n::t!("tui.confirm.inspector_hint").to_string(),
         Style::default().fg(DIM),
     ))
     .alignment(Alignment::Center);
@@ -425,8 +435,10 @@ fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
 fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
     if confirm.clamped {
+        let m = fmt_short(confirm.effective_max());
+        let msg = crate::i18n::t!("tui.confirm.clamped_to_max", max = m).to_string();
         lines.push(Line::from(Span::styled(
-            format!("clamped to mode max ({})", fmt_short(confirm.effective_max())),
+            msg,
             Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
         )));
     }
@@ -439,12 +451,12 @@ fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
         lines.push(Line::from(Span::styled(err.clone(), Style::default().fg(ALERT))));
     } else if confirm.hard {
         lines.push(Line::from(Span::styled(
-            "hard mode — cannot stop early, panic phrase only",
+            crate::i18n::t!("tui.confirm.hard_mode_note").to_string(),
             Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
         )));
     } else {
         lines.push(Line::from(Span::styled(
-            "soft mode — stop anytime",
+            crate::i18n::t!("tui.confirm.soft_mode_note").to_string(),
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         )));
     }

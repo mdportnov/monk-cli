@@ -610,8 +610,28 @@ pub async fn config_import(file: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn doctor() -> Result<()> {
+pub async fn doctor(json: bool) -> Result<()> {
     let report = crate::doctor::run().await;
+    if json {
+        // CI/script mode: emit the full report as one JSON object on stdout.
+        // Exit code still reflects has_failures so `if monk doctor --json | ...`
+        // can both pipe and short-circuit on red.
+        let payload = serde_json::json!({
+            "checks": report.checks,
+            "duration_ms": report.duration.as_millis(),
+            "summary": {
+                "ok": report.summary().0,
+                "warn": report.summary().1,
+                "fail": report.summary().2,
+            },
+            "has_failures": report.has_failures(),
+        });
+        println!("{}", serde_json::to_string(&payload)?);
+        if report.has_failures() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     for c in &report.checks {
         println!("{} [{}] {} — {}", c.status.icon(), c.status.label(), c.title, c.detail);
         for extra in &c.extras {

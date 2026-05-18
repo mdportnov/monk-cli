@@ -80,7 +80,10 @@ enum Command {
     #[command(about = "Show session statistics")]
     Stats,
     #[command(about = "Check environment, permissions, and daemon health")]
-    Doctor,
+    Doctor {
+        #[arg(long, help = "Output a machine-readable JSON report (exits 0 even on failures)")]
+        json: bool,
+    },
     #[command(subcommand, about = "Manage configuration")]
     Config(ConfigCmd),
     #[command(subcommand, about = "Manage the background daemon", alias = "service")]
@@ -271,7 +274,7 @@ pub async fn run() -> Result<()> {
         Command::Apps(AppsCmd::List { refresh }) => commands::apps_list(refresh),
         Command::Apps(AppsCmd::Scan) => commands::apps_scan(),
         Command::Stats => commands::stats().await,
-        Command::Doctor => commands::doctor().await,
+        Command::Doctor { json } => commands::doctor(json).await,
         Command::Config(ConfigCmd::Path) => commands::config_path(),
         Command::Config(ConfigCmd::Export) => commands::config_export(),
         Command::Config(ConfigCmd::Import { file }) => commands::config_import(&file).await,
@@ -299,7 +302,7 @@ fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Res
             | Command::Completions { .. }
             | Command::Daemon(_)
             | Command::Lang { .. }
-            | Command::Doctor
+            | Command::Doctor { .. }
     ) {
         return Ok(());
     }
