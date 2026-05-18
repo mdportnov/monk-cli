@@ -87,6 +87,8 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             )),
             Line::from(""),
             Line::from("  ←/→ · h/l    adjust duration (5m steps)"),
+            Line::from("  ↑/↓ · j/k    select site group"),
+            Line::from("  shift+⏎ · o  open group inspector"),
             Line::from("  shift+h      toggle hard mode"),
             Line::from("  enter        start session"),
             Line::from("  esc · q      back to picker"),

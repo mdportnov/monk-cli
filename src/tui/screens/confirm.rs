@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -30,6 +30,14 @@ pub struct ConfirmState {
     pub clamped: bool,
     pub error: Option<String>,
     pub detail: Option<crate::ipc::ModeDetailPayload>,
+    /// Index into `detail.profile.site_groups` of the highlighted group.
+    /// ↑/↓ moves it; shift+Enter opens the inspector modal for that group.
+    pub selected_group: usize,
+    /// When Some, the inspector modal is open and shows the named group's
+    /// full host list. Esc closes it.
+    pub expanded_group: Option<String>,
+    /// Vertical scroll offset inside the inspector modal.
+    pub expanded_scroll: u16,
 }
 
 impl ConfirmState {
@@ -46,9 +54,49 @@ impl ConfirmState {
             error: None,
             mode,
             detail: None,
+            selected_group: 0,
+            expanded_group: None,
+            expanded_scroll: 0,
         };
         state.reclamp();
         state
+    }
+
+    pub fn group_count(&self) -> usize {
+        self.detail.as_ref().map(|d| d.profile.site_groups.len()).unwrap_or(0)
+    }
+
+    pub fn select_prev_group(&mut self) {
+        let n = self.group_count();
+        if n == 0 {
+            return;
+        }
+        self.selected_group = if self.selected_group == 0 {
+            n - 1
+        } else {
+            self.selected_group - 1
+        };
+    }
+
+    pub fn select_next_group(&mut self) {
+        let n = self.group_count();
+        if n == 0 {
+            return;
+        }
+        self.selected_group = (self.selected_group + 1) % n;
+    }
+
+    pub fn open_selected_group(&mut self) {
+        let Some(detail) = &self.detail else { return };
+        if let Some(name) = detail.profile.site_groups.get(self.selected_group) {
+            self.expanded_group = Some(name.clone());
+            self.expanded_scroll = 0;
+        }
+    }
+
+    pub fn close_expanded(&mut self) {
+        self.expanded_group = None;
+        self.expanded_scroll = 0;
     }
 
     pub fn reclamp(&mut self) {
@@ -115,15 +163,54 @@ pub async fn handle_confirm_key(app: &mut App, key: KeyEvent) {
     let mut clamped = false;
     {
         let Screen::ModeConfirm(confirm) = &mut app.screen else { return };
+
+        // Group inspector modal is open — keys go there.
+        if confirm.expanded_group.is_some() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => confirm.close_expanded(),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    confirm.expanded_scroll = confirm.expanded_scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    confirm.expanded_scroll = confirm.expanded_scroll.saturating_add(1);
+                }
+                KeyCode::PageUp => {
+                    confirm.expanded_scroll = confirm.expanded_scroll.saturating_sub(10);
+                }
+                KeyCode::PageDown => {
+                    confirm.expanded_scroll = confirm.expanded_scroll.saturating_add(10);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 app.open_picker();
                 return;
             }
+            // Shift+Enter on the highlighted group → open inspector.
+            // Plain Enter (no shift) → start session.
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                if confirm.group_count() > 0 {
+                    confirm.open_selected_group();
+                    return;
+                }
+            }
+            // Fallback key when the terminal eats shift+enter.
+            KeyCode::Char('o') => {
+                if confirm.group_count() > 0 {
+                    confirm.open_selected_group();
+                    return;
+                }
+            }
             KeyCode::Enter | KeyCode::Char(' ') => {
                 app.start_from_confirm().await;
                 return;
             }
+            KeyCode::Up | KeyCode::Char('k') => confirm.select_prev_group(),
+            KeyCode::Down | KeyCode::Char('j') => confirm.select_next_group(),
             KeyCode::Left | KeyCode::Char('h') => {
                 confirm.decrement_duration();
                 clamped = confirm.clamped;
@@ -196,12 +283,83 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
     let help = if confirm.blocked_reason().is_some() {
         "←/→ duration   esc back   ·   start blocked"
     } else {
-        "←/→ duration   shift+H hard   ⏎ start   esc back"
+        "←/→ duration   ↑/↓ group · shift+⏎ inspect   H hard   ⏎ start   esc back"
     };
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(footer, outer[2]);
+
+    if let Some(name) = &confirm.expanded_group {
+        draw_group_inspector(f, name, confirm.expanded_scroll);
+    }
+}
+
+fn draw_group_inspector(f: &mut Frame, group_id: &str, scroll: u16) {
+    let area = f.area();
+    let width = 64.min(area.width.saturating_sub(4));
+    let height = 24.min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let rect = Rect { x, y, width, height };
+
+    f.render_widget(ratatui::widgets::Clear, rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            format!(" {group_id} "),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let hosts = crate::sites::all_groups()
+        .ok()
+        .and_then(|all| all.into_iter().find(|g| g.qualified() == group_id))
+        .map(|g| g.hosts)
+        .unwrap_or_default();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let header = Paragraph::new(Span::styled(
+        format!("{} hosts", hosts.len()),
+        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(header, chunks[0]);
+
+    let lines: Vec<Line> = hosts
+        .iter()
+        .map(|h| {
+            Line::from(vec![
+                Span::styled("  • ", Style::default().fg(DIM)),
+                Span::styled(h.clone(), Style::default().fg(TEXT)),
+            ])
+        })
+        .collect();
+
+    // Clamp scroll so we can't page past the end.
+    let visible = chunks[1].height as usize;
+    let max_scroll = lines.len().saturating_sub(visible) as u16;
+    let scroll = scroll.min(max_scroll);
+
+    f.render_widget(
+        Paragraph::new(lines).scroll((scroll, 0)),
+        chunks[1],
+    );
+
+    let hint = Paragraph::new(Span::styled(
+        "↑/↓ scroll · pgup/pgdn page · esc close",
+        Style::default().fg(DIM),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(hint, chunks[2]);
 }
 
 fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
@@ -346,20 +504,38 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
     // from a static TOML, costs <1ms on warm cache and we render at ~8 fps.
     let groups = &detail.profile.site_groups;
     if !groups.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
-            format!("site groups · {}", groups.len()),
-            Style::default().fg(ACCENT),
-        )]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("site groups · {}", groups.len()),
+                Style::default().fg(ACCENT),
+            ),
+            Span::styled(
+                "    ↑/↓ select · shift+⏎ inspect",
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ),
+        ]));
         let registry = crate::sites::all_groups().ok();
-        for q in groups {
+        for (i, q) in groups.iter().enumerate() {
             let size = registry
                 .as_ref()
                 .and_then(|all| all.iter().find(|g| &g.qualified() == q))
                 .map(|g| g.hosts.len())
                 .unwrap_or(0);
+            let is_selected = i == confirm.selected_group;
+            let bullet = if is_selected { "▶ " } else { "  • " };
+            let bullet_style = if is_selected {
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(DIM)
+            };
+            let name_style = if is_selected {
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT)
+            };
             lines.push(Line::from(vec![
-                Span::styled("  • ", Style::default().fg(DIM)),
-                Span::styled(q.clone(), Style::default().fg(TEXT)),
+                Span::styled(bullet, bullet_style),
+                Span::styled(q.clone(), name_style),
                 Span::styled(
                     format!("  ({size} hosts)"),
                     Style::default().fg(DIM),
