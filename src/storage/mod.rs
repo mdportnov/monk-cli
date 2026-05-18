@@ -65,7 +65,7 @@ impl Store {
 
     pub fn execute<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         let conn = self.conn.lock();
-        f(&*conn)
+        f(&conn)
     }
 
     pub fn transaction<T>(&self, f: impl FnOnce(&rusqlite::Transaction) -> Result<T>) -> Result<T> {

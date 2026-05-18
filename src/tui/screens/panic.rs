@@ -37,7 +37,7 @@ pub async fn handle_panic_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             let typed = st.input.value.trim().to_string();
             if typed != st.expected {
-                st.error = Some("phrase doesn't match — try again".into());
+                st.error = Some(crate::i18n::t!("tui.panic_modal.mismatch").to_string());
                 return;
             }
             app.submit_panic(typed).await;
@@ -69,7 +69,7 @@ pub fn draw_panic(f: &mut Frame, _app: &App, st: &PanicState) {
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(
-        "type the phrase to schedule release:",
+        crate::i18n::t!("tui.panic_modal.prompt").to_string(),
         Style::default().fg(DIM),
     )));
     lines.push(Line::from(""));

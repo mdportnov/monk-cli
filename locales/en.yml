@@ -75,12 +75,18 @@ tui:
     hard_stop_denied: "hard mode active — stop denied (press p to panic)"
     nothing_to_stop: "nothing to stop"
     no_hard_session: "no hard-mode session"
-    panic_release_at: "panic release at {at}"
     panic_release_in: "panic scheduled — release in %{duration}"
     panic_cancelled: "panic cancelled"
     unexpected: "unexpected response"
     settings_saved: "settings saved"
     reset_done: "all data wiped — restart to re-run onboarding"
+  panic_modal:
+    prompt: "type the phrase to schedule release:"
+    mismatch: "phrase doesn't match — try again"
+  home_hard:
+    phrase_label: "hard mode · panic phrase  "
+    press_p: "  ·  press p"
+    scheduled_in: "panic scheduled · release in  "
   menu:
     start: "Start session"
     stop: "Stop session"

@@ -104,7 +104,14 @@ enum ConfigCmd {
 
 #[derive(Debug, Subcommand)]
 enum ProfileCmd {
-    #[command(about = "Interactively edit a profile's app and site group selection")]
+    #[command(about = "Show a profile's full configuration")]
+    Show {
+        #[arg(value_name = "PROFILE")]
+        name: String,
+        #[arg(long, help = "Output machine-readable JSON")]
+        json: bool,
+    },
+    #[command(about = "Edit a profile (--add/--remove app id, or no flags for TTY editor)")]
     Edit {
         #[arg(value_name = "PROFILE")]
         name: String,
@@ -113,10 +120,19 @@ enum ProfileCmd {
         #[arg(long, value_name = "APP_ID")]
         remove: Vec<String>,
     },
-    #[command(about = "Create an empty profile")]
+    #[command(about = "Create an empty profile or copy from a preset (`--preset deepwork`)")]
     Create {
         #[arg(value_name = "PROFILE")]
         name: String,
+        #[arg(long, value_name = "PRESET", help = "Seed from a built-in preset (deepwork, no-chat, no-news, no-games)")]
+        preset: Option<String>,
+    },
+    #[command(about = "Duplicate an existing profile under a new name")]
+    Duplicate {
+        #[arg(value_name = "SOURCE")]
+        source: String,
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
     },
     #[command(about = "Delete a profile")]
     Delete {
@@ -153,13 +169,19 @@ enum AppsCmd {
 
 #[derive(Debug, Subcommand)]
 enum DaemonCmd {
+    #[command(about = "Start the background daemon (user mode)")]
     Start,
+    #[command(about = "Stop the running daemon")]
     Stop,
+    #[command(about = "Show daemon status (running / not running, pid)")]
     Status,
+    #[command(about = "Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)")]
     Run,
+    #[command(about = "Install the daemon as a system service (requires sudo)")]
     Install,
+    #[command(about = "Remove the system service (add --purge to also wipe data)")]
     Uninstall {
-        #[arg(long)]
+        #[arg(long, help = "Also delete config, audit log, and cached data")]
         purge: bool,
     },
 }
@@ -230,17 +252,25 @@ pub async fn run() -> Result<()> {
         Command::Panic { phrase, cancel } => commands::panic_cmd(phrase, cancel).await,
         Command::Status => commands::status().await,
         Command::Profiles => commands::profiles().await,
+        Command::Profile(ProfileCmd::Show { name, json }) => {
+            commands::profile_show(&name, json).await
+        }
         Command::Profile(ProfileCmd::Edit { name, add, remove }) => {
             commands::profile_edit(&name, add, remove).await
         }
-        Command::Profile(ProfileCmd::Create { name }) => commands::profile_create(&name).await,
+        Command::Profile(ProfileCmd::Create { name, preset }) => {
+            commands::profile_create(&name, preset.as_deref()).await
+        }
+        Command::Profile(ProfileCmd::Duplicate { source, target }) => {
+            commands::profile_duplicate(&source, target.as_deref()).await
+        }
         Command::Profile(ProfileCmd::Delete { name }) => commands::profile_delete(&name).await,
         Command::Profile(ProfileCmd::Limits { name, max, min, cooldown, daily_cap, clear }) => {
             commands::profile_limits(&name, max, min, cooldown, daily_cap, clear).await
         }
         Command::Apps(AppsCmd::List { refresh }) => commands::apps_list(refresh),
         Command::Apps(AppsCmd::Scan) => commands::apps_scan(),
-        Command::Stats => commands::stats(),
+        Command::Stats => commands::stats().await,
         Command::Doctor => commands::doctor().await,
         Command::Config(ConfigCmd::Path) => commands::config_path(),
         Command::Config(ConfigCmd::Export) => commands::config_export(),

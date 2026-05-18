@@ -181,7 +181,7 @@ pub async fn run() -> Result<()> {
 }
 
 fn codec() -> LengthDelimitedCodec {
-    LengthDelimitedCodec::builder().max_frame_length(65536).new_codec()
+    LengthDelimitedCodec::builder().max_frame_length(1024 * 1024).new_codec()
 }
 
 async fn handle(

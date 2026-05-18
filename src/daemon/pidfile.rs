@@ -66,12 +66,14 @@ impl PidFile {
             }
             Err(LockError::WouldBlock) => {
                 let existing_pid = self.read().unwrap_or(None);
-                if let Some(pid) = existing_pid {
-                    if pid_alive(pid) {
-                        return Err(Error::DaemonAlreadyRunning(pid));
-                    }
+                match existing_pid {
+                    Some(pid) if pid_alive(pid) => Err(Error::DaemonAlreadyRunning(pid)),
+                    _ => Err(Error::Other(format!(
+                        "pidfile `{}` is locked but no live owner found — \
+                         another daemon may be starting concurrently or the lock is stuck",
+                        self.path.display()
+                    ))),
                 }
-                Err(Error::DaemonAlreadyRunning(existing_pid.unwrap_or(0)))
             }
             Err(LockError::Other(e)) => Err(Error::Io(e)),
         }

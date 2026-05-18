@@ -75,12 +75,18 @@ tui:
     hard_stop_denied: "hard mode активен — остановка запрещена (нажми p для panic)"
     nothing_to_stop: "нечего останавливать"
     no_hard_session: "нет hard-mode сессии"
-    panic_release_at: "panic выход в {at}"
     panic_release_in: "panic запрошен — выход через %{duration}"
     panic_cancelled: "panic отменён"
     unexpected: "неожиданный ответ"
     settings_saved: "настройки сохранены"
     reset_done: "все данные стёрты — перезапустите для онбординга"
+  panic_modal:
+    prompt: "введите фразу, чтобы запланировать выход:"
+    mismatch: "фраза не совпадает — попробуйте ещё раз"
+  home_hard:
+    phrase_label: "hard mode · panic-фраза  "
+    press_p: "  ·  нажмите p"
+    scheduled_in: "panic запрошен · выход через  "
   menu:
     start: "Начать сессию"
     stop: "Остановить"

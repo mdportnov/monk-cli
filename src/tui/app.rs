@@ -1043,11 +1043,8 @@ impl App {
                         let remaining = (at - chrono::Utc::now())
                             .to_std()
                             .unwrap_or(std::time::Duration::ZERO);
-                        crate::i18n::t!(
-                            "tui.flash.panic_release_in",
-                            duration = humantime::format_duration(remaining).to_string()
-                        )
-                        .to_string()
+                        let dur = humantime::format_duration(remaining).to_string();
+                        crate::i18n::t!("tui.flash.panic_release_in", duration = dur).to_string()
                     }
                     None => crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
                 };

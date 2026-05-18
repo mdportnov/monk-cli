@@ -174,14 +174,121 @@ pub fn apps_scan() -> Result<()> {
     Ok(())
 }
 
-pub async fn profile_create(name: &str) -> Result<()> {
+pub async fn profile_create(name: &str, preset: Option<&str>) -> Result<()> {
     let mut cfg = load_cfg_via_daemon().await?;
     if cfg.profiles.contains_key(name) {
         return Err(Error::Config(format!("profile `{name}` already exists")));
     }
-    cfg.profiles.insert(name.to_string(), crate::config::Profile::default());
+    let profile = if let Some(pname) = preset {
+        crate::onboarding::lookup_preset(pname).ok_or_else(|| {
+            Error::Config(format!(
+                "unknown preset `{pname}` — try one of: {}",
+                crate::onboarding::PRESET_NAMES.join(", ")
+            ))
+        })?
+    } else {
+        crate::config::Profile::default()
+    };
+    cfg.profiles.insert(name.to_string(), profile);
     save_cfg_via_daemon(cfg).await?;
-    println!("created profile `{name}` — run `monk profile edit {name}` to populate");
+    let hint = match preset {
+        Some(p) => format!("seeded from preset `{p}`"),
+        None => format!("run `monk profile edit {name}` to populate"),
+    };
+    println!("created profile `{name}` — {hint}");
+    Ok(())
+}
+
+pub async fn profile_duplicate(source: &str, target: Option<&str>) -> Result<()> {
+    let mut cfg = load_cfg_via_daemon().await?;
+    let src = cfg
+        .profiles
+        .get(source)
+        .ok_or_else(|| Error::Config(format!("profile `{source}` not found")))?
+        .clone();
+    let base = target.unwrap_or(source).to_string();
+    let taken: std::collections::BTreeSet<String> = cfg.profiles.keys().cloned().collect();
+    let new_name = if target.is_none() || taken.contains(&base) {
+        unique_dup_name(&base, &taken)
+    } else {
+        base
+    };
+    cfg.profiles.insert(new_name.clone(), src);
+    save_cfg_via_daemon(cfg).await?;
+    println!("duplicated `{source}` → `{new_name}`");
+    Ok(())
+}
+
+fn unique_dup_name(base: &str, taken: &std::collections::BTreeSet<String>) -> String {
+    if !taken.contains(base) {
+        return base.to_string();
+    }
+    for n in 2..=u32::MAX {
+        let candidate = format!("{base}-{n}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+    }
+    base.to_string()
+}
+
+pub async fn profile_show(name: &str, json: bool) -> Result<()> {
+    let cfg = load_cfg_via_daemon().await?;
+    let profile = cfg
+        .profiles
+        .get(name)
+        .ok_or_else(|| Error::Config(format!("profile `{name}` not found")))?;
+    if json {
+        let payload = serde_json::json!({
+            "name": name,
+            "profile": profile,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+    println!("profile: {name}");
+    if let Some(c) = &profile.color {
+        println!("  color: {c}");
+    }
+    let l = &profile.limits;
+    println!("  limits:");
+    println!("    max:       {}", fmt_opt(l.max_duration));
+    println!("    min:       {}", fmt_opt(l.min_duration));
+    println!("    cooldown:  {}", fmt_opt(l.cooldown));
+    println!("    daily cap: {}", fmt_opt(l.daily_cap));
+    println!("    panic delay: {}", fmt_opt(l.panic_delay));
+    if let Some(sch) = &profile.schedule {
+        println!("  schedule: {:?}", sch);
+    }
+    println!("  apps ({}):", profile.apps.len());
+    for a in &profile.apps {
+        println!("    · {a}");
+    }
+    println!("  site groups ({}):", profile.site_groups.len());
+    for g in &profile.site_groups {
+        let size = crate::sites::all_groups()
+            .ok()
+            .and_then(|all| all.iter().find(|x| &x.qualified() == g).map(|x| x.hosts.len()))
+            .unwrap_or(0);
+        println!("    · {g}  ({size} hosts)");
+    }
+    println!("  custom sites ({}):", profile.sites.len());
+    for s in &profile.sites {
+        println!("    · {s}");
+    }
+    println!("  brands ({}):", profile.brands.len());
+    for b in &profile.brands {
+        println!("    · {b}");
+    }
+    if !profile.hooks.before.is_empty() || !profile.hooks.after.is_empty() {
+        println!("  hooks:");
+        for h in &profile.hooks.before {
+            println!("    before: {h}");
+        }
+        for h in &profile.hooks.after {
+            println!("    after:  {h}");
+        }
+    }
     Ok(())
 }
 
@@ -382,8 +489,32 @@ fn pick_custom_sites(profile: &crate::config::Profile) -> Result<Vec<String>> {
     Ok(raw.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
 }
 
-pub fn stats() -> Result<()> {
-    println!("stats: coming soon");
+pub async fn stats() -> Result<()> {
+    // For now we render per-mode summary: today's used + budget left, and
+    // each mode's blocked-apps/sites/groups counts. Full history with
+    // sessions list would need a new daemon RPC; this is the 80% answer.
+    let resp = ipc::send(&Request::ListModes).await?;
+    let Response::Modes { modes } = resp else {
+        return Err(Error::Ipc("unexpected response from daemon".into()));
+    };
+    if modes.is_empty() {
+        println!("no modes configured");
+        return Ok(());
+    }
+    println!("{:<24} {:>8} {:>10} {:>10}", "mode", "today", "budget", "blocked");
+    for m in &modes {
+        let used = humantime::format_duration(m.stats.used_24h).to_string();
+        let budget = m
+            .stats
+            .daily_cap_remaining
+            .map(|d| humantime::format_duration(d).to_string())
+            .unwrap_or_else(|| "—".into());
+        let blocked = format!(
+            "{}a/{}g/{}s",
+            m.blocked_apps, m.blocked_groups, m.blocked_sites
+        );
+        println!("{:<24} {:>8} {:>10} {:>10}", m.name, used, budget, blocked);
+    }
     Ok(())
 }
 

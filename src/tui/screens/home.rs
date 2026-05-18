@@ -162,12 +162,12 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             if let Some(rem) = mode.stats.cooldown_remaining {
                 info_lines.push(Line::from(vec![
                     Span::styled("cooldown  ", Style::default().fg(DIM)),
-                    Span::styled(format!("{}", fmt_short(rem)), Style::default().fg(TEXT)),
+                    Span::styled(fmt_short(rem).to_string(), Style::default().fg(TEXT)),
                 ]));
             } else {
                 info_lines.push(Line::from(vec![
                     Span::styled("cooldown  ", Style::default().fg(DIM)),
-                    Span::styled(format!("{}", fmt_short(cd)), Style::default().fg(DIM)),
+                    Span::styled(fmt_short(cd).to_string(), Style::default().fg(DIM)),
                 ]));
             }
         }
@@ -183,7 +183,10 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             let now = chrono::Utc::now();
             let remaining = (at - now).to_std().unwrap_or(std::time::Duration::ZERO);
             Line::from(vec![
-                Span::styled("panic scheduled · release in  ", Style::default().fg(DIM)),
+                Span::styled(
+                    crate::i18n::t!("tui.home_hard.scheduled_in").to_string(),
+                    Style::default().fg(DIM),
+                ),
                 Span::styled(
                     fmt_short(remaining),
                     Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
@@ -191,12 +194,18 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             ])
         } else {
             Line::from(vec![
-                Span::styled("hard mode · panic phrase  ", Style::default().fg(DIM)),
+                Span::styled(
+                    crate::i18n::t!("tui.home_hard.phrase_label").to_string(),
+                    Style::default().fg(DIM),
+                ),
                 Span::styled(
                     hard.panic_phrase.clone(),
                     Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("  ·  press p", Style::default().fg(DIM)),
+                Span::styled(
+                    crate::i18n::t!("tui.home_hard.press_p").to_string(),
+                    Style::default().fg(DIM),
+                ),
             ])
         }
     } else {
