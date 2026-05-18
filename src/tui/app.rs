@@ -711,6 +711,21 @@ impl App {
 
 
     pub async fn start_from_confirm(&mut self) {
+        // Pre-flight: if a session is already running for this exact profile,
+        // explain instead of asking the daemon to reject it.
+        let already_running = matches!(
+            (&self.screen, &self.globals.active),
+            (Screen::ModeConfirm(c), Some(s)) if c.mode.name == s.profile
+        );
+        if already_running {
+            if let Screen::ModeConfirm(c) = &mut self.screen {
+                c.error = Some(
+                    "this mode is already running — esc to go back, stop or panic from home"
+                        .into(),
+                );
+            }
+            return;
+        }
         let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
         if let Some(reason) = confirm.blocked_reason() {
             confirm.error = Some(reason);

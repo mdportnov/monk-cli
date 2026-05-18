@@ -190,24 +190,32 @@ pub async fn handle_confirm_key(app: &mut App, key: KeyEvent) {
                 app.open_picker();
                 return;
             }
-            // Shift+Enter on the highlighted group → open inspector.
-            // Plain Enter (no shift) → start session.
+            // Shift+Enter is the commit gesture (start session). It's the
+            // less-frequent action and needs a deliberate keypress so the
+            // user doesn't accidentally start while browsing groups.
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                app.start_from_confirm().await;
+                return;
+            }
+            // Plain Enter inspects the selected group (the more frequent
+            // action while reading the confirm screen). Space is a synonym.
+            // If there are no groups in this profile, fall through to start
+            // (covers the legacy "just hit enter to go" muscle memory).
+            KeyCode::Enter | KeyCode::Char(' ') => {
                 if confirm.group_count() > 0 {
                     confirm.open_selected_group();
-                    return;
+                } else {
+                    app.start_from_confirm().await;
                 }
+                return;
             }
-            // Fallback key when the terminal eats shift+enter.
+            // `o` (open) is an explicit fallback for terminals that swallow
+            // shift+enter or for users who prefer a dedicated key.
             KeyCode::Char('o') => {
                 if confirm.group_count() > 0 {
                     confirm.open_selected_group();
                     return;
                 }
-            }
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                app.start_from_confirm().await;
-                return;
             }
             KeyCode::Up | KeyCode::Char('k') => confirm.select_prev_group(),
             KeyCode::Down | KeyCode::Char('j') => confirm.select_next_group(),
@@ -248,14 +256,38 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
         ])
         .split(outer[1]);
 
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled("start  ", Style::default().fg(DIM)),
-        Span::styled(
-            confirm.mode.name.clone(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ),
-    ]))
-    .alignment(Alignment::Center);
+    let is_running = matches!(
+        &app.globals.active,
+        Some(s) if s.profile == confirm.mode.name
+    );
+    let title_line = if is_running {
+        let remaining = app
+            .globals
+            .active
+            .as_ref()
+            .map(|s| s.remaining())
+            .unwrap_or_default();
+        Line::from(vec![
+            Span::styled("● running  ", Style::default().fg(ALERT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                confirm.mode.name.clone(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  ·  {} left", fmt_short(remaining)),
+                Style::default().fg(DIM),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("start  ", Style::default().fg(DIM)),
+            Span::styled(
+                confirm.mode.name.clone(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+    let title = Paragraph::new(title_line).alignment(Alignment::Center);
     f.render_widget(title, body[0]);
 
     let secs = confirm.duration.as_secs();
@@ -280,10 +312,12 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
 
     draw_confirm_details(f, body[4], confirm);
 
-    let help = if confirm.blocked_reason().is_some() {
+    let help = if is_running {
+        "esc back   ·   already running — stop or panic from home"
+    } else if confirm.blocked_reason().is_some() {
         "←/→ duration   esc back   ·   start blocked"
     } else {
-        "←/→ duration   ↑/↓ group · shift+⏎ inspect   H hard   ⏎ start   esc back"
+        "←/→ duration   ↑/↓ group   ⏎ inspect   shift+⏎ start   H hard   esc back"
     };
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
