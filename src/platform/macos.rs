@@ -174,18 +174,15 @@ pub fn install_service(bin: &str) -> Result<String> {
     fs_err::write(SYSTEM_LAUNCHD_PLIST, rendered)?;
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs_err::set_permissions(
-            SYSTEM_LAUNCHD_PLIST,
-            std::fs::Permissions::from_mode(0o644),
-        );
+        let _ =
+            fs_err::set_permissions(SYSTEM_LAUNCHD_PLIST, std::fs::Permissions::from_mode(0o644));
     }
     msgs.push(format!("wrote {SYSTEM_LAUNCHD_PLIST}"));
 
     if let Ok(user) = std::env::var("SUDO_USER") {
         if user != "root" {
-            let legacy = PathBuf::from(format!(
-                "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
-            ));
+            let legacy =
+                PathBuf::from(format!("/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"));
             if legacy.exists() {
                 if let Some((uid, _)) = sudo_user_ids() {
                     let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}")], Some(&legacy));
@@ -202,10 +199,8 @@ pub fn install_service(bin: &str) -> Result<String> {
     // bootout system on a not-yet-bootstrapped plist errors with code 5; we
     // expect that on first install — suppress the noise.
     let _ = quiet_launchctl(&["bootout", "system"], Some(Path::new(SYSTEM_LAUNCHD_PLIST)));
-    let status = Command::new("launchctl")
-        .args(["bootstrap", "system"])
-        .arg(SYSTEM_LAUNCHD_PLIST)
-        .status();
+    let status =
+        Command::new("launchctl").args(["bootstrap", "system"]).arg(SYSTEM_LAUNCHD_PLIST).status();
     match status {
         Ok(s) if s.success() => msgs.push("loaded via launchctl bootstrap system".into()),
         _ => msgs.push(format!(
@@ -233,9 +228,8 @@ pub fn uninstall_service(purge: bool) -> Result<String> {
 
     if let Ok(user) = std::env::var("SUDO_USER") {
         if user != "root" {
-            let legacy = PathBuf::from(format!(
-                "/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"
-            ));
+            let legacy =
+                PathBuf::from(format!("/Users/{user}/Library/LaunchAgents/dev.monk.monkd.plist"));
             if legacy.exists() {
                 if let Some((uid, _)) = sudo_user_ids() {
                     let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}")], Some(&legacy));
@@ -283,4 +277,3 @@ fn quiet_launchctl(
     }
     cmd.stdout(Stdio::null()).stderr(Stdio::null()).status()
 }
-

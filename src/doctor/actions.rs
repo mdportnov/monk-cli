@@ -1,4 +1,3 @@
-
 pub(crate) fn start_daemon() -> std::result::Result<String, String> {
     if let Ok(pf) = crate::daemon::PidFile::new() {
         if let Ok(Some(pid)) = pf.is_alive() {
@@ -35,7 +34,9 @@ pub(crate) fn stop_daemon() -> std::result::Result<String, String> {
     }
 }
 
-pub(crate) fn open_path_action(p: crate::Result<std::path::PathBuf>) -> std::result::Result<String, String> {
+pub(crate) fn open_path_action(
+    p: crate::Result<std::path::PathBuf>,
+) -> std::result::Result<String, String> {
     let path = p.map_err(|e| e.to_string())?;
     if !path.exists() {
         return Err(format!("path does not exist: {}", path.display()));

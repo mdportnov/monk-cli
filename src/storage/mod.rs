@@ -13,8 +13,9 @@ pub struct Store {
 /// Migration array: (version, sql)
 /// Version 1 = current schema (for existing DBs created with old migrate())
 /// New versions get appended here
-const MIGRATIONS: &[(u32, &str)] = &[
-    (1, r#"
+const MIGRATIONS: &[(u32, &str)] = &[(
+    1,
+    r#"
         CREATE TABLE IF NOT EXISTS sessions (
             id          TEXT PRIMARY KEY,
             profile     TEXT NOT NULL,
@@ -25,8 +26,8 @@ const MIGRATIONS: &[(u32, &str)] = &[
             state       TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
-    "#),
-];
+    "#,
+)];
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
@@ -45,7 +46,8 @@ impl Store {
 
     fn migrate(&self) -> Result<()> {
         let mut conn = self.conn.lock();
-        let current_version: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let current_version: u32 =
+            conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
         for &(version, sql) in MIGRATIONS {
             if version <= current_version {
@@ -88,22 +90,27 @@ mod tests {
         let store = Store::open(&db_path).expect("store open");
 
         // Check that migrations ran and version is set to latest
-        let version: u32 = store.execute(|conn| {
-            Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
-        }).expect("version query");
+        let version: u32 = store
+            .execute(|conn| Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?))
+            .expect("version query");
 
         let latest_version = MIGRATIONS.last().map(|(v, _)| *v).unwrap_or(0);
         assert_eq!(version, latest_version);
 
         // Check that sessions table exists
-        store.execute(|conn| {
-            let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")?;
-            let tables: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            assert_eq!(tables.len(), 1);
-            assert_eq!(tables[0], "sessions");
-            Ok(())
-        }).expect("table check");
+        store
+            .execute(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'",
+                )?;
+                let tables: Vec<String> = stmt
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                assert_eq!(tables.len(), 1);
+                assert_eq!(tables[0], "sessions");
+                Ok(())
+            })
+            .expect("table check");
     }
 
     #[test]
@@ -113,17 +120,17 @@ mod tests {
 
         // First migration
         let store1 = Store::open(&db_path).expect("store open 1");
-        let version1: u32 = store1.execute(|conn| {
-            Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
-        }).expect("version query 1");
+        let version1: u32 = store1
+            .execute(|conn| Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?))
+            .expect("version query 1");
 
         drop(store1);
 
         // Second migration on same DB
         let store2 = Store::open(&db_path).expect("store open 2");
-        let version2: u32 = store2.execute(|conn| {
-            Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
-        }).expect("version query 2");
+        let version2: u32 = store2
+            .execute(|conn| Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?))
+            .expect("version query 2");
 
         assert_eq!(version1, version2);
 
@@ -134,9 +141,11 @@ mod tests {
             Ok(())
         }).expect("insert test");
 
-        let count: i64 = store2.execute(|conn| {
-            Ok(conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?)
-        }).expect("count query");
+        let count: i64 = store2
+            .execute(|conn| {
+                Ok(conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?)
+            })
+            .expect("count query");
         assert_eq!(count, 1);
     }
 }

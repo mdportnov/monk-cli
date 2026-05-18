@@ -192,14 +192,14 @@ impl EditorState {
         if name.chars().count() > 30 {
             return Err((Some(EditorField::Name), "name must be ≤ 30 chars".into()));
         }
-        let max_duration = parse_opt_humantime(&self.max)
-            .map_err(|e| (Some(EditorField::Max), e))?;
-        let min_duration = parse_opt_humantime(&self.min)
-            .map_err(|e| (Some(EditorField::Min), e))?;
-        let cooldown = parse_opt_humantime(&self.cooldown)
-            .map_err(|e| (Some(EditorField::Cooldown), e))?;
-        let daily_cap = parse_opt_humantime(&self.daily_cap)
-            .map_err(|e| (Some(EditorField::DailyCap), e))?;
+        let max_duration =
+            parse_opt_humantime(&self.max).map_err(|e| (Some(EditorField::Max), e))?;
+        let min_duration =
+            parse_opt_humantime(&self.min).map_err(|e| (Some(EditorField::Min), e))?;
+        let cooldown =
+            parse_opt_humantime(&self.cooldown).map_err(|e| (Some(EditorField::Cooldown), e))?;
+        let daily_cap =
+            parse_opt_humantime(&self.daily_cap).map_err(|e| (Some(EditorField::DailyCap), e))?;
         let panic_delay = parse_opt_humantime(&self.panic_delay)
             .map_err(|e| (Some(EditorField::PanicDelay), e))?;
         let limits = Limits { max_duration, min_duration, cooldown, daily_cap, panic_delay };
@@ -287,27 +287,24 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
                             ed.add_custom_error = None;
                         }
                     }
-                    EditorField::Sites => {
-                        match crate::sites::sanitize_host(&raw) {
-                            Some(host) => {
-                                let current = ed.sites.value.trim();
-                                if current.is_empty() {
-                                    ed.sites.value = host;
-                                } else {
-                                    ed.sites.value = format!("{current}, {host}");
-                                }
-                                ed.sites.cursor = ed.sites.value.chars().count();
-                                ed.add_custom_app = None;
-                                ed.add_custom_error = None;
+                    EditorField::Sites => match crate::sites::sanitize_host(&raw) {
+                        Some(host) => {
+                            let current = ed.sites.value.trim();
+                            if current.is_empty() {
+                                ed.sites.value = host;
+                            } else {
+                                ed.sites.value = format!("{current}, {host}");
                             }
-                            None => {
-                                ed.add_custom_error = Some(
-                                    "not a valid hostname (e.g. example.com or news.bbc.co.uk)"
-                                        .into(),
-                                );
-                            }
+                            ed.sites.cursor = ed.sites.value.chars().count();
+                            ed.add_custom_app = None;
+                            ed.add_custom_error = None;
                         }
-                    }
+                        None => {
+                            ed.add_custom_error = Some(
+                                "not a valid hostname (e.g. example.com or news.bbc.co.uk)".into(),
+                            );
+                        }
+                    },
                     _ => {
                         ed.add_custom_app = None;
                         ed.add_custom_error = None;
@@ -363,10 +360,8 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
     // ↑/↓ move between fields for everything that isn't a multi-select
     // (Apps/Groups/Brands swallow vertical arrows for their own list nav).
     let focus = ed.focus;
-    let is_multiselect = matches!(
-        focus,
-        EditorField::Apps | EditorField::Groups | EditorField::Brands
-    );
+    let is_multiselect =
+        matches!(focus, EditorField::Apps | EditorField::Groups | EditorField::Brands);
     if !is_multiselect {
         match key.code {
             KeyCode::Up => {
@@ -482,14 +477,10 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
 
     if let Some(input) = &editor.add_custom_app {
         let (title, hint) = match editor.focus {
-            EditorField::Sites => (
-                " add custom site ",
-                "hostname (e.g. example.com · news.bbc.co.uk)",
-            ),
-            _ => (
-                " add custom app ",
-                "bundle id (e.g. com.example.app · proc.exe)",
-            ),
+            EditorField::Sites => {
+                (" add custom site ", "hostname (e.g. example.com · news.bbc.co.uk)")
+            }
+            _ => (" add custom app ", "bundle id (e.g. com.example.app · proc.exe)"),
         };
         draw_add_custom_modal(f, title, hint, input, editor.add_custom_error.as_deref());
     }
@@ -533,29 +524,20 @@ fn draw_add_custom_modal(
         ])
         .split(inner);
 
-    let hint_para = Paragraph::new(Span::styled(
-        hint.to_string(),
-        Style::default().fg(DIM),
-    ))
-    .alignment(Alignment::Center);
+    let hint_para = Paragraph::new(Span::styled(hint.to_string(), Style::default().fg(DIM)))
+        .alignment(Alignment::Center);
     f.render_widget(hint_para, layout[0]);
 
     input.render(layout[1], f.buffer_mut(), Style::default().fg(TEXT));
 
     if let Some(err) = error {
-        let err_line = Paragraph::new(Span::styled(
-            err.to_string(),
-            Style::default().fg(ALERT),
-        ))
-        .alignment(Alignment::Center);
+        let err_line = Paragraph::new(Span::styled(err.to_string(), Style::default().fg(ALERT)))
+            .alignment(Alignment::Center);
         f.render_widget(err_line, layout[3]);
     }
 
-    let actions = Paragraph::new(Span::styled(
-        "enter add · esc cancel",
-        Style::default().fg(DIM),
-    ))
-    .alignment(Alignment::Center);
+    let actions = Paragraph::new(Span::styled("enter add · esc cancel", Style::default().fg(DIM)))
+        .alignment(Alignment::Center);
     f.render_widget(actions, layout[4]);
 }
 

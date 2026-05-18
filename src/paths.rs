@@ -63,8 +63,7 @@ pub fn runtime_dir() -> Result<PathBuf> {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    fs_err::set_permissions(&p, std::fs::Permissions::from_mode(0o755));
+                let _ = fs_err::set_permissions(&p, std::fs::Permissions::from_mode(0o755));
             }
             return Ok(p);
         }

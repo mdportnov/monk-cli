@@ -8,7 +8,6 @@ use ratatui::{
 
 use std::time::Duration;
 
-
 use crate::tui::{
     app::{App, Screen},
     screens,
@@ -167,7 +166,6 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
     f.render_widget(para, rect);
 }
 
-
 /// Render a centered yes/no confirmation modal over the current screen.
 /// Used by editor (discard unsaved changes), picker (delete mode),
 /// settings (reset all data). Caller is responsible for handling the
@@ -210,9 +208,7 @@ pub fn draw_confirm_modal(
         ])
         .split(inner);
 
-    let para = Paragraph::new(body)
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true });
+    let para = Paragraph::new(body).alignment(Alignment::Center).wrap(Wrap { trim: true });
     f.render_widget(para, layout[0]);
 
     let yes_style = Style::default().fg(border_color).add_modifier(Modifier::BOLD);
@@ -224,10 +220,7 @@ pub fn draw_confirm_modal(
         Span::styled("n  ", Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(no_label.to_string(), Style::default().fg(TEXT)),
     ]);
-    f.render_widget(
-        Paragraph::new(actions).alignment(Alignment::Center),
-        layout[2],
-    );
+    f.render_widget(Paragraph::new(actions).alignment(Alignment::Center), layout[2]);
 }
 
 pub fn fmt_short(d: Duration) -> String {
@@ -247,8 +240,6 @@ pub fn fmt_short(d: Duration) -> String {
         format!("{secs}s")
     }
 }
-
-
 
 pub fn kv(key: &str, value: &str) -> Line<'static> {
     Line::from(vec![
@@ -287,7 +278,6 @@ pub fn picker_block(title: &str) -> Block<'_> {
         .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
-
 pub fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     let mut spans = vec![
         Span::styled("monk", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
@@ -306,7 +296,6 @@ pub fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(p, area);
 }
 
-
 pub fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let help = if app.globals.hard_mode.is_some() {
         "↑/↓ move   ⏎ select   q quit   ·   stop disabled — use panic"
@@ -318,7 +307,6 @@ pub fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);
 }
-
 
 #[cfg(test)]
 mod snapshot_tests {
@@ -407,14 +395,13 @@ mod snapshot_tests {
     fn snapshot_picker() {
         let mut app = base_app();
         let modes = app.globals.cached_modes.clone();
-        app.screen =
-            Screen::ModePicker(PickerState {
-                modes,
-                selected: 0,
-                loading: false,
-                error: None,
-                confirm_delete: None,
-            });
+        app.screen = Screen::ModePicker(PickerState {
+            modes,
+            selected: 0,
+            loading: false,
+            error: None,
+            confirm_delete: None,
+        });
         insta::assert_snapshot!(render(&app, 100, 30));
     }
 

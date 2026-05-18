@@ -1,7 +1,7 @@
 mod app;
+mod screens;
+mod theme;
 mod view;
 mod widgets;
-mod theme;
-mod screens;
 
 pub use app::run;

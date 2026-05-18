@@ -9,11 +9,11 @@ use ratatui::{
 use tui_big_text::{BigText, PixelSize};
 
 use crate::tui::{
-        app::{App, FlashLevel, HomeState, MenuItem, Screen},
-        screens::companion::draw_monk,
-        theme::*,
-        view::{draw_header, draw_footer, fmt_short},
-    };
+    app::{App, FlashLevel, HomeState, MenuItem, Screen},
+    screens::companion::draw_monk,
+    theme::*,
+    view::{draw_footer, draw_header, fmt_short},
+};
 
 pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
     let Screen::Home(home) = &mut app.screen else { return };
@@ -209,10 +209,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             ])
         }
     } else {
-        Line::from(Span::styled(
-            "x end  p panic",
-            Style::default().fg(DIM),
-        ))
+        Line::from(Span::styled("x end  p panic", Style::default().fg(DIM)))
     };
     let footer = Paragraph::new(footer_line).alignment(Alignment::Center);
     f.render_widget(footer, layout[5]);
@@ -315,7 +312,6 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
     lines
 }
 
-
 // Helper functions that will need to be accessible from the main app
 async fn activate_home(app: &mut App) {
     let Screen::Home(home) = &app.screen else { return };
@@ -329,5 +325,3 @@ async fn activate_home(app: &mut App) {
         MenuItem::Quit => app.should_quit = true,
     }
 }
-
-

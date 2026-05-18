@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use crate::paths;
 
-mod checks;
 mod actions;
+mod checks;
 mod ui;
 
 pub use ui::Report;
@@ -130,8 +130,12 @@ impl Check {
 
 pub async fn run() -> Report {
     let start = Instant::now();
-    let mut checks =
-        vec![checks::check_version(), checks::check_platform(), checks::check_privileges(), checks::check_service_install()];
+    let mut checks = vec![
+        checks::check_version(),
+        checks::check_platform(),
+        checks::check_privileges(),
+        checks::check_service_install(),
+    ];
     checks.extend(checks::check_paths());
     checks.push(checks::check_config());
     checks.push(checks::check_pidfile());

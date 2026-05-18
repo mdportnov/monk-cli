@@ -509,10 +509,7 @@ pub async fn stats() -> Result<()> {
             .daily_cap_remaining
             .map(|d| humantime::format_duration(d).to_string())
             .unwrap_or_else(|| "—".into());
-        let blocked = format!(
-            "{}a/{}g/{}s",
-            m.blocked_apps, m.blocked_groups, m.blocked_sites
-        );
+        let blocked = format!("{}a/{}g/{}s", m.blocked_apps, m.blocked_groups, m.blocked_sites);
         println!("{:<24} {:>8} {:>10} {:>10}", m.name, used, budget, blocked);
     }
     Ok(())

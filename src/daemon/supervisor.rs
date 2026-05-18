@@ -186,10 +186,57 @@ impl Supervisor {
         if name.is_empty() {
             return Err(Error::Config("mode name cannot be empty".into()));
         }
+        // Empty profile = nothing to block. The user can always add things
+        // later, but starting an empty session is a no-op trap (you'd think
+        // you're in focus mode but every site/app stays accessible). Reject
+        // at save time so the trap can never trigger.
+        if profile.sites.is_empty()
+            && profile.site_groups.is_empty()
+            && profile.apps.is_empty()
+            && profile.brands.is_empty()
+        {
+            return Err(Error::Config(
+                "profile blocks nothing — add at least one site, group, app, or brand".into(),
+            ));
+        }
+        // Cross-validate limits beyond what the editor already checks; the
+        // CLI / direct config import can bypass the editor's validator.
+        if let (Some(mn), Some(mx)) = (profile.limits.min_duration, profile.limits.max_duration) {
+            if mn > mx {
+                return Err(Error::Config(format!(
+                    "profile `{name}` has min_duration ({}) > max_duration ({})",
+                    humantime::format_duration(mn),
+                    humantime::format_duration(mx)
+                )));
+            }
+        }
+        if let (Some(cap), Some(min)) = (profile.limits.daily_cap, profile.limits.min_duration) {
+            if cap < min {
+                return Err(Error::Config(format!(
+                    "profile `{name}` has daily_cap ({}) smaller than min_duration ({}) — \
+                     no session would ever fit",
+                    humantime::format_duration(cap),
+                    humantime::format_duration(min)
+                )));
+            }
+        }
         self.with_write(|cfg| {
             cfg.profiles.insert(name, profile);
             Ok(())
         })
+    }
+
+    /// Reload the on-disk config into memory without restarting the daemon.
+    /// SIGHUP triggers this. Safe during an active session: the session lock
+    /// pinned `duration`, `hard_mode`, `panic_delay`, and `panic_phrase` at
+    /// start time, so config changes can only affect blocking semantics on
+    /// the next tick (which is desirable — user edited the block list and
+    /// wants it to apply).
+    pub fn reload_config(&self) -> Result<()> {
+        let new_cfg = Config::load()?;
+        *self.config.write() = new_cfg;
+        self.audit.append(AuditKind::DaemonRestarted, None, "config reloaded via SIGHUP");
+        Ok(())
     }
 
     pub fn get_general(&self) -> crate::config::General {
@@ -302,10 +349,7 @@ impl Supervisor {
             profile: profile.clone(),
             duration,
             hard_mode,
-            panic_delay: profile_def
-                .limits
-                .panic_delay
-                .unwrap_or(cfg.general.panic_delay),
+            panic_delay: profile_def.limits.panic_delay.unwrap_or(cfg.general.panic_delay),
             panic_phrase,
             reason,
             boot_id: clock::boot_id(),
@@ -316,6 +360,10 @@ impl Supervisor {
             Ok(_) => {
                 *self.active_profile.write() = Some(profile.clone());
                 self.last_tick_ms.store(clock::monotonic_ms() as u64, Ordering::SeqCst);
+                // Reset tamper-mac memory at session boundaries — a fresh
+                // session must penalize a fresh tamper, even if the MAC
+                // happens to equal one observed in a previous session.
+                *self.last_tamper_mac.lock() = None;
                 self.audit.append_with(
                     AuditKind::SessionStarted,
                     Some(lock.id),
@@ -428,11 +476,7 @@ impl Supervisor {
                             );
                             tracing::error!(?e, %reason, "blocker entered degraded state");
                             *self.blocker_fallback_reason.write() = Some(reason.clone());
-                            self.audit.append(
-                                AuditKind::BlockerDegraded,
-                                Some(lock.id),
-                                &reason,
-                            );
+                            self.audit.append(AuditKind::BlockerDegraded, Some(lock.id), &reason);
                         }
                     } else {
                         let prev_failures =

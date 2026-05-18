@@ -67,28 +67,24 @@ pub fn draw_panic(f: &mut Frame, _app: &App, st: &PanicState) {
     let inner = block.inner(rect);
     f.render_widget(block, rect);
 
-    let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        crate::i18n::t!("tui.panic_modal.prompt").to_string(),
-        Style::default().fg(DIM),
-    )));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        st.expected.clone(),
-        Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(""));
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            crate::i18n::t!("tui.panic_modal.prompt").to_string(),
+            Style::default().fg(DIM),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            st.expected.clone(),
+            Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
     if let Some(err) = &st.error {
-        lines.push(Line::from(Span::styled(
-            err.clone(),
-            Style::default().fg(ALERT),
-        )));
+        lines.push(Line::from(Span::styled(err.clone(), Style::default().fg(ALERT))));
     } else {
         lines.push(Line::from(""));
     }
-    let para = Paragraph::new(lines)
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true });
+    let para = Paragraph::new(lines).alignment(Alignment::Center).wrap(Wrap { trim: true });
 
     let layout = ratatui::layout::Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
@@ -103,10 +99,7 @@ pub fn draw_panic(f: &mut Frame, _app: &App, st: &PanicState) {
     f.render_widget(para, layout[0]);
     st.input.render(layout[1], f.buffer_mut(), Style::default().fg(TEXT));
 
-    let hint = Paragraph::new(Span::styled(
-        "enter confirm · esc cancel",
-        Style::default().fg(DIM),
-    ))
-    .alignment(Alignment::Center);
+    let hint = Paragraph::new(Span::styled("enter confirm · esc cancel", Style::default().fg(DIM)))
+        .alignment(Alignment::Center);
     f.render_widget(hint, layout[3]);
 }

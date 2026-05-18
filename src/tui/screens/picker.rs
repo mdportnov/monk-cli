@@ -12,8 +12,8 @@ use crate::{
     ipc::ModeSummary,
     tui::{
         app::{App, EditorState, HomeState, PickerState, PresetPickerState, Screen},
-        view::{draw_header, fmt_short},
         theme::*,
+        view::{draw_header, fmt_short},
     },
 };
 
@@ -102,10 +102,7 @@ pub fn draw_picker(f: &mut Frame, app: &App, picker: &PickerState) {
                     ),
                 ]),
                 Line::from(""),
-                Line::from(Span::styled(
-                    "this can't be undone.",
-                    Style::default().fg(DIM),
-                )),
+                Line::from(Span::styled("this can't be undone.", Style::default().fg(DIM))),
                 Line::from(""),
             ],
             "delete",
@@ -152,13 +149,18 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
             .iter()
             .map(|name| {
                 let label = crate::i18n::t!("onboarding.preset", preset = name);
-                ListItem::new(Line::from(Span::styled(format!("  {}", label), Style::default().fg(TEXT))))
+                ListItem::new(Line::from(Span::styled(
+                    format!("  {}", label),
+                    Style::default().fg(TEXT),
+                )))
             })
             .collect();
 
         let list = List::new(items)
             .block(picker_block(" presets "))
-            .highlight_style(Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol("▶ ");
 
         let mut list_state = ListState::default();
@@ -195,10 +197,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     if !profile.apps.is_empty() {
         let display_apps: Vec<String> = profile.apps.iter().take(3).cloned().collect();
         for app in display_apps {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", app),
-                Style::default().fg(DIM),
-            )));
+            lines.push(Line::from(Span::styled(format!("  {}", app), Style::default().fg(DIM))));
         }
         if profile.apps.len() > 3 {
             lines.push(Line::from(Span::styled(
@@ -238,10 +237,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
         lines.push(kv("sites", &format!("· {}", profile.sites.len())));
         let display_sites: Vec<String> = profile.sites.iter().take(3).cloned().collect();
         for site in display_sites {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", site),
-                Style::default().fg(DIM),
-            )));
+            lines.push(Line::from(Span::styled(format!("  {}", site), Style::default().fg(DIM))));
         }
         if profile.sites.len() > 3 {
             lines.push(Line::from(Span::styled(
@@ -447,4 +443,3 @@ fn open_editor_new(app: &mut App) {
 fn open_preset_picker(app: &mut App) {
     app.set_screen(Screen::PresetPicker(PresetPickerState::default()));
 }
-

@@ -121,20 +121,19 @@ impl ProcessGuard {
                 Some(_) => {}
                 // First contact — ask politely.
                 None => {
-                    let asked = if matches!(kind, AppKind::MacBundle)
-                        && quit_sent_for.contains(&app_id)
-                    {
-                        // Already sent AppleScript quit for this bundle in
-                        // this call. The event reaches every helper via the
-                        // parent. Just track this pid so escalation works.
-                        true
-                    } else {
-                        let ok = request_graceful_quit(&self.sys, pid, kind, &app_id);
-                        if ok && matches!(kind, AppKind::MacBundle) {
-                            quit_sent_for.insert(app_id.clone());
-                        }
-                        ok
-                    };
+                    let asked =
+                        if matches!(kind, AppKind::MacBundle) && quit_sent_for.contains(&app_id) {
+                            // Already sent AppleScript quit for this bundle in
+                            // this call. The event reaches every helper via the
+                            // parent. Just track this pid so escalation works.
+                            true
+                        } else {
+                            let ok = request_graceful_quit(&self.sys, pid, kind, &app_id);
+                            if ok && matches!(kind, AppKind::MacBundle) {
+                                quit_sent_for.insert(app_id.clone());
+                            }
+                            ok
+                        };
                     if asked {
                         info!(?pid, %name, %app_id, kind = ?kind, "requested graceful quit");
                         self.pending_quit.insert(pid, now);
@@ -158,12 +157,7 @@ impl ProcessGuard {
     }
 }
 
-fn request_graceful_quit(
-    sys: &System,
-    pid: sysinfo::Pid,
-    kind: AppKind,
-    app_id: &str,
-) -> bool {
+fn request_graceful_quit(sys: &System, pid: sysinfo::Pid, kind: AppKind, app_id: &str) -> bool {
     #[cfg(target_os = "macos")]
     if matches!(kind, AppKind::MacBundle) {
         // AppleScript "quit" delivers a real Apple Event so the app saves

@@ -129,7 +129,15 @@ pub async fn run() -> Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => { if should_exit("ctrl_c") { break 'main; } }
             _ = sigterm.recv() => { if should_exit("sigterm") { break 'main; } }
-            _ = sighup.recv() => { if should_exit("sighup") { break 'main; } }
+            _ = sighup.recv() => {
+                // SIGHUP = "reload your config from disk." Standard unix
+                // daemon contract. Useful for picking up profile edits made
+                // by direct TOML editing without restarting.
+                match supervisor.reload_config() {
+                    Ok(_) => tracing::info!("SIGHUP: config reloaded"),
+                    Err(e) => tracing::warn!(?e, "SIGHUP: config reload failed"),
+                }
+            }
             _ = shutdown.notified() => break 'main,
             accept = listener.accept() => {
                 match accept {

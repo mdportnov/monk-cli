@@ -8,11 +8,11 @@ use ratatui::{
 };
 
 use crate::tui::{
-        app::{App, Screen, LOCALES},
-        theme::*,
-        view::{draw_header, picker_block},
-        widgets::TextInput,
-    };
+    app::{App, Screen, LOCALES},
+    theme::*,
+    view::{draw_header, picker_block},
+    widgets::TextInput,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsField {
@@ -99,9 +99,7 @@ impl SettingsState {
             hard_mode: g.hard_mode,
             autostart: g.autostart,
             locale_idx,
-            panic_delay: TextInput::new(
-                humantime::format_duration(g.panic_delay).to_string(),
-            ),
+            panic_delay: TextInput::new(humantime::format_duration(g.panic_delay).to_string()),
             tamper_penalty: TextInput::new(
                 humantime::format_duration(g.tamper_penalty).to_string(),
             ),
@@ -122,8 +120,8 @@ impl SettingsState {
 
     pub fn prev_field(&mut self) {
         let idx = SettingsField::ORDER.iter().position(|f| *f == self.focus).unwrap_or(0);
-        self.focus =
-            SettingsField::ORDER[(idx + SettingsField::ORDER.len() - 1) % SettingsField::ORDER.len()];
+        self.focus = SettingsField::ORDER
+            [(idx + SettingsField::ORDER.len() - 1) % SettingsField::ORDER.len()];
         self.sync_focus();
     }
 
@@ -137,10 +135,7 @@ impl SettingsState {
     }
 
     pub fn default_profile_name(&self) -> &str {
-        self.profile_names
-            .get(self.default_profile_idx)
-            .map(String::as_str)
-            .unwrap_or("")
+        self.profile_names.get(self.default_profile_idx).map(String::as_str).unwrap_or("")
     }
 
     fn sync_focus(&mut self) {
@@ -223,17 +218,16 @@ pub async fn handle_settings_key(app: &mut App, key: KeyEvent) {
                         settings.autostart = !settings.autostart;
                     }
                 }
-                SettingsField::Locale => {
-                    match key.code {
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            settings.locale_idx = (settings.locale_idx + LOCALES.len() - 1) % LOCALES.len();
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            settings.locale_idx = (settings.locale_idx + 1) % LOCALES.len();
-                        }
-                        _ => {}
+                SettingsField::Locale => match key.code {
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        settings.locale_idx =
+                            (settings.locale_idx + LOCALES.len() - 1) % LOCALES.len();
                     }
-                }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        settings.locale_idx = (settings.locale_idx + 1) % LOCALES.len();
+                    }
+                    _ => {}
+                },
                 SettingsField::PanicDelay => {
                     settings.panic_delay.handle(key);
                 }
@@ -301,23 +295,11 @@ pub fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
             "reset all data?",
             vec![
                 Line::from(""),
-                Line::from(Span::styled(
-                    "this wipes:",
-                    Style::default().fg(TEXT),
-                )),
+                Line::from(Span::styled("this wipes:", Style::default().fg(TEXT))),
                 Line::from(""),
-                Line::from(Span::styled(
-                    "· all modes you've configured",
-                    Style::default().fg(DIM),
-                )),
-                Line::from(Span::styled(
-                    "· all settings",
-                    Style::default().fg(DIM),
-                )),
-                Line::from(Span::styled(
-                    "· the full session audit log",
-                    Style::default().fg(DIM),
-                )),
+                Line::from(Span::styled("· all modes you've configured", Style::default().fg(DIM))),
+                Line::from(Span::styled("· all settings", Style::default().fg(DIM))),
+                Line::from(Span::styled("· the full session audit log", Style::default().fg(DIM))),
                 Line::from(""),
                 Line::from(Span::styled(
                     "there is no undo.",
@@ -359,15 +341,15 @@ fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: Set
         SettingsField::DefaultProfile => {
             if st.profile_names.is_empty() {
                 let warn = Style::default().fg(ALERT).add_modifier(Modifier::ITALIC);
-                f.render_widget(Paragraph::new(Span::styled("no modes — create one first", warn)), rows[1]);
+                f.render_widget(
+                    Paragraph::new(Span::styled("no modes — create one first", warn)),
+                    rows[1],
+                );
             } else {
                 let name = st.default_profile_name();
                 let spans = vec![
                     Span::styled("←  ", Style::default().fg(DIM)),
-                    Span::styled(
-                        name.to_string(),
-                        value_style.add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(name.to_string(), value_style.add_modifier(Modifier::BOLD)),
                     Span::styled("  →", Style::default().fg(DIM)),
                 ];
                 f.render_widget(Paragraph::new(Line::from(spans)), rows[1]);

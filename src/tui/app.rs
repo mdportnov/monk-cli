@@ -15,9 +15,9 @@ use crate::{
     Result,
 };
 
-pub use screens::editor::EditorState;
 pub use screens::confirm::ConfirmState;
 pub use screens::doctor::DoctorState;
+pub use screens::editor::EditorState;
 pub use screens::settings::SettingsState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +126,6 @@ impl PickerState {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorField {
     Name,
@@ -190,12 +189,16 @@ impl EditorField {
             EditorField::Min => "shorter doesn't count as a session",
             EditorField::Cooldown => "protects against compulsive restart",
             EditorField::DailyCap => "daily focus budget — prevents burnout",
-            EditorField::PanicDelay => "delay before hard-mode panic releases (empty = global default)",
+            EditorField::PanicDelay => {
+                "delay before hard-mode panic releases (empty = global default)"
+            }
             EditorField::Schedule => "auto-start: `mon-fri 09:00-17:00` or `daily 22:00-23:00 UTC`",
             EditorField::Sites => "comma-separated hosts to block · + add custom",
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
-            EditorField::Apps => "space/enter toggle · + add custom · type to filter · ↑/↓ navigate",
+            EditorField::Apps => {
+                "space/enter toggle · + add custom · type to filter · ↑/↓ navigate"
+            }
             EditorField::Groups => "space/enter toggle · type to filter · ↑/↓ navigate",
             EditorField::Brands => {
                 "space/enter toggle · type to filter · auto-resolves domains + apps"
@@ -204,12 +207,7 @@ impl EditorField {
     }
 }
 
-
-
-
-
 pub const LOCALES: &[&str] = &["en", "ru"];
-
 
 #[derive(Debug)]
 pub enum Screen {
@@ -255,7 +253,6 @@ impl PresetPickerState {
         self.names.get(self.selected).copied()
     }
 }
-
 
 impl Default for Screen {
     fn default() -> Self {
@@ -452,9 +449,6 @@ impl App {
         }
     }
 
-
-
-
     pub async fn instantiate_preset(&mut self) {
         let preset_name = {
             let Screen::PresetPicker(state) = &self.screen else { return };
@@ -560,20 +554,13 @@ impl App {
         };
 
         // Generate unique name
-        let existing: std::collections::BTreeSet<String> = self
-            .globals
-            .cached_modes
-            .iter()
-            .map(|m| m.name.clone())
-            .collect();
+        let existing: std::collections::BTreeSet<String> =
+            self.globals.cached_modes.iter().map(|m| m.name.clone()).collect();
         let base = format!("{}-2", name);
         let unique_name = unique_mode_name(&base, &existing);
 
         // Open editor with the duplicated profile
-        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(
-            unique_name,
-            profile,
-        ))));
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(unique_name, profile))));
     }
 
     pub async fn save_editor(&mut self) {
@@ -709,7 +696,6 @@ impl App {
         self.set_screen(Screen::ModeConfirm(Box::new(state)));
     }
 
-
     pub async fn start_from_confirm(&mut self) {
         // Pre-flight: if a session is already running for this exact profile,
         // explain instead of asking the daemon to reject it.
@@ -720,8 +706,7 @@ impl App {
         if already_running {
             if let Screen::ModeConfirm(c) = &mut self.screen {
                 c.error = Some(
-                    "this mode is already running — esc to go back, stop or panic from home"
-                        .into(),
+                    "this mode is already running — esc to go back, stop or panic from home".into(),
                 );
             }
             return;
@@ -783,15 +768,9 @@ impl App {
     pub async fn open_settings(&mut self) {
         match ipc::send(&Request::GetGeneral).await {
             Ok(Response::General(g)) => {
-                let names: Vec<String> = self
-                    .globals
-                    .cached_modes
-                    .iter()
-                    .map(|m| m.name.clone())
-                    .collect();
-                self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(
-                    g, names,
-                ))));
+                let names: Vec<String> =
+                    self.globals.cached_modes.iter().map(|m| m.name.clone()).collect();
+                self.set_screen(Screen::Settings(Box::new(SettingsState::from_general(g, names))));
             }
             Ok(Response::Error { message }) => {
                 self.globals.set_flash(message, FlashLevel::Error);
@@ -893,7 +872,6 @@ impl App {
             Err(e) => picker.error = Some(e.to_string()),
         }
     }
-
 
     pub async fn quick_start(&mut self, idx: usize) {
         let Some(mode) = self.globals.cached_modes.get(idx).cloned() else {
@@ -1040,9 +1018,8 @@ impl App {
             Ok(Response::PanicScheduled(info)) => {
                 let msg = match info.panic_releases_at {
                     Some(at) => {
-                        let remaining = (at - chrono::Utc::now())
-                            .to_std()
-                            .unwrap_or(std::time::Duration::ZERO);
+                        let remaining =
+                            (at - chrono::Utc::now()).to_std().unwrap_or(std::time::Duration::ZERO);
                         let dur = humantime::format_duration(remaining).to_string();
                         crate::i18n::t!("tui.flash.panic_release_in", duration = dur).to_string()
                     }

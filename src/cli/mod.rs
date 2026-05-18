@@ -127,7 +127,11 @@ enum ProfileCmd {
     Create {
         #[arg(value_name = "PROFILE")]
         name: String,
-        #[arg(long, value_name = "PRESET", help = "Seed from a built-in preset (deepwork, no-chat, no-news, no-games)")]
+        #[arg(
+            long,
+            value_name = "PRESET",
+            help = "Seed from a built-in preset (deepwork, no-chat, no-news, no-games)"
+        )]
         preset: Option<String>,
     },
     #[command(about = "Duplicate an existing profile under a new name")]
@@ -178,7 +182,9 @@ enum DaemonCmd {
     Stop,
     #[command(about = "Show daemon status (running / not running, pid)")]
     Status,
-    #[command(about = "Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)")]
+    #[command(
+        about = "Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)"
+    )]
     Run,
     #[command(about = "Install the daemon as a system service (requires sudo)")]
     Install,

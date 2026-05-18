@@ -71,11 +71,8 @@ impl ConfirmState {
         if n == 0 {
             return;
         }
-        self.selected_group = if self.selected_group == 0 {
-            n - 1
-        } else {
-            self.selected_group - 1
-        };
+        self.selected_group =
+            if self.selected_group == 0 { n - 1 } else { self.selected_group - 1 };
     }
 
     pub fn select_next_group(&mut self) {
@@ -133,7 +130,9 @@ impl ConfirmState {
     pub fn blocked_reason(&self) -> Option<String> {
         if let Some(rem) = self.mode.stats.cooldown_remaining {
             let d = fmt_short(rem);
-            return Some(crate::i18n::t!("tui.confirm.cooldown_available_in", duration = d).to_string());
+            return Some(
+                crate::i18n::t!("tui.confirm.cooldown_available_in", duration = d).to_string(),
+            );
         }
         if let (Some(_cap), Some(rem)) =
             (self.mode.limits.daily_cap, self.mode.stats.daily_cap_remaining)
@@ -262,12 +261,7 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
         Some(s) if s.profile == confirm.mode.name
     );
     let title_line = if is_running {
-        let remaining = app
-            .globals
-            .active
-            .as_ref()
-            .map(|s| s.remaining())
-            .unwrap_or_default();
+        let remaining = app.globals.active.as_ref().map(|s| s.remaining()).unwrap_or_default();
         Line::from(vec![
             Span::styled(
                 crate::i18n::t!("tui.confirm.running_badge").to_string(),
@@ -393,10 +387,7 @@ fn draw_group_inspector(f: &mut Frame, group_id: &str, scroll: u16) {
     let max_scroll = lines.len().saturating_sub(visible) as u16;
     let scroll = scroll.min(max_scroll);
 
-    f.render_widget(
-        Paragraph::new(lines).scroll((scroll, 0)),
-        chunks[1],
-    );
+    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), chunks[1]);
 
     let hint = Paragraph::new(Span::styled(
         crate::i18n::t!("tui.confirm.inspector_hint").to_string(),
@@ -551,10 +542,7 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
     let groups = &detail.profile.site_groups;
     if !groups.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("site groups · {}", groups.len()),
-                Style::default().fg(ACCENT),
-            ),
+            Span::styled(format!("site groups · {}", groups.len()), Style::default().fg(ACCENT)),
             Span::styled(
                 "    ↑/↓ select · shift+⏎ inspect",
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
@@ -582,10 +570,7 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
             lines.push(Line::from(vec![
                 Span::styled(bullet, bullet_style),
                 Span::styled(q.clone(), name_style),
-                Span::styled(
-                    format!("  ({size} hosts)"),
-                    Style::default().fg(DIM),
-                ),
+                Span::styled(format!("  ({size} hosts)"), Style::default().fg(DIM)),
             ]));
         }
         lines.push(Line::from(""));
