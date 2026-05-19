@@ -1,0 +1,19 @@
+site_groups = [
+    "global.adult",
+    "ru.adult",
+    "global.betting",
+    "ru.betting",
+    "global.crypto",
+    "ru.crypto",
+    "global.dating",
+    "ru.dating",
+    "global.finance_doom",
+]
+sites = []
+apps = []
+
+[limits]
+max_duration = "24h"
+min_duration = "4h"
+cooldown = "6h"
+panic_delay = "10m"

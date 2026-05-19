@@ -1,0 +1,43 @@
+---
+source: src/tui/view.rs
+expression: "render(&app, 110, 40)"
+---
+                                       monk  silence · discipline · flow                                      
+                                                                                                              
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ presets ──────────────────────────────────────────────────╮╭ preview ──────────────────────────────────────╮
+│                                                           ││Deep Work  [◆ Scenarios]                       │
+│   ◆  Scenarios                                            ││                                               │
+│▶   Deep Work                                              ││Work-session focus: social, video, news and    │
+│      Work-session focus: social, video, news and tech-news││tech-news traps are blocked. Chat stays open   │
+│    Study                                                  ││for Slack.                                     │
+│      Student mode: social, video, games, chat, AI tools an││                                               │
+│    Digital Detox                                          ││blocks                                         │
+│      Long content cleanse: social, video, news, shopping a││  news, productivity_trap, social, video       │
+│    Sleep Mode                                             ││  8 groups · 791 hosts                         │
+│      Evening wind-down: social, video, news and games. Lon││                                               │
+│    Sober                                                  ││limits                                         │
+│      Recovery: adult, betting, crypto, dating, finance doo││  max      3h                                  │
+│                                                           ││  min      25m                                 │
+│   •  Single category                                      ││  cooldown 30m                                 │
+│    No Social                                              ││  day cap  6h                                  │
+│      FB, IG, X, TikTok, Reddit, Threads, VK, OK and the re││                                               │
+│    No Video                                               ││press enter to instantiate                     │
+│      Anti-binge: YouTube, Netflix, Twitch, Disney+, stream││                                               │
+│    No News                                                ││                                               │
+│      Cuts the doom-scroll loop: BBC, CNN, NYT, Lenta, RBC,││                                               │
+│    No Games                                               ││                                               │
+│      Steam, Epic, Battle.net, console stores, browser game││                                               │
+│    No Chat                                                ││                                               │
+│      Slack, Discord, Telegram, WhatsApp, Teams, Messenger.││                                               │
+│    No Shopping                                            ││                                               │
+│      Anti-impulse-buy: Amazon, eBay, AliExpress, Wildberri││                                               │
+│    No Adult                                               ││                                               │
+│      Adult content. Long min-duration and cooldown so it a││                                               │
+│    No Gambling                                            ││                                               │
+│      Betting, crypto exchanges and finance-doom feeds — on││                                               │
+│    No Dating                                              ││                                               │
+│      Tinder, Bumble, Hinge, Mamba and rest. Useful when yo││                                               │
+╰───────────────────────────────────────────────────────────╯╰───────────────────────────────────────────────╯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                         ↑/↓ select   ⏎ add   esc back

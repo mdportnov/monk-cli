@@ -1,0 +1,9 @@
+site_groups = ["global.dating", "ru.dating"]
+sites = []
+apps = []
+
+[limits]
+max_duration = "12h"
+min_duration = "30m"
+cooldown = "1h"
+daily_cap = "16h"

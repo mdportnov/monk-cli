@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::{
     ipc::ModeSummary,
+    onboarding::{preset_blurb, preset_label, preset_meta, PresetTier, PRESETS},
     tui::{
         app::{App, EditorState, HomeState, PickerState, PresetPickerState, Screen},
         theme::*,
@@ -123,7 +124,7 @@ pub fn draw_preset_picker(f: &mut Frame, app: &App, state: &PresetPickerState) {
 
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(outer[1]);
 
     draw_preset_list(f, body[0], state);
@@ -143,30 +144,65 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
             .alignment(Alignment::Center)
             .block(picker_block(" presets "));
         f.render_widget(p, area);
-    } else {
-        let items: Vec<ListItem> = state
-            .names
-            .iter()
-            .map(|name| {
-                let label = crate::i18n::t!("onboarding.preset", preset = name);
-                ListItem::new(Line::from(Span::styled(
-                    format!("  {}", label),
-                    Style::default().fg(TEXT),
-                )))
-            })
-            .collect();
-
-        let list = List::new(items)
-            .block(picker_block(" presets "))
-            .highlight_style(
-                Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("▶ ");
-
-        let mut list_state = ListState::default();
-        list_state.select(Some(state.selected));
-        f.render_stateful_widget(list, area, &mut list_state);
+        return;
     }
+
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut last_tier: Option<PresetTier> = None;
+    let mut visual_selected: usize = 0;
+    let mut preset_idx: usize = 0;
+    for meta in PRESETS {
+        if Some(meta.tier) != last_tier {
+            let header = crate::i18n::lookup(meta.tier.label_key()).into_owned();
+            items.push(ListItem::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!(" {}  {}", meta.tier.glyph(), header),
+                    Style::default().fg(DIM).add_modifier(Modifier::BOLD),
+                )),
+            ]));
+            last_tier = Some(meta.tier);
+        }
+        if preset_idx == state.selected {
+            visual_selected = items.len();
+        }
+        let label = preset_label(meta.id);
+        let blurb = preset_blurb(meta.id);
+        let mut lines = vec![Line::from(Span::styled(
+            format!("  {}", label),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ))];
+        if !blurb.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("    {}", short_blurb(&blurb)),
+                Style::default().fg(DIM),
+            )));
+        }
+        items.push(ListItem::new(lines));
+        preset_idx += 1;
+    }
+
+    let list = List::new(items)
+        .block(picker_block(" presets "))
+        .highlight_style(Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ");
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(visual_selected));
+    f.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn short_blurb(full: &str) -> String {
+    const MAX: usize = 70;
+    if full.chars().count() <= MAX {
+        return full.to_string();
+    }
+    let mut out: String = full.chars().take(MAX).collect();
+    if let Some(idx) = out.rfind(' ') {
+        out.truncate(idx);
+    }
+    out.push('…');
+    out
 }
 
 fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
@@ -184,64 +220,83 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
         return;
     };
 
-    let mut lines: Vec<Line> = vec![
-        Line::from(Span::styled(
-            crate::i18n::t!("onboarding.preset", preset = preset_name).to_string(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
+    let label = preset_label(preset_name);
+    let blurb = preset_blurb(preset_name);
+    let tier = preset_meta(preset_name).map(|m| m.tier);
 
-    // Apps count
-    lines.push(kv("apps", &format!("· {}", profile.apps.len())));
-    if !profile.apps.is_empty() {
-        let display_apps: Vec<String> = profile.apps.iter().take(3).cloned().collect();
-        for app in display_apps {
-            lines.push(Line::from(Span::styled(format!("  {}", app), Style::default().fg(DIM))));
-        }
-        if profile.apps.len() > 3 {
-            lines.push(Line::from(Span::styled(
-                format!("  ... {} more", profile.apps.len() - 3),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            )));
-        }
+    let mut lines: Vec<Line> = Vec::new();
+
+    let mut header_spans = vec![Span::styled(
+        label.into_owned(),
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    )];
+    if let Some(t) = tier {
+        let tier_label = crate::i18n::lookup(t.label_key()).into_owned();
+        header_spans.push(Span::raw("  "));
+        header_spans.push(Span::styled(
+            format!("[{} {}]", t.glyph(), tier_label),
+            Style::default().fg(DIM),
+        ));
+    }
+    lines.push(Line::from(header_spans));
+
+    if !blurb.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(blurb.into_owned(), Style::default().fg(TEXT))));
     }
 
-    // Site groups
+    // Blocked groups in human form
     if !profile.site_groups.is_empty() {
         lines.push(Line::from(""));
-        lines.push(kv("site groups", &format!("· {}", profile.site_groups.len())));
+        lines.push(Line::from(Span::styled(
+            "blocks",
+            Style::default().fg(DIM).add_modifier(Modifier::BOLD),
+        )));
 
-        // Get group registry to show host counts
-        if let Ok(all_groups) = crate::sites::all_groups() {
-            for group_id in profile.site_groups.iter().take(3) {
-                if let Some(group) = all_groups.iter().find(|g| &g.id == group_id) {
-                    lines.push(Line::from(Span::styled(
-                        format!("  {} ({} hosts)", group.id, group.hosts.len()),
-                        Style::default().fg(DIM),
-                    )));
+        let categories: Vec<String> = group_categories(&profile.site_groups);
+        let mut total_hosts = 0usize;
+        if let Ok(all) = crate::sites::all_groups() {
+            for g in &all {
+                if profile.site_groups.iter().any(|q| q == &g.qualified()) {
+                    total_hosts += g.hosts.len();
                 }
             }
-            if profile.site_groups.len() > 3 {
-                lines.push(Line::from(Span::styled(
-                    format!("  ... {} more", profile.site_groups.len() - 3),
-                    Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-                )));
-            }
         }
+        let joined = categories.join(", ");
+        lines.push(Line::from(Span::styled(format!("  {}", joined), Style::default().fg(TEXT))));
+        lines.push(Line::from(Span::styled(
+            format!("  {} groups · {} hosts", profile.site_groups.len(), total_hosts),
+            Style::default().fg(DIM),
+        )));
     }
 
-    // Custom sites
+    // Limits in human form
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "limits",
+        Style::default().fg(DIM).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(kv("  max", &fmt_limit(profile.limits.max_duration)));
+    lines.push(kv("  min", &fmt_limit(profile.limits.min_duration)));
+    lines.push(kv("  cooldown", &fmt_limit(profile.limits.cooldown)));
+    lines.push(kv("  day cap", &fmt_limit(profile.limits.daily_cap)));
+    if let Some(pd) = profile.limits.panic_delay {
+        lines.push(kv("  panic", &fmt_short(pd)));
+    }
+
+    // Custom sites (when used by a user-modified preset)
     if !profile.sites.is_empty() {
         lines.push(Line::from(""));
-        lines.push(kv("sites", &format!("· {}", profile.sites.len())));
-        let display_sites: Vec<String> = profile.sites.iter().take(3).cloned().collect();
-        for site in display_sites {
+        lines.push(Line::from(Span::styled(
+            "extra sites",
+            Style::default().fg(DIM).add_modifier(Modifier::BOLD),
+        )));
+        for site in profile.sites.iter().take(3) {
             lines.push(Line::from(Span::styled(format!("  {}", site), Style::default().fg(DIM))));
         }
         if profile.sites.len() > 3 {
             lines.push(Line::from(Span::styled(
-                format!("  ... {} more", profile.sites.len() - 3),
+                format!("  … {} more", profile.sites.len() - 3),
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )));
         }
@@ -255,6 +310,17 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
 
     let p = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);
     f.render_widget(p, area);
+}
+
+fn group_categories(qualified: &[String]) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut cats: BTreeSet<String> = BTreeSet::new();
+    for q in qualified {
+        if let Some((_, id)) = q.split_once('.') {
+            cats.insert(id.to_string());
+        }
+    }
+    cats.into_iter().collect()
 }
 
 fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {

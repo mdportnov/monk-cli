@@ -1,0 +1,9 @@
+site_groups = ["global.video", "ru.video"]
+sites = []
+apps = []
+
+[limits]
+max_duration = "6h"
+min_duration = "25m"
+cooldown = "30m"
+daily_cap = "10h"

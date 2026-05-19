@@ -1,0 +1,15 @@
+site_groups = [
+    "global.betting",
+    "ru.betting",
+    "global.crypto",
+    "ru.crypto",
+    "global.finance_doom",
+]
+sites = []
+apps = []
+
+[limits]
+max_duration = "24h"
+min_duration = "1h"
+cooldown = "2h"
+panic_delay = "5m"

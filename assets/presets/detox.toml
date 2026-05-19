@@ -5,6 +5,8 @@ site_groups = [
     "ru.video",
     "global.news",
     "ru.news",
+    "global.shopping",
+    "ru.shopping",
     "global.productivity_trap",
     "ru.productivity_trap",
 ]
@@ -12,7 +14,7 @@ sites = []
 apps = []
 
 [limits]
-max_duration = "3h"
-min_duration = "25m"
-cooldown = "30m"
-daily_cap = "6h"
+max_duration = "24h"
+min_duration = "2h"
+cooldown = "1h"
+panic_delay = "5m"

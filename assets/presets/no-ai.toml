@@ -1,0 +1,9 @@
+site_groups = ["global.ai", "ru.ai"]
+sites = []
+apps = []
+
+[limits]
+max_duration = "6h"
+min_duration = "30m"
+cooldown = "20m"
+daily_cap = "10h"

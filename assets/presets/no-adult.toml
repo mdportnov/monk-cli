@@ -1,0 +1,9 @@
+site_groups = ["global.adult", "ru.adult"]
+sites = []
+apps = []
+
+[limits]
+max_duration = "24h"
+min_duration = "1h"
+cooldown = "2h"
+panic_delay = "5m"

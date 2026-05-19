@@ -1,0 +1,9 @@
+site_groups = ["global.shopping", "ru.shopping"]
+sites = []
+apps = []
+
+[limits]
+max_duration = "8h"
+min_duration = "20m"
+cooldown = "30m"
+daily_cap = "12h"

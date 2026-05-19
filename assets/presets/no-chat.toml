@@ -1,4 +1,4 @@
-site_groups = ["global.chat"]
+site_groups = ["global.chat", "ru.chat"]
 sites = []
 apps = []
 

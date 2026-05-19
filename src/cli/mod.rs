@@ -130,7 +130,7 @@ enum ProfileCmd {
         #[arg(
             long,
             value_name = "PRESET",
-            help = "Seed from a built-in preset (deepwork, no-chat, no-news, no-games)"
+            help = "Seed from a built-in preset (deepwork, study, detox, sleep, sober, lockdown, no-social, no-video, no-news, no-games, no-chat, no-shopping, no-adult, no-gambling, no-dating, no-ai)"
         )]
         preset: Option<String>,
     },

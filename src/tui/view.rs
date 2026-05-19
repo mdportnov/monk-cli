@@ -426,6 +426,14 @@ mod snapshot_tests {
     }
 
     #[test]
+    fn snapshot_preset_picker() {
+        use crate::tui::app::PresetPickerState;
+        let mut app = base_app();
+        app.screen = Screen::PresetPicker(PresetPickerState::default());
+        insta::assert_snapshot!(render(&app, 110, 40));
+    }
+
+    #[test]
     fn flash_levels_all_render() {
         for level in [FlashLevel::Info, FlashLevel::Success, FlashLevel::Warn, FlashLevel::Error] {
             let mut app = base_app();

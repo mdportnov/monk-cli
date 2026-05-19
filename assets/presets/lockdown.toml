@@ -1,0 +1,33 @@
+site_groups = [
+    "global.social",
+    "ru.social",
+    "global.video",
+    "ru.video",
+    "global.news",
+    "ru.news",
+    "global.games",
+    "ru.games",
+    "global.shopping",
+    "ru.shopping",
+    "global.adult",
+    "ru.adult",
+    "global.ai",
+    "ru.ai",
+    "global.productivity_trap",
+    "ru.productivity_trap",
+    "global.dating",
+    "ru.dating",
+    "global.crypto",
+    "ru.crypto",
+    "global.betting",
+    "ru.betting",
+    "global.finance_doom",
+]
+sites = []
+apps = []
+
+[limits]
+max_duration = "4h"
+min_duration = "1h"
+cooldown = "1h"
+panic_delay = "10m"
