@@ -45,7 +45,12 @@ pub(crate) fn check_service_install() -> Check {
                 Status::Warn,
                 "system LaunchDaemon not installed",
             )
-            .with_hint("install with `sudo monk service install` so blocking works")
+            .with_hint("install with `sudo monk service install` (or `monk doctor --fix`) so blocking works")
+            .with_actions(vec![Action {
+                key: 'r',
+                label: "install service",
+                kind: ActionKind::ReinstallService,
+            }])
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -457,6 +462,77 @@ pub(crate) async fn check_block_page() -> Check {
         Err(_) => Check::new("block_page", "block page", Status::Warn, "timeout")
             .with_hint("port 80 may be owned by a non-responsive process")
             .with_actions(vec![start]),
+    }
+}
+
+pub(crate) fn check_env_path() -> Check {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            return Check::new("env.path", "PATH", Status::Skipped, format!("current_exe: {e}"));
+        }
+    };
+    let Some(bin_dir) = exe.parent().map(|p| p.to_path_buf()) else {
+        return Check::new("env.path", "PATH", Status::Skipped, "no parent dir");
+    };
+    let path = std::env::var("PATH").unwrap_or_default();
+    let bin_dir_s = bin_dir.to_string_lossy();
+    let on_path = std::env::split_paths(&path).any(|p| p == bin_dir);
+    if on_path {
+        Check::new("env.path", "PATH", Status::Ok, format!("monk dir on PATH ({bin_dir_s})"))
+    } else {
+        Check::new("env.path", "PATH", Status::Warn, format!("monk dir {bin_dir_s} not on PATH"))
+            .with_hint("new shells won't find `monk` — fix with `monk doctor --fix`")
+            .with_actions(vec![Action {
+                key: 'p',
+                label: "show PATH hint",
+                kind: ActionKind::PrintPathHint,
+            }])
+    }
+}
+
+pub(crate) fn check_completions() -> Check {
+    let shell = std::env::var("SHELL").ok().and_then(|s| {
+        std::path::Path::new(&s).file_name().map(|n| n.to_string_lossy().to_lowercase())
+    });
+    let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) else {
+        return Check::new("env.completions", "completions", Status::Skipped, "no home dir");
+    };
+    let (label, candidate) = match shell.as_deref() {
+        Some("zsh") => ("zsh", home.join(".local/share/zsh/site-functions").join("_monk")),
+        Some("bash") => {
+            ("bash", home.join(".local/share/bash-completion/completions").join("monk"))
+        }
+        Some("fish") => ("fish", home.join(".config/fish/completions").join("monk.fish")),
+        other => {
+            return Check::new(
+                "env.completions",
+                "completions",
+                Status::Info,
+                format!("unsupported shell: {}", other.unwrap_or("?")),
+            );
+        }
+    };
+    if candidate.exists() {
+        Check::new(
+            "env.completions",
+            "completions",
+            Status::Ok,
+            format!("{label}: {}", candidate.display()),
+        )
+    } else {
+        Check::new(
+            "env.completions",
+            "completions",
+            Status::Warn,
+            format!("{label} completions not installed at {}", candidate.display()),
+        )
+        .with_hint("install with `monk doctor --fix` or `monk completions <SHELL> > …`")
+        .with_actions(vec![Action {
+            key: 'c',
+            label: "install completions",
+            kind: ActionKind::InstallCompletions,
+        }])
     }
 }
 

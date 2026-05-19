@@ -60,11 +60,30 @@ main() {
     mkdir -p "$INSTALL_DIR"
     install -m 0755 "$tmp/${BIN}-${version}-${target}/${BIN}" "$INSTALL_DIR/${BIN}"
 
+    if [ "$(uname -s)" = "Darwin" ]; then
+        if command -v xattr >/dev/null; then
+            xattr -dr com.apple.quarantine "$INSTALL_DIR/${BIN}" 2>/dev/null || true
+        fi
+    fi
+
     msg "installed $BIN $version to $INSTALL_DIR/$BIN"
     case ":$PATH:" in
         *":$INSTALL_DIR:"*) ;;
-        *) msg "add $INSTALL_DIR to your PATH" ;;
+        *)
+            msg "add $INSTALL_DIR to your PATH"
+            shell_name="$(basename "${SHELL:-}")"
+            case "$shell_name" in
+                zsh)  msg "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
+                bash) msg "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
+                fish) msg "  fish_add_path $INSTALL_DIR" ;;
+                *)    msg "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+            esac
+            ;;
     esac
+
+    if [ "$(uname -s)" = "Darwin" ]; then
+        msg "next: run \`$BIN setup\` for a one-shot install (will prompt for admin password once)"
+    fi
 }
 
 main "$@"

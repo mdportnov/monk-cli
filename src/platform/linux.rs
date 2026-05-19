@@ -25,6 +25,19 @@ pub fn set_acl_current_user(_path: &Path) -> Result<()> {
 
 pub fn migrate_legacy_if_needed() {}
 
+pub fn elevate_install_service() -> Result<String> {
+    let bin = std::env::current_exe()?.to_string_lossy().into_owned();
+    install_service(&bin)
+}
+
+pub fn notify(title: &str, body: &str) {
+    let _ = Command::new("notify-send")
+        .args([title, body])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 fn dirs_config() -> Result<PathBuf> {
     directories::BaseDirs::new()
         .map(|d| d.config_dir().to_path_buf())

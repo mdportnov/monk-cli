@@ -24,6 +24,13 @@ pub fn system_runtime_dir() -> Option<&'static str> {
 
 pub fn migrate_legacy_if_needed() {}
 
+pub fn elevate_install_service() -> Result<String> {
+    let bin = std::env::current_exe()?.to_string_lossy().into_owned();
+    install_service(&bin)
+}
+
+pub fn notify(_title: &str, _body: &str) {}
+
 #[allow(unsafe_code)]
 pub fn set_acl_current_user(path: &Path) -> Result<()> {
     use std::ffi::OsString;

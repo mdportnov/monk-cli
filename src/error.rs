@@ -62,6 +62,13 @@ pub enum Error {
     #[diagnostic(code(monk::duration))]
     Duration(#[from] humantime::DurationError),
 
+    #[error("elevation cancelled or failed: {0}")]
+    #[diagnostic(
+        code(monk::elevation),
+        help("run `sudo monk service install` from a terminal")
+    )]
+    Elevation(String),
+
     #[error("{0}")]
     Other(String),
 }

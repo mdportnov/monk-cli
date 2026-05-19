@@ -277,3 +277,126 @@ fn quiet_launchctl(
     }
     cmd.stdout(Stdio::null()).stderr(Stdio::null()).status()
 }
+
+/// Run `sudo monk service install` via the native macOS authorization prompt
+/// (osascript `with administrator privileges`). Returns Ok with the child's
+/// stdout when the child reports a success marker; Err with a user-actionable
+/// message otherwise.
+pub fn elevate_install_service() -> Result<String> {
+    if nix::unistd::geteuid().is_root() {
+        let bin = std::env::current_exe()?.to_string_lossy().into_owned();
+        return install_service(&bin);
+    }
+    let exe = std::env::current_exe()?;
+    let exe_str = exe.to_string_lossy().to_string();
+    let sh_quoted = shell_single_quote(&exe_str);
+    let inner = format!("{sh_quoted} service install");
+    let as_inner = escape_applescript(&inner);
+    let script = format!(
+        "do shell script \"{as_inner}\" with prompt \"monk wants to install the system service\" with administrator privileges"
+    );
+    let out = Command::new("osascript").args(["-e", &script]).output().map_err(|e| {
+        Error::Elevation(format!(
+            "osascript failed to launch: {e} — install manually: sudo monk service install"
+        ))
+    })?;
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if !out.status.success() {
+        return Err(if is_user_cancelled(out.status.code(), &stderr) {
+            Error::Elevation(
+                "admin prompt cancelled — install later with `sudo monk service install`".into(),
+            )
+        } else {
+            Error::Elevation(format!("{stderr} — try `sudo monk service install`"))
+        });
+    }
+    // osascript exit 0 only confirms the AppleScript ran. The child `monk
+    // service install` may have failed. Require an install marker the child
+    // always writes on success.
+    if stdout.contains(SYSTEM_LAUNCHD_PLIST) {
+        Ok(stdout)
+    } else {
+        Err(Error::Elevation(format!(
+            "child install did not confirm — stdout: {stdout:?} stderr: {stderr:?}"
+        )))
+    }
+}
+
+fn is_user_cancelled(code: Option<i32>, stderr: &str) -> bool {
+    // AppleScript user-cancelled error: code -128, surfaces in stderr as a
+    // bracketed token. osascript's process exit is typically 1 in this case;
+    // the discriminator is the -128 string in stderr.
+    let cancelled_token = stderr.contains("(-128)") || stderr.contains("error -128");
+    let cancelled_text = stderr.contains("User canceled") || stderr.contains("User cancelled");
+    cancelled_token || cancelled_text || matches!(code, Some(-128))
+}
+
+fn shell_single_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Best-effort native macOS notification via osascript. Failures are silent.
+pub fn notify(title: &str, body: &str) {
+    let script =
+        format!("display notification \"{}\" with title \"{}\"", escape_applescript(body), escape_applescript(title));
+    let _ = Command::new("osascript")
+        .args(["-e", &script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Escape for an AppleScript double-quoted string literal. AppleScript
+/// understands `\\`, `\"`, `\n`, `\t`, `\r`. Anything else is passed through.
+fn escape_applescript(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_single_quote_handles_apostrophe() {
+        assert_eq!(shell_single_quote("/tmp/a"), "'/tmp/a'");
+        assert_eq!(shell_single_quote("/U/o'reilly/m"), "'/U/o'\\''reilly/m'");
+        assert_eq!(shell_single_quote("''"), "''\\'''\\'''");
+    }
+
+    #[test]
+    fn escape_applescript_handles_control_chars() {
+        assert_eq!(escape_applescript("a\"b\\c"), "a\\\"b\\\\c");
+        assert_eq!(escape_applescript("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_applescript("tab\there"), "tab\\there");
+    }
+
+    #[test]
+    fn user_cancelled_detection() {
+        assert!(is_user_cancelled(Some(1), "execution error: User canceled. (-128)"));
+        assert!(is_user_cancelled(Some(1), "error -128: …"));
+        assert!(is_user_cancelled(Some(-128), ""));
+        assert!(!is_user_cancelled(Some(1), "execution error: something else (-1712)"));
+    }
+}

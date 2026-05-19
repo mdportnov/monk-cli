@@ -57,15 +57,30 @@ pub async fn start(
     let req = Request::Start { profile: profile.clone(), duration, hard_mode, reason };
     match ipc::send(&req).await? {
         Response::Session(s) => {
-            println!("started `{}` for {}", s.profile, humantime::format_duration(s.duration));
+            let dur_h = humantime::format_duration(s.duration).to_string();
+            println!("started `{}` for {dur_h}", s.profile);
             if hard_mode {
                 println!("{}", crate::i18n::t!("hard.started_note"));
+            }
+            if is_freshly_started(&s) {
+                crate::platform::notify(
+                    "monk: focus started",
+                    &format!("`{}` for {dur_h}", s.profile),
+                );
             }
             Ok(())
         }
         Response::Error { message } => Err(Error::Other(message)),
         _ => Err(Error::Ipc("unexpected response".into())),
     }
+}
+
+/// True when a session was started within the last few seconds. Guards
+/// against duplicate notifications if a future daemon refactor decides to
+/// echo back an already-active session instead of erroring on a re-`start`.
+fn is_freshly_started(s: &crate::session::Session) -> bool {
+    let age = chrono::Utc::now().signed_duration_since(s.started_at);
+    age.num_seconds().abs() < 5
 }
 
 pub async fn panic_cmd(phrase: Option<String>, cancel: bool) -> Result<()> {
@@ -92,6 +107,7 @@ pub async fn stop() -> Result<()> {
     match ipc::send(&Request::Stop { id: None }).await? {
         Response::Session(s) => {
             println!("stopped `{}`", s.profile);
+            crate::platform::notify("monk: session ended", &format!("`{}`", s.profile));
             Ok(())
         }
         Response::HardModeActive(info) => {
@@ -567,7 +583,13 @@ pub async fn daemon_status() -> Result<()> {
     status().await
 }
 
-pub fn daemon_install() -> Result<()> {
+pub fn daemon_install(reinstall: bool) -> Result<()> {
+    if reinstall {
+        match crate::daemon::service_run(crate::daemon::ServiceAction::Uninstall { purge: false }) {
+            Ok(msg) => println!("{msg}"),
+            Err(e) => eprintln!("uninstall step (continuing): {e}"),
+        }
+    }
     let msg = crate::daemon::service_run(crate::daemon::ServiceAction::Install)?;
     println!("{msg}");
     Ok(())
@@ -607,7 +629,10 @@ pub async fn config_import(file: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn doctor(json: bool) -> Result<()> {
+pub async fn doctor(json: bool, fix: bool) -> Result<()> {
+    if fix {
+        return crate::doctor::run_fix().await;
+    }
     let report = crate::doctor::run().await;
     if json {
         // CI/script mode: emit the full report as one JSON object on stdout.

@@ -50,6 +50,9 @@ pub enum ActionKind {
     OpenConfig,
     OpenLog,
     OpenDataDir,
+    ReinstallService,
+    InstallCompletions,
+    PrintPathHint,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -67,6 +70,9 @@ impl ActionKind {
             ActionKind::OpenConfig => actions::open_path_action(paths::config_file()),
             ActionKind::OpenLog => actions::open_path_action(paths::log_file()),
             ActionKind::OpenDataDir => actions::open_path_action(paths::data_dir()),
+            ActionKind::ReinstallService => actions::reinstall_service(),
+            ActionKind::InstallCompletions => actions::install_completions(),
+            ActionKind::PrintPathHint => actions::print_path_hint(),
         }
     }
 }
@@ -89,6 +95,8 @@ pub fn purpose_for(id: &str) -> &'static str {
         "dns_server" => "local dns responder on 127.0.0.1:53535 (answers blocked domains)",
         "block_page" => "http server on :80 that renders the blocked-site placeholder",
         "log" => "tail of the daemon log for quick triage",
+        "env.path" => "is monk on $PATH so new shells can find it?",
+        "env.completions" => "shell completions installed for your interactive shell",
         _ => "",
     }
 }
@@ -144,7 +152,70 @@ pub async fn run() -> Report {
     checks.push(checks::check_blocker_backend());
     checks.push(checks::check_dns_server().await);
     checks.push(checks::check_block_page().await);
+    checks.push(checks::check_env_path());
+    checks.push(checks::check_completions());
     checks.push(checks::check_log_tail());
 
     Report { checks, duration: start.elapsed() }
+}
+
+/// Run all auto-fixable actions from the latest report. Prints what was done
+/// and returns Ok regardless of individual action failures — we want users to
+/// see every error in one go.
+///
+/// Actions that require an interactive admin prompt (ReinstallService on
+/// macOS) are skipped in non-TTY contexts so `monk doctor --fix` does not
+/// hang in CI; we print the manual command instead.
+pub async fn run_fix() -> crate::Result<()> {
+    use std::io::IsTerminal;
+    let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let report = run().await;
+    let mut fixed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let mut printed_any = false;
+    for c in &report.checks {
+        if !matches!(c.status, Status::Warn | Status::Fail) {
+            continue;
+        }
+        for a in &c.actions {
+            if !matches!(
+                a.kind,
+                ActionKind::ReinstallService
+                    | ActionKind::InstallCompletions
+                    | ActionKind::PrintPathHint
+            ) {
+                continue;
+            }
+            printed_any = true;
+            if !interactive && a.kind == ActionKind::ReinstallService {
+                println!(
+                    "→ skip {} ({}): non-interactive — run `sudo monk service install`",
+                    a.label, c.title
+                );
+                skipped += 1;
+                continue;
+            }
+            println!("→ {} ({})", a.label, c.title);
+            match a.kind.run() {
+                Ok(msg) => {
+                    for line in msg.lines() {
+                        println!("  {line}");
+                    }
+                    fixed += 1;
+                }
+                Err(e) => {
+                    eprintln!("  failed: {e}");
+                    failed += 1;
+                }
+            }
+        }
+    }
+    if !printed_any {
+        println!("nothing to fix — run `monk doctor` to see the current state.");
+        return Ok(());
+    }
+    println!();
+    println!("fix summary: {fixed} applied · {skipped} skipped · {failed} failed");
+    Ok(())
 }

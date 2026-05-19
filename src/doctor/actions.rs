@@ -34,6 +34,108 @@ pub(crate) fn stop_daemon() -> std::result::Result<String, String> {
     }
 }
 
+pub(crate) fn reinstall_service() -> std::result::Result<String, String> {
+    crate::platform::elevate_install_service().map_err(|e| e.to_string())
+}
+
+pub(crate) fn install_completions() -> std::result::Result<String, String> {
+    let shell = detect_shell();
+    let home = dirs_home().ok_or("HOME not set")?;
+    let (shell_enum, target_path, post_action): (
+        clap_complete::Shell,
+        std::path::PathBuf,
+        Option<String>,
+    ) = match shell.as_deref() {
+        Some("zsh") => {
+            // Canonical XDG site-functions dir; works with the default zsh
+            // fpath on macOS and on most Linux setups. Falls back to a
+            // user-specific dir + .zshrc append if not already in fpath.
+            let dir = home.join(".local/share/zsh/site-functions");
+            fs_err::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let target = dir.join("_monk");
+            let post = ensure_zshrc_fpath(&home, &dir);
+            (clap_complete::Shell::Zsh, target, Some(post))
+        }
+        Some("bash") => {
+            let dir = home.join(".local/share/bash-completion/completions");
+            fs_err::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            (clap_complete::Shell::Bash, dir.join("monk"), None)
+        }
+        Some("fish") => {
+            let dir = home.join(".config/fish/completions");
+            fs_err::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            (clap_complete::Shell::Fish, dir.join("monk.fish"), None)
+        }
+        other => {
+            return Err(format!(
+                "unsupported shell: {} — run `monk completions <SHELL>` manually",
+                other.unwrap_or("?")
+            ));
+        }
+    };
+    let mut cmd = crate::cli::cmd_factory();
+    let mut buf: Vec<u8> = Vec::new();
+    clap_complete::generate(shell_enum, &mut cmd, "monk", &mut buf);
+    fs_err::write(&target_path, &buf).map_err(|e| e.to_string())?;
+    let mut msg = format!("wrote completions → {}", target_path.display());
+    if let Some(extra) = post_action {
+        msg.push('\n');
+        msg.push_str(&extra);
+    }
+    Ok(msg)
+}
+
+/// Make sure `.zshrc` contains an `fpath` entry covering `dir`, idempotently.
+/// Returns a human-readable status line.
+fn ensure_zshrc_fpath(home: &std::path::Path, dir: &std::path::Path) -> String {
+    let zshrc = home.join(".zshrc");
+    let dir_s = dir.display().to_string();
+    let marker = "# added by monk doctor --fix";
+    let existing = fs_err::read_to_string(&zshrc).unwrap_or_default();
+    if existing.contains(&dir_s) {
+        return format!("(zsh fpath already includes {dir_s})");
+    }
+    let block = format!("\n{marker}\nfpath=({dir_s} $fpath)\nautoload -U compinit && compinit\n");
+    match fs_err::OpenOptions::new().create(true).append(true).open(&zshrc) {
+        Ok(mut f) => {
+            use std::io::Write;
+            if let Err(e) = f.write_all(block.as_bytes()) {
+                return format!(
+                    "could not append to ~/.zshrc ({e}); add manually:\n  fpath=({dir_s} $fpath)\n  autoload -U compinit && compinit"
+                );
+            }
+            format!("appended fpath block to {} — restart your shell", zshrc.display())
+        }
+        Err(e) => format!(
+            "could not open ~/.zshrc ({e}); add manually:\n  fpath=({dir_s} $fpath)\n  autoload -U compinit && compinit"
+        ),
+    }
+}
+
+pub(crate) fn print_path_hint() -> std::result::Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent = exe.parent().ok_or("binary has no parent dir")?.to_path_buf();
+    let shell = detect_shell();
+    let line = format!("export PATH=\"{}:$PATH\"", parent.display());
+    let target = match shell.as_deref() {
+        Some("zsh") => "~/.zshrc",
+        Some("bash") => "~/.bashrc",
+        Some("fish") => return Ok(format!("run: fish_add_path {}", parent.display())),
+        _ => "your shell rc file",
+    };
+    Ok(format!("add this to {target}:\n  {line}"))
+}
+
+fn detect_shell() -> Option<String> {
+    std::env::var("SHELL").ok().and_then(|s| {
+        std::path::Path::new(&s).file_name().map(|n| n.to_string_lossy().to_lowercase())
+    })
+}
+
+fn dirs_home() -> Option<std::path::PathBuf> {
+    directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
+}
+
 pub(crate) fn open_path_action(
     p: crate::Result<std::path::PathBuf>,
 ) -> std::result::Result<String, String> {

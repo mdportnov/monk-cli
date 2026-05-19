@@ -1,5 +1,6 @@
 use std::{io::IsTerminal, time::Duration};
 
+use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{MultiSelect, Select, Text};
 
 use crate::{
@@ -7,8 +8,11 @@ use crate::{
     config::Config,
     daemon::{self, ServiceAction},
     i18n::{self, t},
-    onboarding::presets::{load_preset, PRESET_NAMES},
-    paths, Error, Result,
+    onboarding::{
+        curated,
+        presets::{load_preset, preset_blurb, preset_label, PresetTier, PRESETS, PRESET_NAMES},
+    },
+    paths, platform, Error, Result,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -20,6 +24,7 @@ pub struct Options {
     pub autostart: Option<bool>,
     pub yes: bool,
     pub reset: bool,
+    pub quick: bool,
 }
 
 pub fn run(opts: Options) -> Result<()> {
@@ -41,15 +46,28 @@ pub fn run(opts: Options) -> Result<()> {
 
     let presets = pick_presets()?;
     let duration = pick_duration(cfg.general.default_duration)?;
-    let hard_mode = pick_hard_mode(cfg.general.hard_mode)?;
-    let autostart = pick_autostart(cfg.general.autostart)?;
+
+    let (hard_mode, autostart, chosen_apps);
+    if opts.quick {
+        hard_mode = cfg.general.hard_mode;
+        autostart = true;
+        let cache = scan_with_spinner()?;
+        chosen_apps = curated_only(&cache);
+        if !chosen_apps.is_empty() {
+            println!(
+                "  pre-selected {} common distractor app(s); edit later with `monk profile edit`",
+                chosen_apps.len()
+            );
+        }
+    } else {
+        hard_mode = pick_hard_mode(cfg.general.hard_mode)?;
+        autostart = pick_autostart(cfg.general.autostart)?;
+        let cache = scan_with_spinner()?;
+        println!("  found {} applications", cache.apps.len());
+        chosen_apps = pick_apps_for_presets(&cache)?;
+    }
 
     apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
-
-    println!("scanning installed applications…");
-    let cache = crate::apps::load_or_scan(true)?;
-    println!("found {} applications", cache.apps.len());
-    let chosen_apps = pick_apps_for_presets(&cache)?;
     for preset in &presets {
         if let Some(profile) = cfg.profiles.get_mut(preset) {
             profile.apps = chosen_apps.clone();
@@ -58,17 +76,111 @@ pub fn run(opts: Options) -> Result<()> {
 
     check_hosts();
 
-    if autostart {
-        match daemon::service_run(ServiceAction::Install) {
-            Ok(msg) => println!("{msg}"),
-            Err(e) => eprintln!("autostart setup failed: {e}"),
-        }
-    }
-
+    // Persist before elevation: the elevated child re-reads config from disk
+    // (or relies on its own defaults). If we save *after*, the root child can
+    // race the parent and observe stale state.
     cfg.general.initialized = true;
     cfg.save()?;
+
+    if autostart {
+        run_service_install();
+    }
+
+    print_doctor_summary();
+
     farewell()?;
     Ok(())
+}
+
+fn scan_with_spinner() -> Result<crate::apps::AppCache> {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    );
+    pb.set_message("scanning installed applications…");
+    pb.enable_steady_tick(Duration::from_millis(80));
+    let cache = crate::apps::load_or_scan(true);
+    pb.finish_and_clear();
+    cache
+}
+
+fn curated_only(cache: &crate::apps::AppCache) -> Vec<String> {
+    cache
+        .apps
+        .iter()
+        .filter(|a| curated::match_curated(a).is_some())
+        .map(|a| a.id.clone())
+        .collect()
+}
+
+fn run_service_install() {
+    let needs_elevation = cfg!(target_os = "macos") && !nix_is_root();
+    let result = if needs_elevation {
+        println!("  installing system service (you'll see a macOS admin prompt)…");
+        platform::elevate_install_service()
+    } else {
+        daemon::service_run(ServiceAction::Install)
+    };
+    match result {
+        Ok(msg) => {
+            for line in msg.lines() {
+                println!("  {line}");
+            }
+        }
+        Err(e) => {
+            eprintln!("  autostart setup failed: {e}");
+            eprintln!("  → run `monk doctor --fix` later to retry");
+        }
+    }
+}
+
+#[cfg(unix)]
+fn nix_is_root() -> bool {
+    nix::unistd::geteuid().is_root()
+}
+
+#[cfg(not(unix))]
+fn nix_is_root() -> bool {
+    false
+}
+
+/// Run `doctor::run` from a sync onboarding flow without nesting tokio
+/// runtimes. The wizard is invoked from inside `#[tokio::main]`, so we ship
+/// the async work to a dedicated OS thread with its own current-thread
+/// runtime. On thread-spawn or runtime-build failure we log and skip the
+/// summary rather than crashing the wizard.
+fn print_doctor_summary() {
+    let result = std::thread::Builder::new()
+        .name("monk-doctor-summary".into())
+        .spawn(|| {
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    tracing::warn!(?e, "doctor summary: tokio runtime build failed");
+                    return None;
+                }
+            };
+            Some(rt.block_on(crate::doctor::run()))
+        })
+        .and_then(|h| h.join().map_err(|_| std::io::Error::other("doctor thread panicked")));
+    let Ok(Some(report)) = result else {
+        if let Err(e) = result {
+            tracing::warn!(?e, "doctor summary: thread error");
+        }
+        return;
+    };
+    let (ok, warn, fail) = report.summary();
+    println!();
+    println!("  health: {ok} ok · {warn} warn · {fail} fail");
+    for c in &report.checks {
+        if matches!(c.status, crate::doctor::Status::Fail | crate::doctor::Status::Warn) {
+            println!("    {} {} — {}", c.status.icon(), c.title, c.detail);
+            if let Some(h) = &c.hint {
+                println!("      hint: {h}");
+            }
+        }
+    }
 }
 
 pub fn run_non_interactive(opts: Options) -> Result<()> {
@@ -147,22 +259,37 @@ fn pick_locale(cli: Option<&str>) -> Result<String> {
 }
 
 fn pick_presets() -> Result<Vec<String>> {
-    let labels = [
-        (t!("onboarding.preset_deepwork").to_string(), "deepwork"),
-        (t!("onboarding.preset_no_chat").to_string(), "no-chat"),
-        (t!("onboarding.preset_no_news").to_string(), "no-news"),
-        (t!("onboarding.preset_no_games").to_string(), "no-games"),
-        (t!("onboarding.preset_custom").to_string(), "custom"),
-    ];
+    let mut labels: Vec<(String, String)> = Vec::new();
+    let mut last_tier: Option<PresetTier> = None;
+    for meta in PRESETS {
+        if Some(meta.tier) != last_tier {
+            let header = i18n::lookup(meta.tier.label_key()).into_owned();
+            labels.push((format!("── {} {} ──", meta.tier.glyph(), header), String::new()));
+            last_tier = Some(meta.tier);
+        }
+        let label = preset_label(meta.id);
+        let blurb = preset_blurb(meta.id);
+        let display = if blurb.is_empty() {
+            format!("  {} ({})", label, meta.id)
+        } else {
+            format!("  {} — {}", label, blurb)
+        };
+        labels.push((display, meta.id.to_string()));
+    }
+    labels.push((format!("  {}", t!("onboarding.preset_custom")), "custom".to_string()));
+
     let display: Vec<String> = labels.iter().map(|(l, _)| l.clone()).collect();
+    let default_idx = labels.iter().position(|(_, id)| id == "deepwork").unwrap_or(0);
     let chosen = MultiSelect::new(&t!("onboarding.pick_preset"), display.clone())
-        .with_default(&[0])
+        .with_default(&[default_idx])
         .prompt()
         .map_err(prompt_err)?;
     let mut out = Vec::new();
     for label in chosen {
         if let Some((_, id)) = labels.iter().find(|(l, _)| *l == label) {
-            out.push((*id).to_string());
+            if !id.is_empty() {
+                out.push(id.clone());
+            }
         }
     }
     if out.is_empty() {
@@ -233,16 +360,33 @@ fn pick_apps_for_presets(cache: &crate::apps::AppCache) -> Result<Vec<String>> {
     if cache.apps.is_empty() {
         return Ok(Vec::new());
     }
-    let rows: Vec<Row> = cache
-        .apps
-        .iter()
-        .map(|a| Row { id: a.id.clone(), display: format!("{} [{}]", a.label, a.id) })
-        .collect();
-    let chosen = MultiSelect::new("Select apps to block during focus sessions", rows.clone())
+    let (curated_apps, rest) = curated::partition(&cache.apps);
+    let mut rows: Vec<Row> = Vec::with_capacity(cache.apps.len());
+    let mut default_idx: Vec<usize> = Vec::new();
+    for a in curated_apps {
+        let cat = curated::match_curated(a).unwrap_or("");
+        default_idx.push(rows.len());
+        rows.push(Row {
+            id: a.id.clone(), display: format!("★ {} · {} [{}]", a.label, cat, a.id)
+        });
+    }
+    for a in rest {
+        rows.push(Row { id: a.id.clone(), display: format!("  {} [{}]", a.label, a.id) });
+    }
+    let prompt = if default_idx.is_empty() {
+        "Select apps to block during focus sessions"
+    } else {
+        "Select apps to block (★ = common distractors, pre-selected)"
+    };
+    let chosen = MultiSelect::new(prompt, rows)
+        .with_default(&default_idx)
         .with_page_size(15)
         .prompt()
         .map_err(prompt_err)?;
-    Ok(chosen.into_iter().map(|r| r.id).collect())
+    let mut out: Vec<String> = chosen.into_iter().map(|r| r.id).collect();
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 fn check_hosts() {

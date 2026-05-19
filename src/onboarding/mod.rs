@@ -1,3 +1,4 @@
+mod curated;
 mod presets;
 mod wizard;
 

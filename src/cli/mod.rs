@@ -1,5 +1,10 @@
 mod commands;
 
+pub fn cmd_factory() -> clap::Command {
+    use clap::CommandFactory;
+    Cli::command()
+}
+
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -23,7 +28,11 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    #[command(about = "Run the interactive onboarding wizard")]
+    #[command(
+        about = "Run the interactive onboarding wizard",
+        alias = "setup",
+        long_about = "Interactive onboarding. Use `monk setup` as a friendly alias. `--quick` skips optional prompts and pre-selects common distractor apps."
+    )]
     Init {
         #[arg(long)]
         non_interactive: bool,
@@ -41,6 +50,8 @@ enum Command {
         yes: bool,
         #[arg(long)]
         reset: bool,
+        #[arg(long, help = "Three-question quick path with sensible defaults")]
+        quick: bool,
     },
     #[command(about = "Open the interactive TUI")]
     Tui,
@@ -83,6 +94,11 @@ enum Command {
     Doctor {
         #[arg(long, help = "Output a machine-readable JSON report (exits 0 even on failures)")]
         json: bool,
+        #[arg(
+            long,
+            help = "Try to auto-fix common issues (reinstall service, install completions, etc.)"
+        )]
+        fix: bool,
     },
     #[command(subcommand, about = "Manage configuration")]
     Config(ConfigCmd),
@@ -187,7 +203,13 @@ enum DaemonCmd {
     )]
     Run,
     #[command(about = "Install the daemon as a system service (requires sudo)")]
-    Install,
+    Install {
+        #[arg(
+            long,
+            help = "Force reinstall (uninstall then install). Useful after a macOS major upgrade."
+        )]
+        reinstall: bool,
+    },
     #[command(about = "Remove the system service (add --purge to also wipe data)")]
     Uninstall {
         #[arg(long, help = "Also delete config, audit log, and cached data")]
@@ -237,6 +259,7 @@ pub async fn run() -> Result<()> {
             autostart,
             yes,
             reset,
+            quick,
         } => {
             let opts = crate::onboarding::Options {
                 locale,
@@ -246,6 +269,7 @@ pub async fn run() -> Result<()> {
                 autostart,
                 yes,
                 reset,
+                quick,
             };
             if non_interactive || opts.yes {
                 crate::onboarding::run_non_interactive(opts)
@@ -280,7 +304,7 @@ pub async fn run() -> Result<()> {
         Command::Apps(AppsCmd::List { refresh }) => commands::apps_list(refresh),
         Command::Apps(AppsCmd::Scan) => commands::apps_scan(),
         Command::Stats => commands::stats().await,
-        Command::Doctor { json } => commands::doctor(json).await,
+        Command::Doctor { json, fix } => commands::doctor(json, fix).await,
         Command::Config(ConfigCmd::Path) => commands::config_path(),
         Command::Config(ConfigCmd::Export) => commands::config_export(),
         Command::Config(ConfigCmd::Import { file }) => commands::config_import(&file).await,
@@ -289,7 +313,7 @@ pub async fn run() -> Result<()> {
         Command::Daemon(DaemonCmd::Start) => commands::daemon_start().await,
         Command::Daemon(DaemonCmd::Stop) => commands::daemon_stop().await,
         Command::Daemon(DaemonCmd::Status) => commands::daemon_status().await,
-        Command::Daemon(DaemonCmd::Install) => commands::daemon_install(),
+        Command::Daemon(DaemonCmd::Install { reinstall }) => commands::daemon_install(reinstall),
         Command::Daemon(DaemonCmd::Uninstall { purge }) => commands::daemon_uninstall(purge).await,
         Command::Completions { shell } => {
             use clap::CommandFactory;
