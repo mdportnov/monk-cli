@@ -87,15 +87,24 @@ pub(crate) fn install_completions() -> std::result::Result<String, String> {
 
 /// Make sure `.zshrc` contains an `fpath` entry covering `dir`, idempotently.
 /// Returns a human-readable status line.
+///
+/// Idempotence uses a maintenance marker line (`MARKER`) — checking only the
+/// directory string is unsafe: a comment like `# skip ~/.local/share/zsh/...`
+/// would falsely look like an install. We also scan for an active `fpath=`
+/// line that actually references the directory to cover the case where the
+/// user added it by hand.
 fn ensure_zshrc_fpath(home: &std::path::Path, dir: &std::path::Path) -> String {
+    const MARKER: &str = "# added by monk doctor --fix";
     let zshrc = home.join(".zshrc");
     let dir_s = dir.display().to_string();
-    let marker = "# added by monk doctor --fix";
     let existing = fs_err::read_to_string(&zshrc).unwrap_or_default();
-    if existing.contains(&dir_s) {
-        return format!("(zsh fpath already includes {dir_s})");
+    if existing.contains(MARKER) {
+        return format!("(zsh fpath block already installed by monk)");
     }
-    let block = format!("\n{marker}\nfpath=({dir_s} $fpath)\nautoload -U compinit && compinit\n");
+    if existing.lines().any(|l| zshrc_line_uses_fpath_dir(l, &dir_s)) {
+        return format!("(zsh fpath already references {dir_s})");
+    }
+    let block = format!("\n{MARKER}\nfpath=({dir_s} $fpath)\nautoload -U compinit && compinit\n");
     match fs_err::OpenOptions::new().create(true).append(true).open(&zshrc) {
         Ok(mut f) => {
             use std::io::Write;
@@ -109,6 +118,44 @@ fn ensure_zshrc_fpath(home: &std::path::Path, dir: &std::path::Path) -> String {
         Err(e) => format!(
             "could not open ~/.zshrc ({e}); add manually:\n  fpath=({dir_s} $fpath)\n  autoload -U compinit && compinit"
         ),
+    }
+}
+
+/// True if `line` is a non-commented zsh statement that contains an `fpath`
+/// assignment or append referencing `dir`. Best-effort — covers the common
+/// forms `fpath=(/dir $fpath)`, `fpath+=(/dir)`, `fpath=("/dir" $fpath)`.
+fn zshrc_line_uses_fpath_dir(line: &str, dir: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') {
+        return false;
+    }
+    if !trimmed.starts_with("fpath") {
+        return false;
+    }
+    let eq = trimmed.find('=').or_else(|| trimmed.find('+'));
+    let Some(idx) = eq else { return false };
+    trimmed[idx..].contains(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fpath_line_detection_accepts_canonical_forms() {
+        let d = "/home/u/.local/share/zsh/site-functions";
+        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=({d} $fpath)"), d));
+        assert!(zshrc_line_uses_fpath_dir(&format!("  fpath+=({d})"), d));
+        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=(\"{d}\" $fpath)"), d));
+    }
+
+    #[test]
+    fn fpath_line_detection_rejects_comments_and_unrelated_lines() {
+        let d = "/home/u/.local/share/zsh/site-functions";
+        assert!(!zshrc_line_uses_fpath_dir(&format!("# skip {d}"), d));
+        assert!(!zshrc_line_uses_fpath_dir(&format!("export FOO={d}"), d));
+        assert!(!zshrc_line_uses_fpath_dir("fpath=(/other/dir $fpath)", d));
+        assert!(!zshrc_line_uses_fpath_dir("alias fpath='echo'", d));
     }
 }
 

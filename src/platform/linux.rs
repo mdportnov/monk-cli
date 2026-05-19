@@ -30,12 +30,17 @@ pub fn elevate_install_service() -> Result<String> {
     install_service(&bin)
 }
 
+/// Best-effort native notification. Fire-and-forget: `notify-send` can block
+/// indefinitely on a hung D-Bus, and a missed notification is far less bad
+/// than freezing the CLI. We detach stdin/stdout/stderr and drop the child
+/// handle without waiting; the kernel reaps it.
 pub fn notify(title: &str, body: &str) {
     let _ = Command::new("notify-send")
         .args([title, body])
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status();
+        .spawn();
 }
 
 fn dirs_config() -> Result<PathBuf> {

@@ -150,6 +150,8 @@ fn nix_is_root() -> bool {
 /// the async work to a dedicated OS thread with its own current-thread
 /// runtime. On thread-spawn or runtime-build failure we log and skip the
 /// summary rather than crashing the wizard.
+const DOCTOR_SUMMARY_TIMEOUT: Duration = Duration::from_secs(3);
+
 fn print_doctor_summary() {
     let result = std::thread::Builder::new()
         .name("monk-doctor-summary".into())
@@ -161,14 +163,25 @@ fn print_doctor_summary() {
                     return None;
                 }
             };
-            Some(rt.block_on(crate::doctor::run()))
+            // Cap the whole report. A hung IPC check (slow daemon, dead
+            // socket) must not block the wizard's last screen.
+            rt.block_on(async {
+                tokio::time::timeout(DOCTOR_SUMMARY_TIMEOUT, crate::doctor::run()).await.ok()
+            })
         })
         .and_then(|h| h.join().map_err(|_| std::io::Error::other("doctor thread panicked")));
-    let Ok(Some(report)) = result else {
-        if let Err(e) = result {
-            tracing::warn!(?e, "doctor summary: thread error");
+    let report = match result {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            println!();
+            println!("  health: skipped — check timed out after {:?}", DOCTOR_SUMMARY_TIMEOUT);
+            println!("  run `monk doctor` manually to inspect the daemon state.");
+            return;
         }
-        return;
+        Err(e) => {
+            tracing::warn!(?e, "doctor summary: thread error");
+            return;
+        }
     };
     let (ok, warn, fail) = report.summary();
     println!();

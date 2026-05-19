@@ -78,9 +78,15 @@ pub async fn start(
 /// True when a session was started within the last few seconds. Guards
 /// against duplicate notifications if a future daemon refactor decides to
 /// echo back an already-active session instead of erroring on a re-`start`.
+///
+/// Asymmetric on purpose: a negative delta means the daemon clock is ahead
+/// of the CLI clock (NTP/suspend/container skew). That's not a fresh start
+/// from the CLI's frame of reference — suppress the notification rather
+/// than firing it spuriously.
 fn is_freshly_started(s: &crate::session::Session) -> bool {
     let age = chrono::Utc::now().signed_duration_since(s.started_at);
-    age.num_seconds().abs() < 5
+    let secs = age.num_seconds();
+    (0..5).contains(&secs)
 }
 
 pub async fn panic_cmd(phrase: Option<String>, cancel: bool) -> Result<()> {

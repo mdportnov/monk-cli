@@ -12,6 +12,12 @@ const SYSTEM_RUNTIME_DIR: &str = "/var/run/monk";
 const SYSTEM_BIN_DIR: &str = "/usr/local/libexec/monk";
 const SYSTEM_BIN: &str = "/usr/local/libexec/monk/monkd";
 
+/// Stable success marker printed by `install_service` on every successful
+/// completion (including no-op reinstalls). The elevated parent uses this to
+/// distinguish a working child from an osascript that returned 0 over a
+/// silently-failed `monk service install`.
+const INSTALL_SUCCESS_MARKER: &str = "monk:service:install:ok";
+
 /// True when the system-wide LaunchDaemon is installed: all paths resolve to
 /// system locations regardless of who's calling.
 pub fn system_mode() -> bool {
@@ -208,6 +214,11 @@ pub fn install_service(bin: &str) -> Result<String> {
         )),
     }
 
+    // Stable success marker — parsed by elevate_install_service to confirm
+    // the elevated child actually ran end-to-end (no-op reinstalls otherwise
+    // produce no plist-write line and look like silent failures).
+    msgs.push(INSTALL_SUCCESS_MARKER.into());
+
     Ok(msgs.join("\n"))
 }
 
@@ -312,9 +323,10 @@ pub fn elevate_install_service() -> Result<String> {
         });
     }
     // osascript exit 0 only confirms the AppleScript ran. The child `monk
-    // service install` may have failed. Require an install marker the child
-    // always writes on success.
-    if stdout.contains(SYSTEM_LAUNCHD_PLIST) {
+    // service install` may have failed silently. Require the stable success
+    // marker the child always emits on completion (including no-op
+    // reinstalls where the plist already exists).
+    if stdout.contains(INSTALL_SUCCESS_MARKER) {
         Ok(stdout)
     } else {
         Err(Error::Elevation(format!(
@@ -346,15 +358,33 @@ fn shell_single_quote(s: &str) -> String {
     out
 }
 
-/// Best-effort native macOS notification via osascript. Failures are silent.
+/// Best-effort native macOS notification via osascript. Fire-and-forget: a
+/// wedged osascript (Notification Center under permission prompts, slow
+/// startup after wake-from-sleep) must not block CLI commands. The kernel
+/// reaps the detached child.
+///
+/// Title/body are clamped to a conservative length — AppleScript's
+/// `display notification` truncates silently around 256 chars on some macOS
+/// versions, and very long strings can fail the parse outright.
 pub fn notify(title: &str, body: &str) {
-    let script =
-        format!("display notification \"{}\" with title \"{}\"", escape_applescript(body), escape_applescript(title));
+    let t = escape_applescript(&clamp(title, 96));
+    let b = escape_applescript(&clamp(body, 160));
+    let script = format!("display notification \"{b}\" with title \"{t}\"");
     let _ = Command::new("osascript")
         .args(["-e", &script])
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status();
+        .spawn();
+}
+
+fn clamp(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 /// Escape for an AppleScript double-quoted string literal. AppleScript
