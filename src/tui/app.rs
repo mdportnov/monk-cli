@@ -57,7 +57,7 @@ impl MenuItem {
 
     pub fn hint(self) -> &'static str {
         match self {
-            MenuItem::Start => "begin a focus session with the default mode",
+            MenuItem::Start => "pick a mode and start a focus session",
             MenuItem::Stop => "end the active session (soft mode only)",
             MenuItem::Panic => "request a delayed hard-mode escape",
             MenuItem::Profiles => "list / create / edit / delete modes (a = from preset)",
@@ -489,6 +489,18 @@ impl App {
             mode.name.clone(),
             profile,
         ))));
+    }
+
+    pub fn open_editor_from_confirm(&mut self) {
+        let Screen::ModeConfirm(confirm) = &self.screen else { return };
+        let name = confirm.mode.name.clone();
+        let profile = confirm
+            .detail
+            .as_ref()
+            .map(|d| d.profile.clone())
+            .or_else(|| Config::load().ok().and_then(|c| c.profiles.get(&name).cloned()))
+            .unwrap_or_default();
+        self.set_screen(Screen::ModeEditor(Box::new(EditorState::edit(name, profile))));
     }
 
     pub async fn delete_current_mode(&mut self) {
@@ -925,54 +937,7 @@ impl App {
     }
 
     pub async fn do_start(&mut self) {
-        let cfg = match Config::load() {
-            Ok(c) => c,
-            Err(e) => {
-                self.globals.set_flash(
-                    crate::i18n::t!("tui.flash.config_error", message = e).to_string(),
-                    FlashLevel::Error,
-                );
-                return;
-            }
-        };
-
-        // If the default profile is empty or has been deleted/renamed, the
-        // daemon would return a cryptic "unknown profile" error. Take the
-        // user to the picker instead so they can choose explicitly.
-        let default_name = cfg.general.default_profile.clone();
-        if default_name.trim().is_empty() || cfg.profile(&default_name).is_none() {
-            self.globals.set_flash(
-                if default_name.trim().is_empty() {
-                    "no default profile set — pick one to start".to_string()
-                } else {
-                    format!("default profile `{default_name}` is missing — pick one")
-                },
-                FlashLevel::Warn,
-            );
-            self.open_picker();
-            return;
-        }
-
-        let req = Request::Start {
-            profile: default_name,
-            duration: cfg.general.default_duration,
-            hard_mode: cfg.general.hard_mode,
-            reason: None,
-        };
-        match ipc::send(&req).await {
-            Ok(Response::Session(s)) => {
-                self.globals.set_flash(
-                    crate::i18n::t!("tui.flash.started", profile = s.profile).to_string(),
-                    FlashLevel::Success,
-                );
-            }
-            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Info),
-            Ok(_) => self
-                .globals
-                .set_flash(crate::i18n::t!("tui.flash.unexpected").to_string(), FlashLevel::Error),
-            Err(e) => self.globals.set_flash(e.to_string(), FlashLevel::Info),
-        }
-        self.kick_refresh();
+        self.open_picker();
     }
 
     pub async fn do_stop(&mut self) {

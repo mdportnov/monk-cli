@@ -130,7 +130,7 @@ tui:
     start_prefix: "старт  "
     footer_running: "esc назад   ·   уже запущено — stop или panic из home"
     footer_blocked: "←/→ длительность   esc назад   ·   старт заблокирован"
-    footer_default: "←/→ длительность   ↑/↓ группа   ⏎ inspect   shift+⏎ старт   H hard   esc назад"
+    footer_default: "←/→ длительность   ↑/↓ группа   ⏎ старт   i inspect   e редакт   H hard   esc назад"
     hosts_count: "%{count} хостов"
     inspector_hint: "↑/↓ скролл · pgup/pgdn страница · esc закрыть"
     clamped_to_max: "урезано до максимума режима (%{max})"

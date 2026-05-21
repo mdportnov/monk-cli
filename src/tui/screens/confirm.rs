@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -190,32 +190,19 @@ pub async fn handle_confirm_key(app: &mut App, key: KeyEvent) {
                 app.open_picker();
                 return;
             }
-            // Shift+Enter is the commit gesture (start session). It's the
-            // less-frequent action and needs a deliberate keypress so the
-            // user doesn't accidentally start while browsing groups.
-            KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            KeyCode::Enter => {
                 app.start_from_confirm().await;
                 return;
             }
-            // Plain Enter inspects the selected group (the more frequent
-            // action while reading the confirm screen). Space is a synonym.
-            // If there are no groups in this profile, fall through to start
-            // (covers the legacy "just hit enter to go" muscle memory).
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                if confirm.group_count() > 0 {
-                    confirm.open_selected_group();
-                } else {
-                    app.start_from_confirm().await;
-                }
-                return;
-            }
-            // `o` (open) is an explicit fallback for terminals that swallow
-            // shift+enter or for users who prefer a dedicated key.
-            KeyCode::Char('o') => {
+            KeyCode::Char(' ') | KeyCode::Char('i') | KeyCode::Char('o') => {
                 if confirm.group_count() > 0 {
                     confirm.open_selected_group();
                     return;
                 }
+            }
+            KeyCode::Char('e') => {
+                app.open_editor_from_confirm();
+                return;
             }
             KeyCode::Up | KeyCode::Char('k') => confirm.select_prev_group(),
             KeyCode::Down | KeyCode::Char('j') => confirm.select_next_group(),
@@ -544,7 +531,7 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
         lines.push(Line::from(vec![
             Span::styled(format!("site groups · {}", groups.len()), Style::default().fg(ACCENT)),
             Span::styled(
-                "    ↑/↓ select · shift+⏎ inspect",
+                "    ↑/↓ select · i inspect",
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             ),
         ]));

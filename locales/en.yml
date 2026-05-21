@@ -130,7 +130,7 @@ tui:
     start_prefix: "start  "
     footer_running: "esc back   ·   already running — stop or panic from home"
     footer_blocked: "←/→ duration   esc back   ·   start blocked"
-    footer_default: "←/→ duration   ↑/↓ group   ⏎ inspect   shift+⏎ start   H hard   esc back"
+    footer_default: "←/→ duration   ↑/↓ group   ⏎ start   i inspect   e edit   H hard   esc back"
     hosts_count: "%{count} hosts"
     inspector_hint: "↑/↓ scroll · pgup/pgdn page · esc close"
     clamped_to_max: "clamped to mode max (%{max})"
