@@ -114,6 +114,8 @@ tui:
     panic_cancelled: "panic отменён"
     unexpected: "неожиданный ответ"
     settings_saved: "настройки сохранены"
+    already_running: "сессия уже запущена — смотри home"
+    delete_running_blocked: "сначала остановите сессию"
     reset_done: "все данные стёрты — перезапустите для онбординга"
   panic_modal:
     prompt: "введите фразу, чтобы запланировать выход:"
@@ -128,7 +130,11 @@ tui:
     running_badge: "● в процессе  "
     time_left: "  ·  осталось %{duration}"
     start_prefix: "старт  "
-    footer_running: "esc назад   ·   уже запущено — stop или panic из home"
+    footer_running: "↑/↓ группа   i inspect   e редакт   esc назад   ·   stop или panic из home"
+    footer_running_no_groups: "e редакт   esc назад   ·   stop или panic из home"
+    footer_no_groups: "←/→ длительность   ⏎ старт   e редакт   H hard   esc назад"
+    running_inspect_hint: "сессия идёт — ↑/↓ группы · i inspect · e править профиль"
+    running_inspect_hint_no_groups: "сессия идёт — e править профиль · esc назад"
     footer_blocked: "←/→ длительность   esc назад   ·   старт заблокирован"
     footer_default: "←/→ длительность   ↑/↓ группа   ⏎ старт   i inspect   e редакт   H hard   esc назад"
     hosts_count: "%{count} хостов"
@@ -145,6 +151,8 @@ tui:
     settings: "Настройки"
     doctor: "Диагностика"
     quit: "Выход"
+  editor:
+    live_session_drift: " профиль сейчас работает — изменения не повлияют на текущую сессию "
   help:
     title: "помощь"
     home: "главная"

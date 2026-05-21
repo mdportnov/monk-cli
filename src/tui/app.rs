@@ -197,11 +197,13 @@ impl EditorField {
             EditorField::HookBefore => "shell command run before session",
             EditorField::HookAfter => "shell command run after session",
             EditorField::Apps => {
-                "space/enter toggle · + add custom · type to filter · ↑/↓ navigate"
+                "space toggle · + add custom · type to filter · ↑/↓ navigate · tab leaves list"
             }
-            EditorField::Groups => "space/enter toggle · type to filter · ↑/↓ navigate",
+            EditorField::Groups => {
+                "space toggle · type to filter · ↑/↓ navigate · tab leaves list"
+            }
             EditorField::Brands => {
-                "space/enter toggle · type to filter · auto-resolves domains + apps"
+                "space toggle · type to filter · auto-resolves domains + apps · tab leaves list"
             }
         }
     }
@@ -716,11 +718,11 @@ impl App {
             (Screen::ModeConfirm(c), Some(s)) if c.mode.name == s.profile
         );
         if already_running {
-            if let Screen::ModeConfirm(c) = &mut self.screen {
-                c.error = Some(
-                    "this mode is already running — esc to go back, stop or panic from home".into(),
-                );
-            }
+            self.globals.set_flash(
+                crate::i18n::t!("tui.flash.already_running").to_string(),
+                FlashLevel::Info,
+            );
+            self.set_screen(Screen::Home(HomeState::default()));
             return;
         }
         let Screen::ModeConfirm(confirm) = &mut self.screen else { return };
@@ -974,6 +976,24 @@ impl App {
         };
         let st = screens::panic::PanicState::new(hard.panic_phrase.clone());
         self.set_screen(Screen::Panic(Box::new(st)));
+    }
+
+    /// Cancel a scheduled panic release. Invoked from home with `c`.
+    pub async fn cancel_panic(&mut self) {
+        match ipc::send(&Request::Panic { phrase: String::new(), cancel: true }).await {
+            Ok(Response::PanicScheduled(info)) if info.panic_releases_at.is_none() => {
+                self.globals.set_flash(
+                    crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
+                    FlashLevel::Success,
+                );
+            }
+            Ok(Response::Error { message }) => self.globals.set_flash(message, FlashLevel::Error),
+            _ => self.globals.set_flash(
+                crate::i18n::t!("tui.flash.panic_cancelled").to_string(),
+                FlashLevel::Success,
+            ),
+        }
+        self.kick_refresh();
     }
 
     /// Send the user-typed phrase to the daemon. Called from the panic

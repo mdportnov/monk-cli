@@ -431,17 +431,36 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
 
 pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     let area = f.area();
+    let editing_running = matches!(
+        (&editor.original_name, &app.globals.active),
+        (Some(name), Some(s)) if &s.profile == name
+    );
+    let banner_h: u16 = if editing_running { 1 } else { 0 };
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(banner_h),
+            Constraint::Min(10),
+            Constraint::Length(3),
+        ])
         .split(area);
 
     draw_header(f, outer[0], app);
 
+    if editing_running {
+        let banner = Paragraph::new(Span::styled(
+            crate::i18n::t!("tui.editor.live_session_drift").to_string(),
+            Style::default().fg(Color::Black).bg(GLOW).add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center);
+        f.render_widget(banner, outer[1]);
+    }
+
     let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-        .split(outer[1]);
+        .split(outer[2]);
 
     draw_editor_fields(f, body[0], editor);
     draw_editor_aux(f, body[1], editor);
@@ -450,7 +469,7 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
-    f.render_widget(footer, outer[2]);
+    f.render_widget(footer, outer[3]);
 
     if editor.confirm_cancel {
         crate::tui::view::draw_confirm_modal(
@@ -553,6 +572,7 @@ fn draw_editor_fields(f: &mut Frame, area: Rect, editor: &EditorState) {
         EditorField::Min,
         EditorField::Cooldown,
         EditorField::DailyCap,
+        EditorField::PanicDelay,
         EditorField::Schedule,
         EditorField::Sites,
         EditorField::HookBefore,

@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -184,6 +184,10 @@ pub async fn handle_settings_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
+        app.save_settings().await;
+        return;
+    }
     match key.code {
         KeyCode::Esc => {
             app.set_screen(Screen::Home(crate::tui::app::HomeState::default()));
@@ -193,9 +197,8 @@ pub async fn handle_settings_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             if settings.focus == SettingsField::Reset {
                 settings.confirm_reset = true;
-            } else {
-                app.save_settings().await;
             }
+            // Enter on non-Reset fields is intentionally a no-op. Save with ctrl+s.
         }
         _ => {
             let focus = settings.focus;

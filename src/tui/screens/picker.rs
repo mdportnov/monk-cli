@@ -12,7 +12,7 @@ use crate::{
     ipc::ModeSummary,
     onboarding::{preset_blurb, preset_label, preset_meta, PresetTier, PRESETS},
     tui::{
-        app::{App, EditorState, HomeState, PickerState, PresetPickerState, Screen},
+        app::{App, EditorState, FlashLevel, HomeState, PickerState, PresetPickerState, Screen},
         theme::*,
         view::{draw_header, fmt_short},
     },
@@ -49,11 +49,24 @@ pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('a') => open_preset_picker(app),
         KeyCode::Char('e') => app.open_editor_edit(),
         KeyCode::Char('d') => {
-            if let Some(m) = picker.current() {
+            let running = matches!(
+                (&picker.current(), &app.globals.active),
+                (Some(m), Some(s)) if s.profile == m.name
+            );
+            if running {
+                app.globals.set_flash(
+                    crate::i18n::t!("tui.flash.delete_running_blocked").to_string(),
+                    FlashLevel::Warn,
+                );
+            } else if let Some(m) = picker.current() {
                 picker.confirm_delete = Some(m.name.clone());
             }
         }
         KeyCode::Char('c') => app.duplicate_current_mode().await,
+        KeyCode::Char(c @ '1'..='9') => {
+            let idx = (c as u8 - b'1') as usize;
+            app.quick_start(idx).await;
+        }
         _ => {}
     }
 }
@@ -85,9 +98,14 @@ pub fn draw_picker(f: &mut Frame, app: &App, picker: &PickerState) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(outer[1]);
 
-    draw_picker_list(f, body[0], picker);
+    let active = app.globals.active.as_ref().map(|s| (s.profile.clone(), s.remaining()));
+    draw_picker_list(f, body[0], picker, active.as_ref());
     draw_picker_details(f, body[1], picker);
-    draw_picker_footer(f, outer[2], picker);
+    let selected_is_running = matches!(
+        (picker.current(), active.as_ref()),
+        (Some(m), Some((name, _))) if &m.name == name
+    );
+    draw_picker_footer(f, outer[2], picker, selected_is_running);
 
     if let Some(name) = &picker.confirm_delete {
         crate::tui::view::draw_confirm_modal(
@@ -323,7 +341,12 @@ fn group_categories(qualified: &[String]) -> Vec<String> {
     cats.into_iter().collect()
 }
 
-fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
+fn draw_picker_list(
+    f: &mut Frame,
+    area: Rect,
+    picker: &PickerState,
+    active: Option<&(String, Duration)>,
+) {
     if picker.loading {
         let p = Paragraph::new("loading modes…")
             .alignment(Alignment::Center)
@@ -357,8 +380,17 @@ fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
         return;
     }
 
-    let items: Vec<ListItem> =
-        picker.modes.iter().map(|m| ListItem::new(render_mode_row(m))).collect();
+    let items: Vec<ListItem> = picker
+        .modes
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let running_remaining = active
+                .and_then(|(name, rem)| if *name == m.name { Some(*rem) } else { None });
+            let slot = if i < 9 { Some(i + 1) } else { None };
+            ListItem::new(render_mode_row(m, running_remaining, slot))
+        })
+        .collect();
 
     let list = List::new(items)
         .block(picker_block(" modes "))
@@ -370,15 +402,23 @@ fn draw_picker_list(f: &mut Frame, area: Rect, picker: &PickerState) {
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_mode_row(m: &ModeSummary) -> Line<'static> {
-    let (icon, icon_color, status_text) = status_signal(m);
+fn render_mode_row(
+    m: &ModeSummary,
+    running_remaining: Option<Duration>,
+    slot: Option<usize>,
+) -> Line<'static> {
+    let (icon, icon_color, status_text) = status_signal(m, running_remaining);
     let name_style = if m.is_default {
         Style::default().fg(TEXT).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(TEXT)
     };
 
-    let mut spans = vec![Span::styled("  ".to_string(), Style::default())];
+    let slot_text = match slot {
+        Some(n) => format!("{n} "),
+        None => "  ".to_string(),
+    };
+    let mut spans = vec![Span::styled(slot_text, Style::default().fg(DIM))];
     spans.push(Span::styled(icon.to_string(), Style::default().fg(icon_color)));
     spans.push(Span::raw(" "));
     spans.push(Span::styled(m.name.clone(), name_style));
@@ -400,7 +440,13 @@ fn render_mode_row(m: &ModeSummary) -> Line<'static> {
     Line::from(spans)
 }
 
-fn status_signal(m: &ModeSummary) -> (&'static str, Color, String) {
+fn status_signal(
+    m: &ModeSummary,
+    running_remaining: Option<Duration>,
+) -> (&'static str, Color, String) {
+    if let Some(rem) = running_remaining {
+        return ("●", GLOW, format!("running · {} left", fmt_short(rem)));
+    }
     if m.stats.cooldown_remaining.is_some() {
         return (
             "◐",
@@ -492,9 +538,12 @@ fn picker_block(title: &str) -> Block<'_> {
         .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
-fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState) {
-    let help =
-        "↑/↓ select   ⏎ configure   n new   a preset   e edit   d delete   r refresh   esc back";
+fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState, selected_is_running: bool) {
+    let help = if selected_is_running {
+        "↑/↓ · ⏎ view · 1..9 quick · n new · a preset · e edit · c copy · r refresh · esc back"
+    } else {
+        "↑/↓ · ⏎ start · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh · esc"
+    };
     let p = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));

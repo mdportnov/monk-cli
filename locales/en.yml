@@ -114,6 +114,8 @@ tui:
     panic_cancelled: "panic cancelled"
     unexpected: "unexpected response"
     settings_saved: "settings saved"
+    already_running: "session already running — see home"
+    delete_running_blocked: "stop the session before deleting this mode"
     reset_done: "all data wiped — restart to re-run onboarding"
   panic_modal:
     prompt: "type the phrase to schedule release:"
@@ -128,7 +130,11 @@ tui:
     running_badge: "● running  "
     time_left: "  ·  %{duration} left"
     start_prefix: "start  "
-    footer_running: "esc back   ·   already running — stop or panic from home"
+    footer_running: "↑/↓ group   i inspect   e edit   esc back   ·   stop or panic from home"
+    footer_running_no_groups: "e edit   esc back   ·   stop or panic from home"
+    footer_no_groups: "←/→ duration   ⏎ start   e edit   H hard   esc back"
+    running_inspect_hint: "session ticking — ↑/↓ groups · i inspect · e edit profile"
+    running_inspect_hint_no_groups: "session ticking — e edit profile · esc back"
     footer_blocked: "←/→ duration   esc back   ·   start blocked"
     footer_default: "←/→ duration   ↑/↓ group   ⏎ start   i inspect   e edit   H hard   esc back"
     hosts_count: "%{count} hosts"
@@ -145,6 +151,8 @@ tui:
     settings: "Settings"
     doctor: "Doctor"
     quit: "Quit"
+  editor:
+    live_session_drift: " editing live profile — changes won't affect the running session "
   help:
     title: "help"
     home: "home"

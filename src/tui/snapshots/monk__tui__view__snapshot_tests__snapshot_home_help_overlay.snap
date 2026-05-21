@@ -15,17 +15,17 @@ expression: "render(&app, 90, 28)"
 │    Quit              │  ↑/↓ · j/k    navigate menu              │  |_|                 │
 │                      │  enter        activate item              │__|_|__               │
 │                      │  s · x · p    start · stop · panic       │       \              │
-│                      │  m            open modes picker          │  ___   |             │
-│                      │  1..9         quick-start mode by slot   │ /   \  |             │
-│                      │  ? · F1       toggle help                │ \___/  |             │
-│                      │  q · esc      quit                       │       /              │
-│                      │                                          │________\             │
+│                      │  c            cancel scheduled panic     │  ___   |             │
+│                      │  m            open modes picker          │ /   \  |             │
+│                      │  1..9         quick-start mode by slot   │ \___/  |             │
+│                      │  ? · F1       toggle help                │       /              │
+│                      │  q · esc      quit                       │________\             │
 │                      │                                          │_________)            │
-╰──────────────────────╰──────────────────────────────────────────╯~~~~~~~               │
-╭ status ────────────────────────────────────────╮│                                      │
+╰──────────────────────│                                          │~~~~~~~               │
+╭ status ──────────────╰──────────────────────────────────────────╯                      │
 │daemon  running                                 ││             breathe in …             │
 │session idle                                    ││                                      │
 │pick a mode and start a focus session           ││                                      │
 ╰────────────────────────────────────────────────╯╰──────────────────────────────────────╯
 ──────────────────────────────────────────────────────────────────────────────────────────
-                 ↑/↓ move   ⏎ select   s start   x stop   p panic   q quit
+                     ↑/↓ move   ⏎ select   s start   m modes   q quit

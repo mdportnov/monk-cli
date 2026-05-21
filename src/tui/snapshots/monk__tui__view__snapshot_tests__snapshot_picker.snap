@@ -6,8 +6,8 @@ expression: "render(&app, 100, 30)"
                                                                                                     
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ modes ──────────────────────────────────────────────╮╭ details ──────────────────────────────────╮
-│▶   ● deepwork  ★                         ready      ││deepwork                                   │
-│    ● reading  ★                          ready      ││                                           │
+│▶ 1 ● deepwork  ★                         ready      ││deepwork                                   │
+│  2 ● reading  ★                          ready      ││                                           │
 │                                                     ││apps       1                               │
 │                                                     ││sites      1                               │
 │                                                     ││groups     1                               │
@@ -30,4 +30,4 @@ expression: "render(&app, 100, 30)"
 │                                                     ││                                           │
 ╰─────────────────────────────────────────────────────╯╰───────────────────────────────────────────╯
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-       ↑/↓ select   ⏎ configure   n new   a preset   e edit   d delete   r refresh   esc back
+      ↑/↓ · ⏎ start · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh · esc

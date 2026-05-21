@@ -13,17 +13,17 @@ expression: "render(&app, 100, 30)"
 │  max duration                                       ││                                           │
 │                                                     ││                                           │
 │  min duration                                       ││                                           │
+│  cooldown                                           ││                                           │
+│                                                     │╰───────────────────────────────────────────╯
+│  daily cap                                          │╭ blocked apps ─────────────────────────────╮
 │                                                     ││                                           │
-│  cooldown                                           │╰───────────────────────────────────────────╯
-│                                                     │╭ blocked apps ─────────────────────────────╮
-│  daily cap                                          ││                                           │
+│  panic delay                                        ││                                           │
 │                                                     ││                                           │
 │  schedule                                           ││                                           │
 │                                                     ││                                           │
-│  custom sites                                       ││                                           │
-│                                                     │╰───────────────────────────────────────────╯
-│  hook before                                        │╭ site groups ──────────────────────────────╮
-│                                                     ││                                           │
+│  custom sites                                       │╰───────────────────────────────────────────╯
+│                                                     │╭ site groups ──────────────────────────────╮
+│  hook before                                        ││                                           │
 │  hook after                                         ││                                           │
 │                                                     ││                                           │
 │mode identifier (1-30 chars)                         ││                                           │

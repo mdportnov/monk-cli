@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
@@ -232,21 +232,21 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
 
     draw_header(f, outer[0], app);
 
+    let is_running = matches!(
+        &app.globals.active,
+        Some(s) if s.profile == confirm.mode.name
+    );
     let body = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2),
             Constraint::Length(8),
-            Constraint::Length(2),
+            Constraint::Length(if is_running { 0 } else { 2 }),
             Constraint::Length(2),
             Constraint::Min(4),
         ])
         .split(outer[1]);
 
-    let is_running = matches!(
-        &app.globals.active,
-        Some(s) if s.profile == confirm.mode.name
-    );
     let title_line = if is_running {
         let remaining = app.globals.active.as_ref().map(|s| s.remaining()).unwrap_or_default();
         Line::from(vec![
@@ -267,6 +267,12 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
             ),
         ])
     } else {
+        let chip_label = if confirm.hard { " HARD " } else { " SOFT " };
+        let chip_style = if confirm.hard {
+            Style::default().fg(Color::Black).bg(ALERT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)
+        };
         Line::from(vec![
             Span::styled(
                 crate::i18n::t!("tui.confirm.start_prefix").to_string(),
@@ -276,39 +282,58 @@ pub fn draw_confirm(f: &mut Frame, app: &App, confirm: &ConfirmState) {
                 confirm.mode.name.clone(),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
+            Span::raw("   "),
+            Span::styled(chip_label, chip_style),
+            Span::styled("  H toggle", Style::default().fg(DIM)),
         ])
     };
     let title = Paragraph::new(title_line).alignment(Alignment::Center);
     f.render_widget(title, body[0]);
 
-    let secs = confirm.duration.as_secs();
+    let timer_duration = if is_running {
+        app.globals.active.as_ref().map(|s| s.remaining()).unwrap_or(confirm.duration)
+    } else {
+        confirm.duration
+    };
+    let secs = timer_duration.as_secs();
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
     let s = secs % 60;
     let timer_text = format!("{h:02}:{m:02}:{s:02}");
+    let timer_color = if !is_running && confirm.clamped { ALERT } else { GLOW };
     let big = BigText::builder()
         .pixel_size(PixelSize::Quadrant)
-        .style(Style::default().fg(if confirm.clamped { ALERT } else { GLOW }))
+        .style(Style::default().fg(timer_color))
         .alignment(Alignment::Center)
         .lines(vec![Line::from(timer_text)])
         .build();
     f.render_widget(big, body[1]);
 
-    draw_duration_slider(f, body[2], confirm);
+    if !is_running {
+        let blocked = confirm.blocked_reason().is_some();
+        draw_duration_slider(f, body[2], confirm, blocked);
+    }
 
-    let hints = Paragraph::new(build_confirm_status(confirm))
+    let hints = Paragraph::new(build_confirm_status(confirm, is_running))
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
     f.render_widget(hints, body[3]);
 
     draw_confirm_details(f, body[4], confirm);
 
+    let has_groups = confirm.group_count() > 0;
     let help = if is_running {
-        crate::i18n::t!("tui.confirm.footer_running").to_string()
+        if has_groups {
+            crate::i18n::t!("tui.confirm.footer_running").to_string()
+        } else {
+            crate::i18n::t!("tui.confirm.footer_running_no_groups").to_string()
+        }
     } else if confirm.blocked_reason().is_some() {
         crate::i18n::t!("tui.confirm.footer_blocked").to_string()
-    } else {
+    } else if has_groups {
         crate::i18n::t!("tui.confirm.footer_default").to_string()
+    } else {
+        crate::i18n::t!("tui.confirm.footer_no_groups").to_string()
     };
     let footer = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
@@ -384,7 +409,7 @@ fn draw_group_inspector(f: &mut Frame, group_id: &str, scroll: u16) {
     f.render_widget(hint, chunks[2]);
 }
 
-fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
+fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState, blocked: bool) {
     let width = area.width.saturating_sub(20).max(10) as usize;
     let frac = confirm.slider_fraction();
     let pos = ((width as f32) * frac).round() as usize;
@@ -396,12 +421,13 @@ fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
             bar.push('─');
         }
     }
+    let bar_color = if blocked { DIM } else { ACCENT };
     let line = Line::from(vec![
         Span::styled(
             format!("  {:>5}  ", fmt_short(ConfirmState::MIN_BOUND)),
             Style::default().fg(DIM),
         ),
-        Span::styled(bar, Style::default().fg(ACCENT)),
+        Span::styled(bar, Style::default().fg(bar_color)),
         Span::styled(
             format!("  {:<5}", fmt_short(confirm.effective_max())),
             Style::default().fg(DIM),
@@ -410,8 +436,20 @@ fn draw_duration_slider(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-fn build_confirm_status(confirm: &ConfirmState) -> Vec<Line<'static>> {
+fn build_confirm_status(confirm: &ConfirmState, is_running: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
+    if is_running {
+        let hint = if confirm.group_count() > 0 {
+            crate::i18n::t!("tui.confirm.running_inspect_hint").to_string()
+        } else {
+            crate::i18n::t!("tui.confirm.running_inspect_hint_no_groups").to_string()
+        };
+        lines.push(Line::from(Span::styled(
+            hint,
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+        return lines;
+    }
     if confirm.clamped {
         let m = fmt_short(confirm.effective_max());
         let msg = crate::i18n::t!("tui.confirm.clamped_to_max", max = m).to_string();

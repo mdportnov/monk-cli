@@ -36,6 +36,19 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
             home.selected = 2;
             activate_home(app).await;
         }
+        KeyCode::Char('c') => {
+            // Cancel a scheduled panic release. Only meaningful when one is
+            // pending (panic_releases_at is Some). No-op otherwise.
+            let scheduled = app
+                .globals
+                .hard_mode
+                .as_ref()
+                .and_then(|h| h.panic_releases_at)
+                .is_some();
+            if scheduled {
+                app.cancel_panic().await;
+            }
+        }
         KeyCode::Char(c @ '1'..='9') => {
             let idx = (c as u8 - b'1') as usize;
             app.quick_start(idx).await;
@@ -177,9 +190,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
 
     let footer_line = if let Some(hard) = &app.globals.hard_mode {
         if let Some(at) = hard.panic_releases_at {
-            // Panic already scheduled — show countdown to release instead of
-            // the phrase. Phrase is no longer relevant; the release is locked
-            // in (cancellable with `monk panic --cancel` but not from TUI).
+            // Panic scheduled — show countdown plus `c cancel` shortcut.
             let now = chrono::Utc::now();
             let remaining = (at - now).to_std().unwrap_or(std::time::Duration::ZERO);
             Line::from(vec![
@@ -191,6 +202,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
                     fmt_short(remaining),
                     Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
                 ),
+                Span::styled("   ·   c cancel", Style::default().fg(DIM)),
             ])
         } else {
             Line::from(vec![
@@ -221,10 +233,16 @@ fn draw_menu(f: &mut Frame, area: Rect, app: &App, home: &HomeState) {
         .constraints([Constraint::Min(8), Constraint::Length(5)])
         .split(area);
 
+    let has_session = app.globals.active.is_some();
+    let has_hard = app.globals.hard_mode.is_some();
     let items: Vec<ListItem> = MenuItem::ALL
         .iter()
         .map(|m| {
-            let disabled = matches!(m, MenuItem::Stop) && app.globals.hard_mode.is_some();
+            let disabled = match m {
+                MenuItem::Stop => !has_session || has_hard,
+                MenuItem::Panic => !has_hard,
+                _ => false,
+            };
             let style = if disabled {
                 Style::default().fg(DIM).add_modifier(Modifier::CROSSED_OUT)
             } else {
@@ -315,10 +333,34 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
 // Helper functions that will need to be accessible from the main app
 async fn activate_home(app: &mut App) {
     let Screen::Home(home) = &app.screen else { return };
-    match home.selected_item() {
+    let item = home.selected_item();
+    match item {
         MenuItem::Start => app.do_start().await,
-        MenuItem::Stop => app.do_stop().await,
-        MenuItem::Panic => app.do_panic().await,
+        MenuItem::Stop => {
+            if app.globals.active.is_none() {
+                app.globals.set_flash(
+                    crate::i18n::t!("tui.flash.nothing_to_stop").to_string(),
+                    FlashLevel::Warn,
+                );
+            } else if app.globals.hard_mode.is_some() {
+                app.globals.set_flash(
+                    crate::i18n::t!("tui.flash.hard_stop_denied").to_string(),
+                    FlashLevel::Error,
+                );
+            } else {
+                app.do_stop().await;
+            }
+        }
+        MenuItem::Panic => {
+            if app.globals.hard_mode.is_none() {
+                app.globals.set_flash(
+                    crate::i18n::t!("tui.flash.no_hard_session").to_string(),
+                    FlashLevel::Warn,
+                );
+            } else {
+                app.do_panic().await;
+            }
+        }
         MenuItem::Profiles => app.open_picker(),
         MenuItem::Settings => app.open_settings().await,
         MenuItem::Doctor => app.open_doctor().await,

@@ -9,9 +9,9 @@ use ratatui::{
 use std::time::Duration;
 
 use crate::tui::{
-    app::{App, Screen},
+    app::{App, FlashLevel, Screen},
     screens,
-    theme::{ACCENT, ALERT, DIM, TEXT},
+    theme::{ACCENT, ALERT, DIM, GLOW, TEXT},
 };
 
 pub fn draw_with_effects(f: &mut Frame, app: &mut App, dt: std::time::Duration) {
@@ -48,6 +48,42 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.globals.help_open {
         draw_help_overlay(f, app);
     }
+    // Render flash globally so actions taken on picker/editor/settings/etc.
+    // give visible feedback without bouncing back to home. Home draws the
+    // flash inline in its status panel; skip the toast there to avoid
+    // double-rendering.
+    if !matches!(app.screen, Screen::Home(_)) {
+        draw_flash_toast(f, app);
+    }
+}
+
+fn draw_flash_toast(f: &mut Frame, app: &App) {
+    let Some(flash) = &app.globals.flash else { return };
+    let color = match flash.level {
+        FlashLevel::Success => GLOW,
+        FlashLevel::Warn => Color::Rgb(220, 180, 90),
+        FlashLevel::Error => ALERT,
+        FlashLevel::Info => ACCENT,
+    };
+    let area = f.area();
+    let label = format!("  {}  ", flash.message);
+    let text_width = label.chars().count() as u16;
+    let width = text_width.min(area.width.saturating_sub(4)).max(8);
+    let height = 1u16;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    // Sit just above the footer.
+    let y = area.y + area.height.saturating_sub(4);
+    let rect = Rect { x, y, width, height };
+    f.render_widget(ratatui::widgets::Clear, rect);
+    let p = Paragraph::new(Span::styled(
+        label,
+        Style::default()
+            .fg(Color::Black)
+            .bg(color)
+            .add_modifier(Modifier::BOLD),
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(p, rect);
 }
 
 fn draw_help_overlay(f: &mut Frame, app: &App) {
@@ -62,6 +98,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  ↑/↓ · j/k    navigate menu"),
             Line::from("  enter        activate item"),
             Line::from("  s · x · p    start · stop · panic"),
+            Line::from("  c            cancel scheduled panic"),
             Line::from("  m            open modes picker"),
             Line::from("  1..9         quick-start mode by slot"),
             Line::from("  ? · F1       toggle help"),
@@ -74,7 +111,8 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             )),
             Line::from(""),
             Line::from("  ↑/↓ · j/k    navigate"),
-            Line::from("  enter        configure & start"),
+            Line::from("  enter        configure & start  (running: view)"),
+            Line::from("  1..9         quick-start mode by slot"),
             Line::from("  n · a · e · c · d  new · add from preset · edit · copy · delete"),
             Line::from("  r            refresh"),
             Line::from("  esc · q      back to home"),
@@ -113,8 +151,9 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from(""),
             Line::from("  ↑/↓ · tab     next / prev field"),
             Line::from("  space           toggle on/off"),
-            Line::from("  ←/→             cycle locale"),
+            Line::from("  ←/→             cycle profile / locale"),
             Line::from("  ctrl+s          save"),
+            Line::from("  enter           confirm reset (on reset row only)"),
             Line::from("  esc             cancel"),
         ],
         Screen::Doctor(_) => vec![
@@ -299,9 +338,11 @@ pub fn draw_header(f: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let help = if app.globals.hard_mode.is_some() {
-        "↑/↓ move   ⏎ select   q quit   ·   stop disabled — use panic"
+        "↑/↓ move   ⏎ select   p panic   q quit   ·   stop disabled".to_string()
+    } else if app.globals.active.is_some() {
+        "↑/↓ move   ⏎ select   x stop   m modes   q quit".to_string()
     } else {
-        "↑/↓ move   ⏎ select   s start   x stop   p panic   q quit"
+        "↑/↓ move   ⏎ select   s start   m modes   q quit".to_string()
     };
     let p = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
