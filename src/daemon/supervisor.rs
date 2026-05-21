@@ -490,7 +490,6 @@ impl Supervisor {
                                 &format!("recovered after {prev_failures} failures"),
                             );
                         }
-                        self.audit.append(AuditKind::HostsRepaired, Some(lock.id), "hosts ensured");
                     }
                     drop(hosts);
                     let _ = self.procs.lock().kill_matching(&set.apps);

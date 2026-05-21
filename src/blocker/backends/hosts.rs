@@ -64,6 +64,31 @@ impl HostsBlocker {
         atomic_write(&self.path, contents.as_bytes())
     }
 
+    #[cfg(unix)]
+    fn ensure_world_readable_mode(&self) -> Result<bool> {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let meta = fs_err::metadata(&self.path)?;
+        let mode = meta.mode() & 0o7777;
+        if mode & 0o044 == 0o044 {
+            return Ok(true);
+        }
+        let target = (mode & 0o7700) | 0o644;
+        match fs_err::set_permissions(&self.path, std::fs::Permissions::from_mode(target)) {
+            Ok(()) => {
+                tracing::warn!(
+                    from = format!("{:o}", mode),
+                    to = format!("{:o}", target),
+                    "hosts file lacked world-read; chmod'd so system resolver can read it"
+                );
+                Ok(true)
+            }
+            Err(e) => {
+                tracing::warn!(?e, "failed to chmod hosts; resolver may not see blocks");
+                Ok(false)
+            }
+        }
+    }
+
     fn strip_block(raw: &str) -> String {
         let mut out = String::with_capacity(raw.len());
         let mut skipping = false;
@@ -128,6 +153,14 @@ impl Blocker for HostsBlocker {
         let mut next = cleaned.trim_end().to_string();
         next.push_str("\n\n");
         next.push_str(&Self::render_block(set));
+        let content_unchanged = next == current;
+        #[cfg(unix)]
+        let mode_ok = self.ensure_world_readable_mode().unwrap_or(false);
+        #[cfg(not(unix))]
+        let mode_ok = true;
+        if content_unchanged && mode_ok {
+            return Ok(());
+        }
         let result = self.write(&next);
         if result.is_ok() {
             #[cfg(target_os = "macos")]

@@ -21,6 +21,7 @@ pub mod resolver_dir;
 pub mod systemd_resolved;
 
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+    const MODE: u32 = 0o644;
     let parent = path.parent().ok_or_else(|| {
         Error::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -42,12 +43,20 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     #[cfg(unix)]
     {
         use fs_err::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
+        opts.mode(MODE);
     }
     let mut file = opts.open(&tmp).map_err(|e| map_err(e, &tmp))?;
     use std::io::Write;
     file.write_all(contents).map_err(|e| map_err(e, &tmp))?;
     drop(file);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = fs_err::set_permissions(&tmp, std::fs::Permissions::from_mode(MODE)) {
+            tracing::warn!(?e, mode = format!("{:o}", MODE), "failed to set tmp file mode");
+        }
+    }
 
     if let Err(e) = fs_err::rename(&tmp, path) {
         if let Err(remove_err) = fs_err::remove_file(&tmp) {
