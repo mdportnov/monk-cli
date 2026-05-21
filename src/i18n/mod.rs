@@ -61,10 +61,10 @@ pub fn lookup(key: &str) -> Cow<'static, str> {
 pub fn render(key: &str, args: &[(&str, String)]) -> String {
     let mut s = lookup(key).into_owned();
     for (k, v) in args {
-        let needle = format!("{{{k}}}");
-        s = s.replace(&needle, v);
         let pct = format!("%{{{k}}}");
         s = s.replace(&pct, v);
+        let needle = format!("{{{k}}}");
+        s = s.replace(&needle, v);
     }
     s
 }
