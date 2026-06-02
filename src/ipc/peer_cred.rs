@@ -164,11 +164,8 @@ fn is_same_user_process(pid: u32) -> Result<bool> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
-    use std::ptr;
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::Security::{
-        EqualSid, GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER,
-    };
+    use windows::Win32::Security::{EqualSid, TOKEN_QUERY};
     use windows::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
     };
@@ -176,12 +173,13 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
     unsafe {
         let current_process = GetCurrentProcess();
         let mut current_token = HANDLE::default();
-        OpenProcessToken(current_process, TOKEN_QUERY, &mut current_token)?;
+        OpenProcessToken(current_process, TOKEN_QUERY, &mut current_token)
+            .map_err(|e| crate::Error::Ipc(e.to_string()))?;
 
         let current_sid = match get_process_user_sid(current_token) {
             Ok(sid) => sid,
             Err(e) => {
-                CloseHandle(current_token);
+                let _ = CloseHandle(current_token);
                 return Err(e);
             }
         };
@@ -189,33 +187,33 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
         let peer_process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, peer_pid) {
             Ok(handle) if !handle.is_invalid() => handle,
             _ => {
-                CloseHandle(current_token);
+                let _ = CloseHandle(current_token);
                 return Err(crate::Error::Ipc(format!("Failed to open peer process {}", peer_pid)));
             }
         };
 
         let mut peer_token = HANDLE::default();
         if let Err(e) = OpenProcessToken(peer_process, TOKEN_QUERY, &mut peer_token) {
-            CloseHandle(current_token);
-            CloseHandle(peer_process);
+            let _ = CloseHandle(current_token);
+            let _ = CloseHandle(peer_process);
             return Err(crate::Error::Ipc(format!("Failed to open peer process token: {}", e)));
         }
 
         let peer_sid = match get_process_user_sid(peer_token) {
             Ok(sid) => sid,
             Err(e) => {
-                CloseHandle(current_token);
-                CloseHandle(peer_process);
-                CloseHandle(peer_token);
+                let _ = CloseHandle(current_token);
+                let _ = CloseHandle(peer_process);
+                let _ = CloseHandle(peer_token);
                 return Err(e);
             }
         };
 
         let is_same_user = EqualSid(current_sid, peer_sid).is_ok();
 
-        CloseHandle(current_token);
-        CloseHandle(peer_process);
-        CloseHandle(peer_token);
+        let _ = CloseHandle(current_token);
+        let _ = CloseHandle(peer_process);
+        let _ = CloseHandle(peer_token);
 
         debug!(peer_pid = peer_pid, same_user = is_same_user, "Windows SID peer check");
 
@@ -225,12 +223,12 @@ fn check_windows_peer_sids(peer_pid: u32) -> Result<bool> {
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
-unsafe fn get_process_user_sid(token: HANDLE) -> Result<windows::Win32::Security::PSID> {
-    use std::ptr;
+unsafe fn get_process_user_sid(
+    token: windows::Win32::Foundation::HANDLE,
+) -> Result<windows::Win32::Security::PSID> {
     use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
     let mut token_info_length = 0u32;
-    // We expect this to fail with ERROR_INSUFFICIENT_BUFFER, which is fine as we just want the length.
     let _ = GetTokenInformation(token, TokenUser, None, 0, &mut token_info_length);
 
     if token_info_length == 0 {
@@ -244,7 +242,8 @@ unsafe fn get_process_user_sid(token: HANDLE) -> Result<windows::Win32::Security
         Some(buffer.as_mut_ptr() as *mut _),
         token_info_length,
         &mut token_info_length,
-    )?;
+    )
+    .map_err(|e| crate::Error::Ipc(e.to_string()))?;
 
     let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
     Ok(token_user.User.Sid)
