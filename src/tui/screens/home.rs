@@ -39,12 +39,8 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => {
             // Cancel a scheduled panic release. Only meaningful when one is
             // pending (panic_releases_at is Some). No-op otherwise.
-            let scheduled = app
-                .globals
-                .hard_mode
-                .as_ref()
-                .and_then(|h| h.panic_releases_at)
-                .is_some();
+            let scheduled =
+                app.globals.hard_mode.as_ref().and_then(|h| h.panic_releases_at).is_some();
             if scheduled {
                 app.cancel_panic().await;
             }

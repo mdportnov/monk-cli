@@ -72,6 +72,26 @@ onboarding:
   done_next_help: "  monk --help        full command reference"
   first_run_nudge: "Looks like this is your first run. Run `monk init` for a quick setup."
 
+setup:
+  platform_detected: "Platform detected: {platform}"
+  daemon_starting: "Starting daemon service..."
+  daemon_started: "Daemon service configured"
+  daemon_failed: "Daemon setup failed: {error}"
+  completions_installing: "Installing shell completions for {shell}..."
+  completions_installed: "Shell completions installed: {path}"
+  completions_failed: "Completions install failed: {error}"
+  completions_unsupported: "Shell completions not supported for: {shell}"
+  doctor_checking: "Running health checks..."
+  doctor_summary: "Health: {ok} ok, {warn} warnings, {fail} failures"
+  doctor_issue: "  {icon} {title}: {detail}"
+  doctor_hint: "    Hint: {hint}"
+  next_steps_title: "Setup complete! Next steps:"
+  next_steps_start: "  monk start         start a focus session"
+  next_steps_tui: "  monk tui           open the dashboard"
+  next_steps_doctor: "  monk doctor        run full diagnostics"
+  next_steps_help: "  monk --help        command reference"
+  setup_success: "monk is ready to use!"
+
 errors:
   daemon_not_running: "Daemon is not running"
   daemon_already_running: "Daemon is already running (pid {pid})"

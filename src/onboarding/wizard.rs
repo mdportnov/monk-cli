@@ -25,15 +25,18 @@ pub struct Options {
     pub yes: bool,
     pub reset: bool,
     pub quick: bool,
+    pub no_daemon: bool,
+    pub no_completions: bool,
+    pub no_doctor: bool,
 }
 
-pub fn run(opts: Options) -> Result<()> {
+pub async fn run(opts: Options) -> Result<()> {
     if opts.reset {
         return reset();
     }
 
     if !std::io::stdin().is_terminal() || opts.yes {
-        return run_non_interactive(opts);
+        return run_non_interactive(opts).await;
     }
 
     let mut cfg = Config::load().unwrap_or_default();
@@ -82,11 +85,21 @@ pub fn run(opts: Options) -> Result<()> {
     cfg.general.initialized = true;
     cfg.save()?;
 
-    if autostart {
+    if autostart && !opts.no_daemon {
         run_service_install();
     }
 
-    print_doctor_summary();
+    // Install shell completions if not skipped
+    if !opts.no_completions {
+        install_completions_step();
+    }
+
+    // Print health checks if not skipped
+    if !opts.no_doctor {
+        print_doctor_summary_async().await;
+    } else {
+        print_doctor_summary();
+    }
 
     farewell()?;
     Ok(())
@@ -196,7 +209,7 @@ fn print_doctor_summary() {
     }
 }
 
-pub fn run_non_interactive(opts: Options) -> Result<()> {
+pub async fn run_non_interactive(opts: Options) -> Result<()> {
     let mut cfg = Config::load().unwrap_or_default();
 
     if let Some(l) = &opts.locale {
@@ -214,12 +227,23 @@ pub fn run_non_interactive(opts: Options) -> Result<()> {
 
     apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
 
-    if autostart {
+    if autostart && !opts.no_daemon {
         let _ = daemon::service_run(ServiceAction::Install);
     }
 
     cfg.general.initialized = true;
     cfg.save()?;
+
+    // Install shell completions if not skipped
+    if !opts.no_completions {
+        install_completions_step();
+    }
+
+    // Run health checks if not skipped
+    if !opts.no_doctor {
+        print_basic_doctor_summary().await;
+    }
+
     println!("monk initialized at {}", paths::config_file()?.display());
     Ok(())
 }
@@ -435,6 +459,91 @@ fn farewell() -> Result<()> {
     println!();
     let _ = PRESET_NAMES;
     Ok(())
+}
+
+fn install_completions_step() {
+    if let Some(shell) = detect_shell() {
+        println!("  {}", t!("setup.completions_installing", shell = shell));
+        match crate::doctor::ActionKind::InstallCompletions.run() {
+            Ok(msg) => {
+                for line in msg.lines() {
+                    if line.starts_with("wrote completions →") {
+                        let path = line.strip_prefix("wrote completions → ").unwrap_or(line);
+                        println!("  {}", t!("setup.completions_installed", path = path));
+                    } else {
+                        println!("    {line}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("  {}", t!("setup.completions_failed", error = e));
+                eprintln!("  → run `monk completions {shell}` manually later");
+            }
+        }
+    }
+}
+
+async fn print_doctor_summary_async() {
+    println!("  {}", t!("setup.doctor_checking"));
+    let result = std::thread::Builder::new()
+        .name("monk-doctor-summary".into())
+        .spawn(|| {
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    tracing::warn!(?e, "doctor summary: tokio runtime build failed");
+                    return None;
+                }
+            };
+            rt.block_on(async {
+                tokio::time::timeout(DOCTOR_SUMMARY_TIMEOUT, crate::doctor::run()).await.ok()
+            })
+        })
+        .and_then(|h| h.join().map_err(|_| std::io::Error::other("doctor thread panicked")));
+    let report = match result {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            println!("  health: skipped — check timed out after {:?}", DOCTOR_SUMMARY_TIMEOUT);
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(?e, "doctor summary: thread error");
+            return;
+        }
+    };
+    let (ok, warn, fail) = report.summary();
+    println!("  {}", t!("setup.doctor_summary", ok = ok, warn = warn, fail = fail));
+
+    // Show only warnings and failures
+    for c in &report.checks {
+        if matches!(c.status, crate::doctor::Status::Warn | crate::doctor::Status::Fail) {
+            println!(
+                "  {}",
+                t!(
+                    "setup.doctor_issue",
+                    icon = c.status.icon(),
+                    title = &c.title,
+                    detail = &c.detail
+                )
+            );
+            if let Some(hint) = &c.hint {
+                println!("    {}", t!("setup.doctor_hint", hint = hint));
+            }
+        }
+    }
+}
+
+async fn print_basic_doctor_summary() {
+    println!("  {}", t!("setup.doctor_checking"));
+    let report = crate::doctor::run().await;
+    let (ok, warn, fail) = report.summary();
+    println!("  {}", t!("setup.doctor_summary", ok = ok, warn = warn, fail = fail));
+}
+
+fn detect_shell() -> Option<String> {
+    std::env::var("SHELL").ok().and_then(|s| {
+        std::path::Path::new(&s).file_name().map(|n| n.to_string_lossy().to_lowercase())
+    })
 }
 
 fn prompt_err(e: inquire::InquireError) -> Error {

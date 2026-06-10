@@ -68,7 +68,7 @@ pub fn set_acl_current_user(path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
     use windows::core::{PCWSTR, PWSTR};
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
+    use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
     use windows::Win32::Security::Authorization::{
         SetEntriesInAclW, SetNamedSecurityInfoW, EXPLICIT_ACCESS_W, GRANT_ACCESS,
         NO_MULTIPLE_TRUSTEE, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_W,

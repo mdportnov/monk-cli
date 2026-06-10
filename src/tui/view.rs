@@ -77,10 +77,7 @@ fn draw_flash_toast(f: &mut Frame, app: &App) {
     f.render_widget(ratatui::widgets::Clear, rect);
     let p = Paragraph::new(Span::styled(
         label,
-        Style::default()
-            .fg(Color::Black)
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD),
     ))
     .alignment(Alignment::Center);
     f.render_widget(p, rect);

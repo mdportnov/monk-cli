@@ -99,7 +99,7 @@ fn ensure_zshrc_fpath(home: &std::path::Path, dir: &std::path::Path) -> String {
     let dir_s = dir.display().to_string();
     let existing = fs_err::read_to_string(&zshrc).unwrap_or_default();
     if existing.contains(MARKER) {
-        return format!("(zsh fpath block already installed by monk)");
+        return "(zsh fpath block already installed by monk)".to_string();
     }
     if existing.lines().any(|l| zshrc_line_uses_fpath_dir(l, &dir_s)) {
         return format!("(zsh fpath already references {dir_s})");
@@ -135,28 +135,6 @@ fn zshrc_line_uses_fpath_dir(line: &str, dir: &str) -> bool {
     let eq = trimmed.find('=').or_else(|| trimmed.find('+'));
     let Some(idx) = eq else { return false };
     trimmed[idx..].contains(dir)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fpath_line_detection_accepts_canonical_forms() {
-        let d = "/home/u/.local/share/zsh/site-functions";
-        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=({d} $fpath)"), d));
-        assert!(zshrc_line_uses_fpath_dir(&format!("  fpath+=({d})"), d));
-        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=(\"{d}\" $fpath)"), d));
-    }
-
-    #[test]
-    fn fpath_line_detection_rejects_comments_and_unrelated_lines() {
-        let d = "/home/u/.local/share/zsh/site-functions";
-        assert!(!zshrc_line_uses_fpath_dir(&format!("# skip {d}"), d));
-        assert!(!zshrc_line_uses_fpath_dir(&format!("export FOO={d}"), d));
-        assert!(!zshrc_line_uses_fpath_dir("fpath=(/other/dir $fpath)", d));
-        assert!(!zshrc_line_uses_fpath_dir("alias fpath='echo'", d));
-    }
 }
 
 pub(crate) fn print_path_hint() -> std::result::Result<String, String> {
@@ -203,4 +181,26 @@ pub(crate) fn open_path_action(
         return Err(format!("{cmd} exited with {status}"));
     }
     Ok(format!("opened {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fpath_line_detection_accepts_canonical_forms() {
+        let d = "/home/u/.local/share/zsh/site-functions";
+        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=({d} $fpath)"), d));
+        assert!(zshrc_line_uses_fpath_dir(&format!("  fpath+=({d})"), d));
+        assert!(zshrc_line_uses_fpath_dir(&format!("fpath=(\"{d}\" $fpath)"), d));
+    }
+
+    #[test]
+    fn fpath_line_detection_rejects_comments_and_unrelated_lines() {
+        let d = "/home/u/.local/share/zsh/site-functions";
+        assert!(!zshrc_line_uses_fpath_dir(&format!("# skip {d}"), d));
+        assert!(!zshrc_line_uses_fpath_dir(&format!("export FOO={d}"), d));
+        assert!(!zshrc_line_uses_fpath_dir("fpath=(/other/dir $fpath)", d));
+        assert!(!zshrc_line_uses_fpath_dir("alias fpath='echo'", d));
+    }
 }

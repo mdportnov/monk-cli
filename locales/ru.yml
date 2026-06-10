@@ -72,6 +72,26 @@ onboarding:
   done_next_help: "  monk --help        полный список команд"
   first_run_nudge: "Похоже, это первый запуск. Запусти `monk init` для быстрой настройки."
 
+setup:
+  platform_detected: "Платформа обнаружена: {platform}"
+  daemon_starting: "Запуск службы демона..."
+  daemon_started: "Служба демона настроена"
+  daemon_failed: "Настройка демона не удалась: {error}"
+  completions_installing: "Установка автодополнений для {shell}..."
+  completions_installed: "Автодополнения установлены: {path}"
+  completions_failed: "Ошибка установки автодополнений: {error}"
+  completions_unsupported: "Автодополнения не поддерживаются для: {shell}"
+  doctor_checking: "Проверка системы..."
+  doctor_summary: "Здоровье: {ok} ОК, {warn} предупреждений, {fail} ошибок"
+  doctor_issue: "  {icon} {title}: {detail}"
+  doctor_hint: "    Подсказка: {hint}"
+  next_steps_title: "Настройка завершена! Следующие шаги:"
+  next_steps_start: "  monk start         запустить фокус-сессию"
+  next_steps_tui: "  monk tui           открыть панель управления"
+  next_steps_doctor: "  monk doctor        полная диагностика"
+  next_steps_help: "  monk --help        справка по командам"
+  setup_success: "monk готов к использованию!"
+
 errors:
   daemon_not_running: "Демон не запущен"
   daemon_already_running: "Демон уже запущен (pid {pid})"

@@ -61,3 +61,9 @@ package-deb:
 
 package-rpm:
     cargo generate-rpm
+
+completions: build
+    mkdir -p assets/completions
+    ./target/release/monk completions bash > assets/completions/monk
+    ./target/release/monk completions zsh > assets/completions/_monk
+    ./target/release/monk completions fish > assets/completions/monk.fish
