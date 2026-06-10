@@ -84,7 +84,8 @@ fn parse_desktop(path: &Path) -> Option<InstalledApp> {
 fn parse_sandbox_id(exec_raw: &str) -> Option<String> {
     let tokens: Vec<&str> = exec_raw.split_whitespace().filter(|t| !t.is_empty()).collect();
     let launcher = tokens.first()?;
-    let launcher_name = Path::new(launcher).file_name().and_then(|s| s.to_str()).unwrap_or(launcher);
+    let launcher_name =
+        Path::new(launcher).file_name().and_then(|s| s.to_str()).unwrap_or(launcher);
 
     if launcher_name == "flatpak" {
         let run_idx = tokens.iter().position(|t| *t == "run")?;

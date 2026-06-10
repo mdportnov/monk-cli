@@ -526,7 +526,8 @@ fn build_contract_panel(confirm: &ConfirmState) -> Paragraph<'static> {
                     Style::default().fg(DIM),
                 ),
                 Span::styled(
-                    crate::i18n::t!("tui.confirm.progress_of_cap", pct = pct.to_string()).to_string(),
+                    crate::i18n::t!("tui.confirm.progress_of_cap", pct = pct.to_string())
+                        .to_string(),
                     Style::default().fg(if pct >= 90 {
                         ALERT
                     } else if pct >= 70 {

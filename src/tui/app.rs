@@ -143,7 +143,6 @@ impl PickerState {
         self.filter.clear();
         self.selected = 0;
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
