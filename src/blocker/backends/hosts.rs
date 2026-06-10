@@ -215,14 +215,14 @@ impl BlockerBackend for HostsBlocker {
 #[cfg(target_os = "linux")]
 fn flush_system_dns() {
     if let Err(e) = crate::blocker::linux::flush_dns() {
-        debug!(?e, "linux DNS flush failed (ignored)");
+        tracing::debug!(?e, "linux DNS flush failed (ignored)");
     }
 }
 
 #[cfg(target_os = "windows")]
 fn flush_system_dns() {
     if let Err(e) = crate::blocker::windows::flush_dns() {
-        debug!(?e, "windows DNS flush failed (ignored)");
+        tracing::debug!(?e, "windows DNS flush failed (ignored)");
     }
 }
 

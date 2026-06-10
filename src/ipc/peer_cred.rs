@@ -251,6 +251,9 @@ unsafe fn get_process_user_sid(
 
 #[cfg(test)]
 mod tests {
+    // Only the `#[cfg(unix)]` test body references `super` items; importing it
+    // unconditionally is an unused-import error on Windows under `-D warnings`.
+    #[cfg(unix)]
     use super::*;
 
     #[test]

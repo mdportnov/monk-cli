@@ -149,8 +149,9 @@ pub fn set_acl_current_user(path: &Path) -> Result<()> {
 
         // Always free the ACL and token handle regardless of SetNamedSecurityInfoW outcome.
         if !new_acl.is_null() {
-            // HLOCAL wraps *mut c_void; LocalFree takes Option<HLOCAL>.
-            LocalFree(Some(HLOCAL(new_acl as *mut _)));
+            // windows-rs 0.58: LocalFree takes `P: Param<HLOCAL>`, satisfied by
+            // HLOCAL directly (not Option<HLOCAL>). Returned handle is ignored.
+            LocalFree(HLOCAL(new_acl as *mut _));
         }
         let _ = CloseHandle(token);
 

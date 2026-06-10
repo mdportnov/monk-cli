@@ -67,6 +67,6 @@ pub fn scan() -> Result<Vec<InstalledApp>> {
 pub fn dedup_sorted(mut apps: Vec<InstalledApp>) -> Vec<InstalledApp> {
     apps.sort_by(|a, b| a.id.cmp(&b.id));
     apps.dedup_by(|a, b| a.id == b.id);
-    apps.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    apps.sort_by_key(|a| a.label.to_lowercase());
     apps
 }
