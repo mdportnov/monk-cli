@@ -99,7 +99,7 @@ fn ensure_zshrc_fpath(home: &std::path::Path, dir: &std::path::Path) -> String {
     let dir_s = dir.display().to_string();
     let existing = fs_err::read_to_string(&zshrc).unwrap_or_default();
     if existing.contains(MARKER) {
-        return format!("(zsh fpath block already installed by monk)");
+        return "(zsh fpath block already installed by monk)".to_string();
     }
     if existing.lines().any(|l| zshrc_line_uses_fpath_dir(l, &dir_s)) {
         return format!("(zsh fpath already references {dir_s})");

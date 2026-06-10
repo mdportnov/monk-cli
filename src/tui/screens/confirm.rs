@@ -497,23 +497,32 @@ fn draw_confirm_details(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
 fn build_contract_panel(confirm: &ConfirmState) -> Paragraph<'static> {
     let limits = confirm.limits();
     let mut lines: Vec<Line> = vec![
-        kv("max", &fmt_limit(limits.max_duration)),
-        kv("min", &fmt_limit(limits.min_duration)),
-        kv("cooldown", &fmt_limit(limits.cooldown)),
-        kv("daily cap", &fmt_limit(limits.daily_cap)),
+        kv(&crate::i18n::t!("tui.confirm.field_max"), &fmt_limit(limits.max_duration)),
+        kv(&crate::i18n::t!("tui.confirm.field_min"), &fmt_limit(limits.min_duration)),
+        kv(&crate::i18n::t!("tui.confirm.field_cooldown"), &fmt_limit(limits.cooldown)),
+        kv(&crate::i18n::t!("tui.confirm.field_daily_cap"), &fmt_limit(limits.daily_cap)),
         Line::from(""),
-        kv("used today", &fmt_short(confirm.mode.stats.used_24h)),
+        kv(
+            &crate::i18n::t!("tui.confirm.field_used_today"),
+            &fmt_short(confirm.mode.stats.used_24h),
+        ),
     ];
     if let Some(rem) = confirm.mode.stats.daily_cap_remaining {
-        lines.push(kv("budget left", &fmt_short(rem)));
+        lines.push(kv(&crate::i18n::t!("tui.confirm.field_budget_left"), &fmt_short(rem)));
     }
     if let Some(detail) = &confirm.detail {
         lines.push(Line::from(""));
-        lines.push(kv("sessions 14d", &detail.total_sessions_7d.to_string()));
-        lines.push(kv("total 14d", &fmt_short(detail.total_duration_7d)));
+        lines.push(kv(
+            &crate::i18n::t!("tui.confirm.field_sessions_14d"),
+            &detail.total_sessions_7d.to_string(),
+        ));
+        lines.push(kv(
+            &crate::i18n::t!("tui.confirm.field_total_14d"),
+            &fmt_short(detail.total_duration_7d),
+        ));
         if let Some(sch) = &detail.profile.schedule {
             lines.push(Line::from(""));
-            lines.push(kv("schedule", &fmt_schedule(sch)));
+            lines.push(kv(&crate::i18n::t!("tui.confirm.field_schedule"), &fmt_schedule(sch)));
         }
     }
     Paragraph::new(lines).wrap(Wrap { trim: false }).block(picker_block(" contract "))
@@ -526,7 +535,7 @@ fn draw_blocklist_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
 
     let Some(detail) = &confirm.detail else {
         let p = Paragraph::new(Span::styled(
-            "loading…",
+            crate::i18n::t!("tui.confirm.loading"),
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ));
         f.render_widget(p, inner);
@@ -643,7 +652,7 @@ fn draw_usage_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
 
     let Some(detail) = &confirm.detail else {
         let p = Paragraph::new(Span::styled(
-            "loading…",
+            crate::i18n::t!("tui.confirm.loading"),
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ));
         f.render_widget(p, inner);
@@ -653,7 +662,7 @@ fn draw_usage_panel(f: &mut Frame, area: Rect, confirm: &ConfirmState) {
     if detail.usage.is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "no history",
+                crate::i18n::t!("tui.confirm.no_history"),
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )),
             inner,

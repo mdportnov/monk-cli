@@ -55,16 +55,17 @@ impl MenuItem {
         crate::i18n::t!(key).to_string()
     }
 
-    pub fn hint(self) -> &'static str {
-        match self {
-            MenuItem::Start => "pick a mode and start a focus session",
-            MenuItem::Stop => "end the active session (soft mode only)",
-            MenuItem::Panic => "request a delayed hard-mode escape",
-            MenuItem::Profiles => "list / create / edit / delete modes (a = from preset)",
-            MenuItem::Settings => "general settings and data reset",
-            MenuItem::Doctor => "check environment and daemon health",
-            MenuItem::Quit => "leave the TUI",
-        }
+    pub fn hint(self) -> String {
+        let key = match self {
+            MenuItem::Start => "tui.menu_hint.start",
+            MenuItem::Stop => "tui.menu_hint.stop",
+            MenuItem::Panic => "tui.menu_hint.panic",
+            MenuItem::Profiles => "tui.menu_hint.modes",
+            MenuItem::Settings => "tui.menu_hint.settings",
+            MenuItem::Doctor => "tui.menu_hint.doctor",
+            MenuItem::Quit => "tui.menu_hint.quit",
+        };
+        crate::i18n::t!(key).to_string()
     }
 }
 
@@ -162,50 +163,44 @@ impl EditorField {
         EditorField::Brands,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            EditorField::Name => "name",
-            EditorField::Color => "color",
-            EditorField::Max => "max duration",
-            EditorField::Min => "min duration",
-            EditorField::Cooldown => "cooldown",
-            EditorField::DailyCap => "daily cap",
-            EditorField::PanicDelay => "panic delay",
-            EditorField::Schedule => "schedule",
-            EditorField::Sites => "custom sites",
-            EditorField::HookBefore => "hook before",
-            EditorField::HookAfter => "hook after",
-            EditorField::Apps => "blocked apps",
-            EditorField::Groups => "site groups",
-            EditorField::Brands => "brand presets",
-        }
+    pub fn label(self) -> String {
+        let key = match self {
+            EditorField::Name => "tui.editor_field.name",
+            EditorField::Color => "tui.editor_field.color",
+            EditorField::Max => "tui.editor_field.max_duration",
+            EditorField::Min => "tui.editor_field.min_duration",
+            EditorField::Cooldown => "tui.editor_field.cooldown",
+            EditorField::DailyCap => "tui.editor_field.daily_cap",
+            EditorField::PanicDelay => "tui.editor_field.panic_delay",
+            EditorField::Schedule => "tui.editor_field.schedule",
+            EditorField::Sites => "tui.editor_field.custom_sites",
+            EditorField::HookBefore => "tui.editor_field.hook_before",
+            EditorField::HookAfter => "tui.editor_field.hook_after",
+            EditorField::Apps => "tui.editor_field.blocked_apps",
+            EditorField::Groups => "tui.editor_field.site_groups",
+            EditorField::Brands => "tui.editor_field.brand_presets",
+        };
+        crate::i18n::t!(key).to_string()
     }
 
-    pub fn help(self) -> &'static str {
-        match self {
-            EditorField::Name => "mode identifier (1-30 chars)",
-            EditorField::Color => "← → cycle accent color",
-            EditorField::Max => "ceiling — even you can't override (e.g. 2h, 90m)",
-            EditorField::Min => "shorter doesn't count as a session",
-            EditorField::Cooldown => "protects against compulsive restart",
-            EditorField::DailyCap => "daily focus budget — prevents burnout",
-            EditorField::PanicDelay => {
-                "delay before hard-mode panic releases (empty = global default)"
-            }
-            EditorField::Schedule => "auto-start: `mon-fri 09:00-17:00` or `daily 22:00-23:00 UTC`",
-            EditorField::Sites => "comma-separated hosts to block · + add custom",
-            EditorField::HookBefore => "shell command run before session",
-            EditorField::HookAfter => "shell command run after session",
-            EditorField::Apps => {
-                "space toggle · + add custom · type to filter · ↑/↓ navigate · tab leaves list"
-            }
-            EditorField::Groups => {
-                "space toggle · type to filter · ↑/↓ navigate · tab leaves list"
-            }
-            EditorField::Brands => {
-                "space toggle · type to filter · auto-resolves domains + apps · tab leaves list"
-            }
-        }
+    pub fn help(self) -> String {
+        let key = match self {
+            EditorField::Name => "tui.editor_field_help.name",
+            EditorField::Color => "tui.editor_field_help.color",
+            EditorField::Max => "tui.editor_field_help.max_duration",
+            EditorField::Min => "tui.editor_field_help.min_duration",
+            EditorField::Cooldown => "tui.editor_field_help.cooldown",
+            EditorField::DailyCap => "tui.editor_field_help.daily_cap",
+            EditorField::PanicDelay => "tui.editor_field_help.panic_delay",
+            EditorField::Schedule => "tui.editor_field_help.schedule",
+            EditorField::Sites => "tui.editor_field_help.sites",
+            EditorField::HookBefore => "tui.editor_field_help.hook_before",
+            EditorField::HookAfter => "tui.editor_field_help.hook_after",
+            EditorField::Apps => "tui.editor_field_help.apps",
+            EditorField::Groups => "tui.editor_field_help.groups",
+            EditorField::Brands => "tui.editor_field_help.brands",
+        };
+        crate::i18n::t!(key).to_string()
     }
 }
 
@@ -555,7 +550,7 @@ impl App {
             }
             Ok(_) => {
                 if let Screen::ModePicker(p) = &mut self.screen {
-                    p.error = Some("unexpected response".into());
+                    p.error = Some(crate::i18n::t!("tui.flash.unexpected").to_string());
                 }
                 return;
             }
@@ -669,7 +664,7 @@ impl App {
                     Ok(_) | Err(_) => {
                         // Fallback to picker with flash on fetch failure
                         self.globals.set_flash(
-                            "saved mode, but couldn't open start screen".to_string(),
+                            crate::i18n::t!("tui.flash.saved_no_start").to_string(),
                             FlashLevel::Warn,
                         );
                         self.open_picker();
@@ -751,7 +746,7 @@ impl App {
             }
             Ok(_) => {
                 if let Screen::ModeConfirm(c) = &mut self.screen {
-                    c.error = Some("unexpected response".into());
+                    c.error = Some(crate::i18n::t!("tui.flash.unexpected").to_string());
                 }
             }
             Err(e) => {
@@ -882,7 +877,7 @@ impl App {
                 }
             }
             Ok(Response::Error { message }) => picker.error = Some(message),
-            Ok(_) => picker.error = Some("unexpected response".into()),
+            Ok(_) => picker.error = Some(crate::i18n::t!("tui.flash.unexpected").to_string()),
             Err(e) => picker.error = Some(e.to_string()),
         }
     }

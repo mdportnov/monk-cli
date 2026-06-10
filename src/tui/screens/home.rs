@@ -39,12 +39,8 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => {
             // Cancel a scheduled panic release. Only meaningful when one is
             // pending (panic_releases_at is Some). No-op otherwise.
-            let scheduled = app
-                .globals
-                .hard_mode
-                .as_ref()
-                .and_then(|h| h.panic_releases_at)
-                .is_some();
+            let scheduled =
+                app.globals.hard_mode.as_ref().and_then(|h| h.panic_releases_at).is_some();
             if scheduled {
                 app.cancel_panic().await;
             }
@@ -119,7 +115,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
         .split(inner);
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled("mode  ", Style::default().fg(DIM)),
+        Span::styled(format!("{}  ", crate::i18n::t!("tui.home.mode")), Style::default().fg(DIM)),
         Span::styled(
             session.profile.clone(),
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
@@ -164,7 +160,10 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
         if let Some(cap) = mode.limits.daily_cap {
             let used = mode.stats.used_24h;
             info_lines.push(Line::from(vec![
-                Span::styled("today  ", Style::default().fg(DIM)),
+                Span::styled(
+                    format!("{}  ", crate::i18n::t!("tui.home.today")),
+                    Style::default().fg(DIM),
+                ),
                 Span::styled(
                     format!("{} / {}", fmt_short(used), fmt_short(cap)),
                     Style::default().fg(TEXT),
@@ -174,12 +173,18 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
         if let Some(cd) = mode.limits.cooldown {
             if let Some(rem) = mode.stats.cooldown_remaining {
                 info_lines.push(Line::from(vec![
-                    Span::styled("cooldown  ", Style::default().fg(DIM)),
+                    Span::styled(
+                        format!("{}  ", crate::i18n::t!("tui.home.cooldown")),
+                        Style::default().fg(DIM),
+                    ),
                     Span::styled(fmt_short(rem).to_string(), Style::default().fg(TEXT)),
                 ]));
             } else {
                 info_lines.push(Line::from(vec![
-                    Span::styled("cooldown  ", Style::default().fg(DIM)),
+                    Span::styled(
+                        format!("{}  ", crate::i18n::t!("tui.home.cooldown")),
+                        Style::default().fg(DIM),
+                    ),
                     Span::styled(fmt_short(cd).to_string(), Style::default().fg(DIM)),
                 ]));
             }
@@ -221,7 +226,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             ])
         }
     } else {
-        Line::from(Span::styled("x end  p panic", Style::default().fg(DIM)))
+        Line::from(Span::styled(crate::i18n::t!("tui.home.actions"), Style::default().fg(DIM)))
     };
     let footer = Paragraph::new(footer_line).alignment(Alignment::Center);
     f.render_widget(footer, layout[5]);
@@ -282,11 +287,14 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
 
     let daemon = if app.globals.daemon_running {
-        Span::styled("running", Style::default().fg(ACCENT))
+        Span::styled(crate::i18n::t!("tui.home.daemon_running"), Style::default().fg(ACCENT))
     } else {
-        Span::styled("stopped", Style::default().fg(ALERT))
+        Span::styled(crate::i18n::t!("tui.home.daemon_stopped"), Style::default().fg(ALERT))
     };
-    lines.push(Line::from(vec![Span::styled("daemon  ", Style::default().fg(DIM)), daemon]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("{}  ", crate::i18n::t!("tui.home.daemon")), Style::default().fg(DIM)),
+        daemon,
+    ]));
 
     match &app.globals.active {
         Some(s) => {
@@ -294,7 +302,10 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
             let mins = remaining.as_secs() / 60;
             let secs = remaining.as_secs() % 60;
             lines.push(Line::from(vec![
-                Span::styled("session ", Style::default().fg(DIM)),
+                Span::styled(
+                    format!("{} ", crate::i18n::t!("tui.home.session")),
+                    Style::default().fg(DIM),
+                ),
                 Span::styled(s.profile.clone(), Style::default().fg(TEXT)),
                 Span::raw("  "),
                 Span::styled(
@@ -304,8 +315,11 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
             ]));
         }
         None => lines.push(Line::from(vec![
-            Span::styled("session ", Style::default().fg(DIM)),
-            Span::styled("idle", Style::default().fg(TEXT)),
+            Span::styled(
+                format!("{} ", crate::i18n::t!("tui.home.session")),
+                Style::default().fg(DIM),
+            ),
+            Span::styled(crate::i18n::t!("tui.home.session_idle"), Style::default().fg(TEXT)),
         ])),
     }
 
