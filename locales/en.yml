@@ -120,6 +120,7 @@ panic:
   cancelled: "Panic request cancelled."
 
 tui:
+  narrow_terminal: "Terminal too small — resize to at least %{min_w}×%{min_h} (now %{cur_w}×%{cur_h})"
   flash:
     started: "started `{profile}`"
     stopped: "stopped `{profile}`"
@@ -171,6 +172,8 @@ tui:
     field_daily_cap: "daily cap"
     field_used_today: "used today"
     field_budget_left: "budget left"
+    field_progress: "progress"
+    progress_of_cap: "{pct}% of daily cap"
     field_sessions_14d: "sessions 14d"
     field_total_14d: "total 14d"
     field_schedule: "schedule"
@@ -307,6 +310,7 @@ tui:
     rerunning: "rerunning…"
   home:
     mode: "mode"
+    hard_badge: "HARD MODE"
     today: "today"
     cooldown: "cooldown"
     daemon: "daemon"

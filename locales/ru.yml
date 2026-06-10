@@ -120,6 +120,7 @@ panic:
   cancelled: "Запрос выхода отменён."
 
 tui:
+  narrow_terminal: "Терминал слишком маленький — увеличь до минимум %{min_w}×%{min_h} (сейчас %{cur_w}×%{cur_h})"
   flash:
     started: "запущено `{profile}`"
     stopped: "остановлено `{profile}`"
@@ -171,6 +172,8 @@ tui:
     field_daily_cap: "дневной лимит"
     field_used_today: "использовано сегодня"
     field_budget_left: "осталось времени"
+    field_progress: "прогресс"
+    progress_of_cap: "{pct}% дневного лимита"
     field_sessions_14d: "сессий за 14 дней"
     field_total_14d: "всего за 14 дней"
     field_schedule: "расписание"
@@ -307,6 +310,7 @@ tui:
     rerunning: "перезапускаем…"
   home:
     mode: "режим"
+    hard_badge: "ЖЁСТКИЙ РЕЖИМ"
     today: "сегодня"
     cooldown: "кулдаун"
     daemon: "демон"

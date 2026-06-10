@@ -101,30 +101,49 @@ pub struct PickerState {
     /// When Some, the picker is asking for confirmation before deleting the
     /// named mode. y/Y commits, esc/n cancels.
     pub confirm_delete: Option<String>,
+    /// Filter string for searching through modes. Empty = no filter.
+    pub filter: String,
 }
 
 impl PickerState {
+    pub fn filtered_modes(&self) -> Vec<&ModeSummary> {
+        if self.filter.is_empty() {
+            self.modes.iter().collect()
+        } else {
+            let filter_lower = self.filter.to_lowercase();
+            self.modes.iter().filter(|m| m.name.to_lowercase().contains(&filter_lower)).collect()
+        }
+    }
+
     pub fn move_up(&mut self) {
-        if self.modes.is_empty() {
+        let filtered = self.filtered_modes();
+        if filtered.is_empty() {
             return;
         }
         if self.selected == 0 {
-            self.selected = self.modes.len() - 1;
+            self.selected = filtered.len() - 1;
         } else {
             self.selected -= 1;
         }
     }
 
     pub fn move_down(&mut self) {
-        if self.modes.is_empty() {
+        let filtered = self.filtered_modes();
+        if filtered.is_empty() {
             return;
         }
-        self.selected = (self.selected + 1) % self.modes.len();
+        self.selected = (self.selected + 1) % filtered.len();
     }
 
     pub fn current(&self) -> Option<&ModeSummary> {
-        self.modes.get(self.selected)
+        self.filtered_modes().get(self.selected).copied()
     }
+
+    pub fn clear_filter(&mut self) {
+        self.filter.clear();
+        self.selected = 0;
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

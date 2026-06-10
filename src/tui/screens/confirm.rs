@@ -194,7 +194,7 @@ pub async fn handle_confirm_key(app: &mut App, key: KeyEvent) {
                 app.start_from_confirm().await;
                 return;
             }
-            KeyCode::Char(' ') | KeyCode::Char('i') | KeyCode::Char('o') => {
+            KeyCode::Char('i') | KeyCode::Char('o') => {
                 if confirm.group_count() > 0 {
                     confirm.open_selected_group();
                     return;
@@ -509,6 +509,34 @@ fn build_contract_panel(confirm: &ConfirmState) -> Paragraph<'static> {
     ];
     if let Some(rem) = confirm.mode.stats.daily_cap_remaining {
         lines.push(kv(&crate::i18n::t!("tui.confirm.field_budget_left"), &fmt_short(rem)));
+
+        // Daily-cap usage as a percentage, color-coded so an almost-spent
+        // budget is obvious before the user commits to a session.
+        if let Some(cap) = limits.daily_cap {
+            let used_secs = cap.as_secs().saturating_sub(rem.as_secs());
+            let pct = if cap.as_secs() == 0 {
+                0u16
+            } else {
+                ((used_secs as f64 / cap.as_secs() as f64) * 100.0).clamp(0.0, 100.0) as u16
+            };
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{}  ", crate::i18n::t!("tui.confirm.field_progress")),
+                    Style::default().fg(DIM),
+                ),
+                Span::styled(
+                    crate::i18n::t!("tui.confirm.progress_of_cap", pct = pct.to_string()).to_string(),
+                    Style::default().fg(if pct >= 90 {
+                        ALERT
+                    } else if pct >= 70 {
+                        Color::Rgb(220, 180, 90)
+                    } else {
+                        TEXT
+                    }),
+                ),
+            ]));
+        }
     }
     if let Some(detail) = &confirm.detail {
         lines.push(Line::from(""));

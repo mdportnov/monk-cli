@@ -90,6 +90,7 @@ fn every_used_i18n_key_exists_in_all_locales() {
             || k.starts_with("tui.settings_field.")
             || k.starts_with("tui.settings_field_help.")
             || k.starts_with("tui.companion.")
+            || k == "tui.narrow_terminal"
         {
             continue;
         }

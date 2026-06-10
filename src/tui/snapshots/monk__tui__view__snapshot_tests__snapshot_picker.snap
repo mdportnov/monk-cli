@@ -30,4 +30,4 @@ expression: "render(&app, 100, 30)"
 │                                                     ││                                           │
 ╰─────────────────────────────────────────────────────╯╰───────────────────────────────────────────╯
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-      ↑/↓ · ⏎ start · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh · esc
+↑/↓ · ⏎ start · type filter · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh ·
