@@ -73,6 +73,7 @@ mod tests {
             label: id.into(),
             exec_path: PathBuf::from("/Applications/X.app/Contents/MacOS/X"),
             kind: AppKind::MacBundle,
+            sandbox_id: None,
         }
     }
 

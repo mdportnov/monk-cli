@@ -234,15 +234,16 @@ fn matches_process(
             false
         }
         AppKind::DesktopEntry => {
+            // Sandboxed (Flatpak/Snap) apps run as a binary inside the sandbox,
+            // not as `exec_path` (the launcher). Match them by cgroup via the
+            // parsed application id; exe/name comparison can't see them.
+            #[cfg(target_os = "linux")]
+            if app.sandbox_id.is_some() {
+                return matches_sandboxed_app(app, pid);
+            }
             if let Some(exe_path) = exe {
                 if exe_path == app.exec_path {
                     return true;
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    if is_flatpak_or_snap_wrapper(&app.exec_path) {
-                        return matches_sandboxed_app(app, pid);
-                    }
                 }
             }
             if let Some(expected) = app.exec_path.file_name().and_then(|s| s.to_str()) {
@@ -370,41 +371,24 @@ fn is_system_path(path: &Path) -> bool {
     }
 }
 
-#[cfg(target_os = "linux")]
-fn is_flatpak_or_snap_wrapper(exec_path: &Path) -> bool {
-    exec_path.to_string_lossy().contains("flatpak")
-        || exec_path.file_name().and_then(|s| s.to_str()) == Some("snap")
-}
-
+/// Match a sandboxed (Flatpak/Snap) process by reading its cgroup membership.
+///
+/// `app.sandbox_id` holds the application id parsed from the `.desktop` `Exec`
+/// line (e.g. `org.mozilla.firefox`). Systemd places Flatpak apps in
+/// `app-flatpak-<id>-<pid>.scope` and Snap apps in `snap.<name>.<app>.scope`,
+/// so a substring check against the id reliably catches the app and all of its
+/// helper processes.
 #[cfg(target_os = "linux")]
 fn matches_sandboxed_app(app: &InstalledApp, pid: sysinfo::Pid) -> bool {
+    let Some(id) = app.sandbox_id.as_deref() else {
+        return false;
+    };
     let cgroup_path = format!("/proc/{}/cgroup", pid.as_u32());
-    if let Ok(cgroup) = std::fs::read_to_string(&cgroup_path) {
-        let app_id = extract_app_id_from_exec(&app.exec_path);
-        if let Some(id) = app_id {
-            return cgroup.contains(&format!("app-flatpak-{}", id))
-                || cgroup.contains(&format!("snap.{}", id));
+    match std::fs::read_to_string(&cgroup_path) {
+        Ok(cgroup) => {
+            cgroup.contains(&format!("app-flatpak-{id}")) || cgroup.contains(&format!("snap.{id}"))
         }
+        // Process exited between enumeration and the cgroup read — not a match.
+        Err(_) => false,
     }
-    warn!("Failed to match Flatpak/Snap process for app_id: {}", app.id);
-    false
-}
-
-#[cfg(target_os = "linux")]
-fn extract_app_id_from_exec(exec_path: &Path) -> Option<String> {
-    let exec_str = exec_path.to_string_lossy();
-    if exec_str.contains("flatpak") {
-        if let Some(run_pos) = exec_str.find("run") {
-            let after_run = &exec_str[run_pos + 3..].trim_start();
-            if let Some(first_arg) = after_run.split_whitespace().next() {
-                return Some(first_arg.to_string());
-            }
-        }
-    }
-    if exec_str.contains("snap") {
-        if let Some(first_arg) = exec_str.split_whitespace().nth(1) {
-            return Some(first_arg.to_string());
-        }
-    }
-    None
 }

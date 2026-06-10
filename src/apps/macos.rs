@@ -74,5 +74,11 @@ fn parse_bundle(bundle: &Path) -> Option<InstalledApp> {
         .or_else(|| dict.get("CFBundleName").and_then(|v| v.as_string()).map(|s| s.to_string()))
         .unwrap_or_else(|| bundle.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string());
     let exec_path = bundle.join("Contents").join("MacOS").join(&exec_name);
-    Some(InstalledApp { id: bundle_id, label, exec_path, kind: AppKind::MacBundle })
+    Some(InstalledApp {
+        id: bundle_id,
+        label,
+        exec_path,
+        kind: AppKind::MacBundle,
+        sandbox_id: None,
+    })
 }

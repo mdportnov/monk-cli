@@ -30,6 +30,13 @@ pub struct InstalledApp {
     pub label: String,
     pub exec_path: PathBuf,
     pub kind: AppKind,
+    /// Flatpak/Snap application id (e.g. `org.mozilla.firefox`) when this entry
+    /// launches a sandboxed app. The running process is the sandboxed binary,
+    /// not `exec_path` (which is the `flatpak`/`snap` launcher), so matching
+    /// keys off the sandbox cgroup using this id. `None` for native apps.
+    /// `serde(default)` keeps old on-disk caches (without this field) loadable.
+    #[serde(default)]
+    pub sandbox_id: Option<String>,
 }
 
 impl InstalledApp {

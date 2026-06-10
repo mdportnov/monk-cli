@@ -63,5 +63,5 @@ fn parse_lnk(path: &Path) -> Option<InstalledApp> {
     }
     let label = path.file_stem()?.to_string_lossy().to_string();
     let id = exec_path.file_name()?.to_string_lossy().to_lowercase();
-    Some(InstalledApp { id, label, exec_path, kind: AppKind::WindowsExe })
+    Some(InstalledApp { id, label, exec_path, kind: AppKind::WindowsExe, sandbox_id: None })
 }
