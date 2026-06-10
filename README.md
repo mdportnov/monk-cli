@@ -13,11 +13,11 @@ A cross-platform focus & distraction blocker built in Rust. One binary, one daem
 
 ## Highlights
 
-- **Real app blocking** — scans installed applications on macOS, Linux and Windows, so you pick from a curated list instead of guessing process names.
+- **Real app blocking** — scans installed applications on macOS, Linux (native, Flatpak and Snap) and Windows, so you pick from a curated list instead of guessing process names.
 - **Curated site presets** — bundled `global` and `ru` site groups (social, video, news, chat, shopping, games) with subdomain expansion baked in.
 - **Hard mode** — tamper-evident session lock signed with BLAKE3 keyed HMAC. No `monk stop`, no config edits, no daemon kill can shortcut it.
-- **Background daemon** — Unix domain / local socket IPC, fail-closed reconciliation loop, SIGTERM-safe cleanup, systemd / launchd / Windows Service install.
-- **Interactive TUI** — ratatui-powered dashboard for sessions, stats and profile editing.
+- **Background daemon** — Unix domain / local socket IPC, fail-closed reconciliation loop, SIGTERM-safe cleanup, systemd / launchd / Windows Task Scheduler install.
+- **Interactive TUI** — ratatui-powered dashboard for sessions, live stats, profile editing, type-to-filter mode search, daily-cap progress, and a high-contrast hard-mode badge.
 - **Localized** — English and Русский out of the box via `rust-i18n`.
 - **Zero unsafe** — `#![deny(unsafe_code)]` in the main crate.
 
@@ -48,6 +48,21 @@ monk runs a small always-on daemon (`monkd`) that owns the block state. The CLI 
 
 ## Installation
 
+### Quick install (script)
+
+Downloads the matching release binary, verifies its checksum, and drops it on
+your `PATH`. Then run `monk setup`.
+
+```sh
+# Linux / macOS  → installs to ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell 5+)  → installs to %LOCALAPPDATA%\monk\bin
+irm https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.ps1 | iex
+```
+
 ### From source
 
 ```sh
@@ -64,22 +79,22 @@ cargo binstall monk
 
 ### Package managers
 
-- **Debian / Ubuntu**: `cargo deb` produces a `.deb` wired up for systemd user units.
-- **Fedora / RHEL**: `cargo generate-rpm` produces an `.rpm`.
+- **Debian / Ubuntu**: `cargo deb` produces a `.deb` wired up for systemd user units; bash/zsh/fish completions are bundled.
+- **Fedora / RHEL**: `cargo generate-rpm` produces an `.rpm` (completions bundled).
+- **Windows**: `assets/install.ps1` (above). MSI / Scoop manifest coming soon.
 - **macOS**: Homebrew tap coming soon.
-- **Windows**: MSI / Scoop manifest coming soon.
 
 ### Requirements
 
 - Rust 1.82+ (only for building from source)
 - Root / admin access once, to let monk write the `hosts` file
 - Linux: `systemd` (user session) for `monk daemon install`
-- Windows: nothing — the daemon registers as a per-user service
+- Windows: nothing extra — the daemon registers as a per-user scheduled task that starts at logon (Task Scheduler)
 
 ## Quick start
 
 ```sh
-monk init                       # interactive onboarding wizard
+monk setup                      # first-run wizard: config + daemon + completions + doctor
 monk start deepwork -d 50m      # start a 50-minute session
 monk start deepwork --hard      # commit — no stop until it's over
 monk status                     # what's running, what's left
@@ -118,13 +133,14 @@ monk tui                        # full dashboard
 | `monk daemon start`     | Launch the background daemon                    |
 | `monk daemon stop`      | Shut it down cleanly                            |
 | `monk daemon status`    | Same as `monk status`                           |
-| `monk daemon install`   | Install as systemd / launchd / Windows service  |
+| `monk daemon install`   | Install as systemd / launchd / Windows scheduled task |
 | `monk daemon uninstall` | Remove the service                              |
 
 ### Config & diagnostics
 
 | Command                | What it does                                      |
 | ---------------------- | -------------------------------------------------- |
+| `monk setup` / `monk init` | First-run wizard: config, daemon, completions, doctor |
 | `monk doctor`          | Environment, permissions and daemon health check   |
 | `monk config path`     | Print the config file path                         |
 | `monk config export`   | Dump the current config                            |

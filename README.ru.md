@@ -13,11 +13,11 @@
 
 ## Ключевые возможности
 
-- **Честная блокировка приложений** — сканирует установленные программы на macOS, Linux и Windows, ты выбираешь из реального списка, а не угадываешь имена процессов.
+- **Честная блокировка приложений** — сканирует установленные программы на macOS, Linux (нативные, Flatpak и Snap) и Windows, ты выбираешь из реального списка, а не угадываешь имена процессов.
 - **Готовые наборы сайтов** — встроенные группы `global` и `ru` (соцсети, видео, новости, мессенджеры, шопинг, игры) с автоматическим раскрытием поддоменов.
 - **Hard mode** — подписанный BLAKE3 keyed-HMAC замок сессии, устойчивый к подделке. Ни `monk stop`, ни правка конфига, ни убийство демона не помогут.
-- **Фоновой демон** — IPC через Unix-сокет или named pipe, fail-closed цикл реконциляции, корректная очистка при SIGTERM, установка как systemd / launchd / Windows Service.
-- **Интерактивный TUI** — дашборд на ratatui для сессий, статистики и редактирования профилей.
+- **Фоновой демон** — IPC через Unix-сокет или named pipe, fail-closed цикл реконциляции, корректная очистка при SIGTERM, установка как systemd / launchd / планировщик задач Windows.
+- **Интерактивный TUI** — дашборд на ratatui для сессий, живой статистики, редактирования профилей, поиска режимов по вводу, прогресса дневного лимита и заметного бейджа hard mode.
 - **Локализация** — английский и русский из коробки через `rust-i18n`.
 - **Zero unsafe** — `#![deny(unsafe_code)]` во всём основном крейте.
 
@@ -48,6 +48,21 @@ monk запускает небольшой постоянный демон (`mon
 
 ## Установка
 
+### Быстрая установка (скрипт)
+
+Скачивает подходящий релизный бинарник, проверяет контрольную сумму и кладёт
+его в `PATH`. После этого запусти `monk setup`.
+
+```sh
+# Linux / macOS  → ставит в ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell 5+)  → ставит в %LOCALAPPDATA%\monk\bin
+irm https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.ps1 | iex
+```
+
 ### Из исходников
 
 ```sh
@@ -64,22 +79,22 @@ cargo binstall monk
 
 ### Пакеты
 
-- **Debian / Ubuntu**: `cargo deb` собирает `.deb` с systemd user unit.
-- **Fedora / RHEL**: `cargo generate-rpm` собирает `.rpm`.
+- **Debian / Ubuntu**: `cargo deb` собирает `.deb` с systemd user unit; автодополнения bash/zsh/fish включены.
+- **Fedora / RHEL**: `cargo generate-rpm` собирает `.rpm` (автодополнения включены).
+- **Windows**: `assets/install.ps1` (выше). MSI / Scoop — скоро.
 - **macOS**: Homebrew tap — скоро.
-- **Windows**: MSI / Scoop — скоро.
 
 ### Требования
 
 - Rust 1.82+ (только для сборки из исходников)
 - Один раз root / admin — чтобы monk мог писать в `hosts`
 - Linux: `systemd` (user session) для `monk daemon install`
-- Windows: ничего — демон регистрируется как пользовательский сервис
+- Windows: ничего дополнительно — демон регистрируется как пользовательская задача планировщика, стартующая при входе (Task Scheduler)
 
 ## Быстрый старт
 
 ```sh
-monk init                       # интерактивный визард первого запуска
+monk setup                      # визард первого запуска: конфиг + демон + автодополнения + doctor
 monk start deepwork -d 50m      # сессия на 50 минут
 monk start deepwork --hard      # hard mode — отменить нельзя
 monk status                     # что запущено и сколько осталось
@@ -118,13 +133,14 @@ monk tui                        # полный дашборд
 | `monk daemon start`     | Запустить фоновый демон                           |
 | `monk daemon stop`      | Корректно остановить                              |
 | `monk daemon status`    | То же, что `monk status`                          |
-| `monk daemon install`   | Установить как systemd / launchd / Windows Service |
+| `monk daemon install`   | Установить как systemd / launchd / задачу планировщика Windows |
 | `monk daemon uninstall` | Удалить сервис                                    |
 
 ### Конфиг и диагностика
 
 | Команда                | Что делает                                         |
 | ---------------------- | -------------------------------------------------- |
+| `monk setup` / `monk init` | Визард первого запуска: конфиг, демон, автодополнения, doctor |
 | `monk doctor`          | Проверка окружения, прав и здоровья демона         |
 | `monk config path`     | Показать путь к файлу конфига                      |
 | `monk config export`   | Выгрузить текущий конфиг                           |
