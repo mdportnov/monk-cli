@@ -16,10 +16,11 @@ pub fn flush_dns() -> Result<()> {
     let mut flushed = false;
 
     // systemd-resolved (modern) — `resolvectl`, falling back to the older
-    // `systemd-resolve` binary name on distros that still ship it.
-    if run_flush("resolvectl", &["flush-caches"]) {
-        flushed = true;
-    } else if run_flush("systemd-resolve", &["--flush-caches"]) {
+    // `systemd-resolve` binary name on distros that still ship it. `||`
+    // short-circuits, so the fallback only runs when `resolvectl` is absent.
+    if run_flush("resolvectl", &["flush-caches"])
+        || run_flush("systemd-resolve", &["--flush-caches"])
+    {
         flushed = true;
     }
 

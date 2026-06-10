@@ -109,43 +109,6 @@ fn parse_sandbox_id(exec_raw: &str) -> Option<String> {
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::parse_sandbox_id;
-
-    #[test]
-    fn parses_flatpak_id_past_options() {
-        assert_eq!(
-            parse_sandbox_id("flatpak run --branch=stable --arch=x86_64 org.mozilla.firefox %U")
-                .as_deref(),
-            Some("org.mozilla.firefox")
-        );
-        assert_eq!(
-            parse_sandbox_id("/usr/bin/flatpak run --filesystem=home org.telegram.desktop")
-                .as_deref(),
-            Some("org.telegram.desktop")
-        );
-        assert_eq!(
-            parse_sandbox_id("flatpak run com.spotify.Client").as_deref(),
-            Some("com.spotify.Client")
-        );
-    }
-
-    #[test]
-    fn parses_snap_id() {
-        assert_eq!(parse_sandbox_id("snap run chromium").as_deref(), Some("chromium"));
-        assert_eq!(parse_sandbox_id("/snap/bin/slack").as_deref(), Some("slack"));
-    }
-
-    #[test]
-    fn native_and_incomplete_lines_have_no_sandbox_id() {
-        assert_eq!(parse_sandbox_id("/usr/bin/firefox %u"), None);
-        assert_eq!(parse_sandbox_id("flatpak"), None);
-        assert_eq!(parse_sandbox_id("flatpak run"), None);
-        assert_eq!(parse_sandbox_id("flatpak run --gpu"), None);
-    }
-}
-
 fn parse_ini_section(raw: &str, section: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let mut in_section = false;
@@ -181,4 +144,41 @@ fn resolve_exec(raw: &str) -> Option<PathBuf> {
         }
     }
     Some(PathBuf::from(cleaned))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_sandbox_id;
+
+    #[test]
+    fn parses_flatpak_id_past_options() {
+        assert_eq!(
+            parse_sandbox_id("flatpak run --branch=stable --arch=x86_64 org.mozilla.firefox %U")
+                .as_deref(),
+            Some("org.mozilla.firefox")
+        );
+        assert_eq!(
+            parse_sandbox_id("/usr/bin/flatpak run --filesystem=home org.telegram.desktop")
+                .as_deref(),
+            Some("org.telegram.desktop")
+        );
+        assert_eq!(
+            parse_sandbox_id("flatpak run com.spotify.Client").as_deref(),
+            Some("com.spotify.Client")
+        );
+    }
+
+    #[test]
+    fn parses_snap_id() {
+        assert_eq!(parse_sandbox_id("snap run chromium").as_deref(), Some("chromium"));
+        assert_eq!(parse_sandbox_id("/snap/bin/slack").as_deref(), Some("slack"));
+    }
+
+    #[test]
+    fn native_and_incomplete_lines_have_no_sandbox_id() {
+        assert_eq!(parse_sandbox_id("/usr/bin/firefox %u"), None);
+        assert_eq!(parse_sandbox_id("flatpak"), None);
+        assert_eq!(parse_sandbox_id("flatpak run"), None);
+        assert_eq!(parse_sandbox_id("flatpak run --gpu"), None);
+    }
 }

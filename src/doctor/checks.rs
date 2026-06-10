@@ -240,6 +240,9 @@ pub(crate) fn check_blocker_backend() -> Check {
         }
     }
 
+    // Mutated only in the macOS/Linux probe blocks below; on other targets
+    // (Windows) it stays false, so the `mut` would otherwise be flagged.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(unused_mut))]
     let mut alt_available = false;
 
     #[cfg(target_os = "macos")]

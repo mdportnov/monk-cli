@@ -21,6 +21,8 @@ pub mod resolver_dir;
 pub mod systemd_resolved;
 
 pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
+    // Only referenced by the unix permission-setting paths below.
+    #[cfg(unix)]
     const MODE: u32 = 0o644;
     let parent = path.parent().ok_or_else(|| {
         Error::Io(std::io::Error::new(
