@@ -99,7 +99,10 @@ pub fn draw_panic(f: &mut Frame, _app: &App, st: &PanicState) {
     f.render_widget(para, layout[0]);
     st.input.render(layout[1], f.buffer_mut(), Style::default().fg(TEXT));
 
-    let hint = Paragraph::new(Span::styled("enter confirm · esc cancel", Style::default().fg(DIM)))
-        .alignment(Alignment::Center);
+    let hint = Paragraph::new(Span::styled(
+        crate::i18n::t!("tui.panic.actions"),
+        Style::default().fg(DIM),
+    ))
+    .alignment(Alignment::Center);
     f.render_widget(hint, layout[3]);
 }

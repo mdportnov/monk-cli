@@ -110,22 +110,28 @@ pub fn draw_picker(f: &mut Frame, app: &App, picker: &PickerState) {
     if let Some(name) = &picker.confirm_delete {
         crate::tui::view::draw_confirm_modal(
             f,
-            "delete mode?",
+            &crate::i18n::t!("tui.delete_modal.title"),
             vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("about to remove  ", Style::default().fg(DIM)),
+                    Span::styled(
+                        crate::i18n::t!("tui.delete_modal.about_to_remove"),
+                        Style::default().fg(DIM),
+                    ),
                     Span::styled(
                         format!("`{name}`"),
                         Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Line::from(""),
-                Line::from(Span::styled("this can't be undone.", Style::default().fg(DIM))),
+                Line::from(Span::styled(
+                    crate::i18n::t!("tui.delete_modal.no_undo"),
+                    Style::default().fg(DIM),
+                )),
                 Line::from(""),
             ],
-            "delete",
-            "cancel",
+            &crate::i18n::t!("tui.delete_modal.confirm"),
+            &crate::i18n::t!("common.no"),
             true,
         );
     }
@@ -229,9 +235,12 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     };
 
     let Some(profile) = crate::onboarding::lookup_preset(preset_name) else {
-        let p = Paragraph::new(Span::styled("failed to load preset", Style::default().fg(ALERT)))
-            .alignment(Alignment::Center)
-            .block(block);
+        let p = Paragraph::new(Span::styled(
+            crate::i18n::t!("tui.preset_picker.load_failed"),
+            Style::default().fg(ALERT),
+        ))
+        .alignment(Alignment::Center)
+        .block(block);
         f.render_widget(p, area);
         return;
     };
@@ -265,7 +274,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     if !profile.site_groups.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "blocks",
+            crate::i18n::t!("tui.preset_picker.blocks"),
             Style::default().fg(DIM).add_modifier(Modifier::BOLD),
         )));
 
@@ -289,7 +298,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     // Limits in human form
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "limits",
+        crate::i18n::t!("tui.preset_picker.limits"),
         Style::default().fg(DIM).add_modifier(Modifier::BOLD),
     )));
     lines.push(kv("  max", &fmt_limit(profile.limits.max_duration)));
@@ -304,7 +313,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     if !profile.sites.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "extra sites",
+            crate::i18n::t!("tui.preset_picker.extra_sites"),
             Style::default().fg(DIM).add_modifier(Modifier::BOLD),
         )));
         for site in profile.sites.iter().take(3) {
@@ -320,7 +329,7 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "press enter to instantiate",
+        crate::i18n::t!("tui.preset_picker.press_enter"),
         Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
     )));
 
@@ -346,7 +355,7 @@ fn draw_picker_list(
     active: Option<&(String, Duration)>,
 ) {
     if picker.loading {
-        let p = Paragraph::new("loading modes…")
+        let p = Paragraph::new(crate::i18n::t!("tui.picker.loading"))
             .alignment(Alignment::Center)
             .block(picker_block(" modes "));
         f.render_widget(p, area);
@@ -364,12 +373,12 @@ fn draw_picker_list(
         let lines = vec![
             Line::from(""),
             Line::from(Span::styled(
-                "no modes yet",
+                crate::i18n::t!("tui.picker.no_modes"),
                 Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "press n for a fresh mode · a to start from a preset",
+                crate::i18n::t!("tui.picker.hint"),
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )),
         ];
@@ -454,10 +463,10 @@ fn status_signal(
     }
     if let (Some(cap), Some(rem)) = (m.limits.daily_cap, m.stats.daily_cap_remaining) {
         if rem.is_zero() && !cap.is_zero() {
-            return ("◌", ALERT, "capped".to_string());
+            return ("◌", ALERT, crate::i18n::t!("tui.picker.status_capped").to_string());
         }
     }
-    ("●", ACCENT, "ready".to_string())
+    ("●", ACCENT, crate::i18n::t!("tui.picker.status_ready").to_string())
 }
 
 fn draw_picker_details(f: &mut Frame, area: Rect, picker: &PickerState) {
@@ -475,35 +484,35 @@ fn draw_picker_details(f: &mut Frame, area: Rect, picker: &PickerState) {
         Line::from(""),
     ];
 
-    lines.push(kv("apps", &m.blocked_apps.to_string()));
-    lines.push(kv("sites", &m.blocked_sites.to_string()));
-    lines.push(kv("groups", &m.blocked_groups.to_string()));
+    lines.push(kv(&crate::i18n::t!("tui.picker.field_apps"), &m.blocked_apps.to_string()));
+    lines.push(kv(&crate::i18n::t!("tui.picker.field_sites"), &m.blocked_sites.to_string()));
+    lines.push(kv(&crate::i18n::t!("tui.picker.field_groups"), &m.blocked_groups.to_string()));
     lines.push(Line::from(""));
 
     lines.push(Line::from(Span::styled(
-        "limits",
+        crate::i18n::t!("tui.picker.field_limits"),
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
     )));
-    lines.push(kv("max", &fmt_limit(m.limits.max_duration)));
-    lines.push(dim_line("  ceiling — even you can't override"));
-    lines.push(kv("min", &fmt_limit(m.limits.min_duration)));
-    lines.push(dim_line("  shorter doesn't count as a session"));
-    lines.push(kv("cooldown", &fmt_limit(m.limits.cooldown)));
-    lines.push(dim_line("  protects against compulsive restart"));
-    lines.push(kv("daily cap", &fmt_limit(m.limits.daily_cap)));
-    lines.push(dim_line("  daily focus budget"));
+    lines.push(kv(&crate::i18n::t!("tui.picker.limit_max"), &fmt_limit(m.limits.max_duration)));
+    lines.push(dim_line(&format!("  {}", crate::i18n::t!("tui.picker.limit_max_desc"))));
+    lines.push(kv(&crate::i18n::t!("tui.picker.limit_min"), &fmt_limit(m.limits.min_duration)));
+    lines.push(dim_line(&format!("  {}", crate::i18n::t!("tui.picker.limit_min_desc"))));
+    lines.push(kv(&crate::i18n::t!("tui.picker.limit_cooldown"), &fmt_limit(m.limits.cooldown)));
+    lines.push(dim_line(&format!("  {}", crate::i18n::t!("tui.picker.limit_cooldown_desc"))));
+    lines.push(kv(&crate::i18n::t!("tui.picker.limit_daily_cap"), &fmt_limit(m.limits.daily_cap)));
+    lines.push(dim_line(&format!("  {}", crate::i18n::t!("tui.picker.limit_daily_cap_desc"))));
     lines.push(Line::from(""));
 
     lines.push(Line::from(Span::styled(
-        "today",
+        crate::i18n::t!("tui.picker.today"),
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
     )));
-    lines.push(kv("used", &fmt_short(m.stats.used_24h)));
+    lines.push(kv(&crate::i18n::t!("tui.picker.used"), &fmt_short(m.stats.used_24h)));
     if let Some(rem) = m.stats.cooldown_remaining {
-        lines.push(kv("cool", &fmt_short(rem)));
+        lines.push(kv(&crate::i18n::t!("tui.picker.cooldown_remaining"), &fmt_short(rem)));
     }
     if let Some(rem) = m.stats.daily_cap_remaining {
-        lines.push(kv("left", &fmt_short(rem)));
+        lines.push(kv(&crate::i18n::t!("tui.picker.budget_left"), &fmt_short(rem)));
     }
 
     let p = Paragraph::new(lines).wrap(Wrap { trim: false }).block(block);

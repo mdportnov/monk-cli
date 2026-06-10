@@ -139,12 +139,12 @@ pub fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
         .split(chunks[0]);
 
     if st.report.is_none() && st.loading {
-        let p = Paragraph::new("running checks…")
+        let p = Paragraph::new(crate::i18n::t!("tui.doctor.running"))
             .style(Style::default().fg(DIM))
             .alignment(Alignment::Center);
         f.render_widget(p, body[0]);
     } else if st.report.is_none() {
-        let p = Paragraph::new("no report")
+        let p = Paragraph::new(crate::i18n::t!("tui.doctor.no_report"))
             .style(Style::default().fg(DIM))
             .alignment(Alignment::Center);
         f.render_widget(p, body[0]);
@@ -227,7 +227,7 @@ pub fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
             if !c.actions.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    "actions:",
+                    crate::i18n::t!("tui.doctor.actions"),
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 )));
                 for a in &c.actions {
@@ -255,12 +255,16 @@ pub fn draw_doctor(f: &mut Frame, _app: &App, st: &DoctorState) {
 
     let footer = if let Some(report) = &st.report {
         let (ok, warn, fail) = report.summary();
-        let tail = if st.loading { "   ·   rerunning…" } else { "" };
+        let tail = if st.loading {
+            &format!("   ·   {}", crate::i18n::t!("tui.doctor.rerunning"))
+        } else {
+            ""
+        };
         format!(
             "{ok} ok · {warn} warn · {fail} fail   ·   ↑/↓ nav · f first fail · r rerun · esc back{tail}"
         )
     } else {
-        "running…".to_string()
+        crate::i18n::t!("tui.doctor.running").to_string()
     };
     let p =
         Paragraph::new(Span::styled(footer, Style::default().fg(DIM))).alignment(Alignment::Center);

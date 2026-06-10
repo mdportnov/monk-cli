@@ -38,30 +38,32 @@ impl SettingsField {
         SettingsField::Reset,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            SettingsField::DefaultProfile => "default profile",
-            SettingsField::DefaultDuration => "default duration",
-            SettingsField::HardMode => "hard mode by default",
-            SettingsField::Autostart => "autostart at login",
-            SettingsField::Locale => "locale",
-            SettingsField::PanicDelay => "panic delay",
-            SettingsField::TamperPenalty => "tamper penalty",
-            SettingsField::Reset => "reset all data",
-        }
+    pub fn label(self) -> String {
+        let key = match self {
+            SettingsField::DefaultProfile => "tui.settings_field.default_profile",
+            SettingsField::DefaultDuration => "tui.settings_field.default_duration",
+            SettingsField::HardMode => "tui.settings_field.hard_mode",
+            SettingsField::Autostart => "tui.settings_field.autostart",
+            SettingsField::Locale => "tui.settings_field.locale",
+            SettingsField::PanicDelay => "tui.settings_field.panic_delay",
+            SettingsField::TamperPenalty => "tui.settings_field.tamper_penalty",
+            SettingsField::Reset => "tui.settings_field.reset",
+        };
+        crate::i18n::t!(key).to_string()
     }
 
-    pub fn help(self) -> &'static str {
-        match self {
-            SettingsField::DefaultProfile => "← → cycle through your modes",
-            SettingsField::DefaultDuration => "e.g. 25m, 50m, 1h30m",
-            SettingsField::HardMode => "space to toggle",
-            SettingsField::Autostart => "space to toggle",
-            SettingsField::Locale => "← → en / ru",
-            SettingsField::PanicDelay => "delay before panic releases hard-mode",
-            SettingsField::TamperPenalty => "time added to session on tamper",
-            SettingsField::Reset => "enter to wipe config and audit log",
-        }
+    pub fn help(self) -> String {
+        let key = match self {
+            SettingsField::DefaultProfile => "tui.settings_field_help.default_profile",
+            SettingsField::DefaultDuration => "tui.settings_field_help.default_duration",
+            SettingsField::HardMode => "tui.settings_field_help.hard_mode",
+            SettingsField::Autostart => "tui.settings_field_help.autostart",
+            SettingsField::Locale => "tui.settings_field_help.locale",
+            SettingsField::PanicDelay => "tui.settings_field_help.panic_delay",
+            SettingsField::TamperPenalty => "tui.settings_field_help.tamper_penalty",
+            SettingsField::Reset => "tui.settings_field_help.reset",
+        };
+        crate::i18n::t!(key).to_string()
     }
 }
 
@@ -295,23 +297,35 @@ pub fn draw_settings(f: &mut Frame, app: &App, st: &SettingsState) {
     if st.confirm_reset {
         crate::tui::view::draw_confirm_modal(
             f,
-            "reset all data?",
+            &crate::i18n::t!("tui.reset_modal.title"),
             vec![
                 Line::from(""),
-                Line::from(Span::styled("this wipes:", Style::default().fg(TEXT))),
-                Line::from(""),
-                Line::from(Span::styled("· all modes you've configured", Style::default().fg(DIM))),
-                Line::from(Span::styled("· all settings", Style::default().fg(DIM))),
-                Line::from(Span::styled("· the full session audit log", Style::default().fg(DIM))),
+                Line::from(Span::styled(
+                    crate::i18n::t!("tui.reset_modal.this_wipes"),
+                    Style::default().fg(TEXT),
+                )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "there is no undo.",
+                    crate::i18n::t!("tui.reset_modal.modes"),
+                    Style::default().fg(DIM),
+                )),
+                Line::from(Span::styled(
+                    crate::i18n::t!("tui.reset_modal.settings"),
+                    Style::default().fg(DIM),
+                )),
+                Line::from(Span::styled(
+                    crate::i18n::t!("tui.reset_modal.audit_log"),
+                    Style::default().fg(DIM),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    crate::i18n::t!("tui.reset_modal.no_undo"),
                     Style::default().fg(ALERT).add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
             ],
-            "reset everything",
-            "cancel",
+            &crate::i18n::t!("tui.reset_modal.confirm"),
+            &crate::i18n::t!("common.no"),
             true,
         );
     }
@@ -345,7 +359,7 @@ fn draw_settings_field(f: &mut Frame, area: Rect, st: &SettingsState, field: Set
             if st.profile_names.is_empty() {
                 let warn = Style::default().fg(ALERT).add_modifier(Modifier::ITALIC);
                 f.render_widget(
-                    Paragraph::new(Span::styled("no modes — create one first", warn)),
+                    Paragraph::new(Span::styled(crate::i18n::t!("tui.settings.no_modes"), warn)),
                     rows[1],
                 );
             } else {

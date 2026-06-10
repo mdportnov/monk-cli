@@ -55,13 +55,14 @@ pub fn draw_monk(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(p, area);
 }
 
-pub fn breath_label(frame: u64) -> &'static str {
-    match frame % 75 {
-        0..=24 => "breathe in …",
-        25..=34 => "hold …",
-        35..=64 => "breathe out …",
-        _ => "rest …",
-    }
+pub fn breath_label(frame: u64) -> String {
+    let key = match frame % 75 {
+        0..=24 => "tui.companion.breathe_in",
+        25..=34 => "tui.companion.hold",
+        35..=64 => "tui.companion.breathe_out",
+        _ => "tui.companion.rest",
+    };
+    crate::i18n::t!(key).to_string()
 }
 
 pub fn monk_frames() -> [&'static str; 4] {

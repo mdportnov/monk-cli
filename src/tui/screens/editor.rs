@@ -274,10 +274,11 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
                 match focus {
                     EditorField::Apps => {
                         if raw.is_empty() {
-                            ed.add_custom_error = Some("bundle id is required".into());
+                            ed.add_custom_error =
+                                Some(crate::i18n::t!("tui.editor.bundle_id_required").to_string());
                         } else if !looks_like_bundle_id(&raw) {
                             ed.add_custom_error =
-                                Some("expected reverse-DNS form, e.g. com.example.app".into());
+                                Some(crate::i18n::t!("tui.editor.bundle_id_format").to_string());
                         } else {
                             ed.apps.add_item_selected(MultiSelectItem::new(
                                 raw.clone(),
@@ -300,9 +301,8 @@ pub async fn handle_editor_key(app: &mut App, key: KeyEvent) {
                             ed.add_custom_error = None;
                         }
                         None => {
-                            ed.add_custom_error = Some(
-                                "not a valid hostname (e.g. example.com or news.bbc.co.uk)".into(),
-                            );
+                            ed.add_custom_error =
+                                Some(crate::i18n::t!("tui.editor.hostname_format").to_string());
                         }
                     },
                     _ => {
@@ -474,34 +474,38 @@ pub fn draw_editor(f: &mut Frame, app: &App, editor: &EditorState) {
     if editor.confirm_cancel {
         crate::tui::view::draw_confirm_modal(
             f,
-            "discard changes?",
+            &crate::i18n::t!("tui.editor.discard_modal.title"),
             vec![
                 Line::from(""),
                 Line::from(Span::styled(
-                    "you have unsaved edits to this mode.",
+                    crate::i18n::t!("tui.editor.discard_modal.unsaved"),
                     Style::default().fg(TEXT),
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "discard them and go back to the picker?",
+                    crate::i18n::t!("tui.editor.discard_modal.question"),
                     Style::default().fg(DIM),
                 )),
                 Line::from(""),
             ],
-            "discard",
-            "keep editing",
+            &crate::i18n::t!("tui.editor.discard_modal.confirm"),
+            &crate::i18n::t!("tui.editor.discard_modal.cancel"),
             true,
         );
     }
 
     if let Some(input) = &editor.add_custom_app {
         let (title, hint) = match editor.focus {
-            EditorField::Sites => {
-                (" add custom site ", "hostname (e.g. example.com · news.bbc.co.uk)")
-            }
-            _ => (" add custom app ", "bundle id (e.g. com.example.app · proc.exe)"),
+            EditorField::Sites => (
+                crate::i18n::t!("tui.editor.add_site_title"),
+                crate::i18n::t!("tui.editor.add_site_hint"),
+            ),
+            _ => (
+                crate::i18n::t!("tui.editor.add_app_title"),
+                crate::i18n::t!("tui.editor.add_app_hint"),
+            ),
         };
-        draw_add_custom_modal(f, title, hint, input, editor.add_custom_error.as_deref());
+        draw_add_custom_modal(f, &title, &hint, input, editor.add_custom_error.as_deref());
     }
 }
 
@@ -555,8 +559,11 @@ fn draw_add_custom_modal(
         f.render_widget(err_line, layout[3]);
     }
 
-    let actions = Paragraph::new(Span::styled("enter add · esc cancel", Style::default().fg(DIM)))
-        .alignment(Alignment::Center);
+    let actions = Paragraph::new(Span::styled(
+        crate::i18n::t!("tui.editor.add_actions"),
+        Style::default().fg(DIM),
+    ))
+    .alignment(Alignment::Center);
     f.render_widget(actions, layout[4]);
 }
 

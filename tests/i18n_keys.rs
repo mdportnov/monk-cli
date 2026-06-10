@@ -14,7 +14,8 @@ fn walk(dir: &Path, out: &mut Vec<String>) {
 
 fn extract_keys(src: &str) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
-    let patterns = ["i18n::t!(\"", "monk_t!(\"", "i18n::lookup(\"", "i18n::render(\""];
+    let patterns =
+        ["i18n::t!(\"", "monk_t!(\"", "i18n::lookup(\"", "i18n::render(\"", "crate::i18n::t!(\""];
     for pat in patterns {
         let mut rest = src;
         while let Some(i) = rest.find(pat) {
@@ -83,6 +84,12 @@ fn every_used_i18n_key_exists_in_all_locales() {
             || k.starts_with("common.")
             || k.starts_with("tui.help.")
             || k.starts_with("setup.")
+            || k.starts_with("tui.menu_hint.")
+            || k.starts_with("tui.editor_field.")
+            || k.starts_with("tui.editor_field_help.")
+            || k.starts_with("tui.settings_field.")
+            || k.starts_with("tui.settings_field_help.")
+            || k.starts_with("tui.companion.")
         {
             continue;
         }
