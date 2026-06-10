@@ -22,7 +22,7 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.should_quit = true,
         KeyCode::Up | KeyCode::Char('k') => home.move_up(),
         KeyCode::Down | KeyCode::Char('j') => home.move_down(),
-        KeyCode::Enter | KeyCode::Char(' ') => activate_home(app).await,
+        KeyCode::Enter => activate_home(app).await,
         KeyCode::Char('m') => app.open_picker(),
         KeyCode::Char('s') => {
             home.selected = 0;
@@ -39,12 +39,8 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') => {
             // Cancel a scheduled panic release. Only meaningful when one is
             // pending (panic_releases_at is Some). No-op otherwise.
-            let scheduled = app
-                .globals
-                .hard_mode
-                .as_ref()
-                .and_then(|h| h.panic_releases_at)
-                .is_some();
+            let scheduled =
+                app.globals.hard_mode.as_ref().and_then(|h| h.panic_releases_at).is_some();
             if scheduled {
                 app.cancel_panic().await;
             }
@@ -118,19 +114,21 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    let title = Paragraph::new(Line::from(vec![
+    let mut title_spans = vec![
         Span::styled("mode  ", Style::default().fg(DIM)),
         Span::styled(
             session.profile.clone(),
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ),
-        if app.globals.hard_mode.is_some() {
-            Span::styled("  HARD", Style::default().fg(ALERT).add_modifier(Modifier::BOLD))
-        } else {
-            Span::raw("")
-        },
-    ]))
-    .alignment(Alignment::Center);
+    ];
+    if app.globals.hard_mode.is_some() {
+        title_spans.push(Span::raw("   "));
+        title_spans.push(Span::styled(
+            " HARD MODE ",
+            Style::default().fg(Color::White).bg(ALERT).add_modifier(Modifier::BOLD),
+        ));
+    }
+    let title = Paragraph::new(Line::from(title_spans)).alignment(Alignment::Center);
     f.render_widget(title, layout[0]);
 
     let remaining = session.remaining();

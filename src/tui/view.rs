@@ -29,6 +29,28 @@ pub fn draw_with_effects(f: &mut Frame, app: &mut App, dt: std::time::Duration) 
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
+    let area = f.area();
+    const MIN_WIDTH: u16 = 80;
+    const MIN_HEIGHT: u16 = 20;
+
+    // Guard against narrow terminals
+    if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
+        let message = crate::i18n::t!(
+            "tui.narrow_terminal",
+            min_w = MIN_WIDTH,
+            min_h = MIN_HEIGHT,
+            cur_w = area.width,
+            cur_h = area.height
+        )
+        .to_string();
+        let p = Paragraph::new(message)
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true })
+            .style(Style::default().fg(TEXT));
+        f.render_widget(p, area);
+        return;
+    }
+
     match &app.screen {
         Screen::Home(home) => screens::home::draw_home(f, app, home),
         Screen::ModePicker(picker) => screens::picker::draw_picker(f, app, picker),
@@ -77,10 +99,7 @@ fn draw_flash_toast(f: &mut Frame, app: &App) {
     f.render_widget(ratatui::widgets::Clear, rect);
     let p = Paragraph::new(Span::styled(
         label,
-        Style::default()
-            .fg(Color::Black)
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(Color::Black).bg(color).add_modifier(Modifier::BOLD),
     ))
     .alignment(Alignment::Center);
     f.render_widget(p, rect);
@@ -140,7 +159,8 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  ↑/↓ · tab     next / prev field"),
             Line::from("  ctrl+s          save"),
             Line::from("  ctrl+⏎          save & start"),
-            Line::from("  space · enter   toggle app/group"),
+            Line::from("  space           toggle app/group"),
+            Line::from("  enter           activate item"),
             Line::from("  esc             cancel"),
         ],
         Screen::Settings(_) => vec![
@@ -149,7 +169,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from("  ↑/↓ · tab     next / prev field"),
+            Line::from("  ↑/↓ · tab       next / prev field"),
             Line::from("  space           toggle on/off"),
             Line::from("  ←/→             cycle profile / locale"),
             Line::from("  ctrl+s          save"),
@@ -443,6 +463,7 @@ mod snapshot_tests {
             loading: false,
             error: None,
             confirm_delete: None,
+            filter: String::new(),
         });
         insta::assert_snapshot!(render(&app, 100, 30));
     }

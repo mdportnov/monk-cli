@@ -100,6 +100,7 @@ panic:
   cancelled: "Panic request cancelled."
 
 tui:
+  narrow_terminal: "Terminal too small — resize to at least %{min_w}×%{min_h} (now %{cur_w}×%{cur_h})"
   flash:
     started: "started `{profile}`"
     stopped: "stopped `{profile}`"

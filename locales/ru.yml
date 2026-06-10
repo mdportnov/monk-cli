@@ -100,6 +100,7 @@ panic:
   cancelled: "Запрос выхода отменён."
 
 tui:
+  narrow_terminal: "Терминал слишком маленький — увеличь до минимум %{min_w}×%{min_h} (сейчас %{cur_w}×%{cur_h})"
   flash:
     started: "запущено `{profile}`"
     stopped: "остановлено `{profile}`"

@@ -38,13 +38,21 @@ pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => {
+        KeyCode::Esc => {
+            if !picker.filter.is_empty() {
+                picker.clear_filter();
+            } else {
+                app.set_screen(Screen::Home(HomeState::default()));
+            }
+        }
+        KeyCode::Char('q') => {
             app.set_screen(Screen::Home(HomeState::default()));
         }
         KeyCode::Up | KeyCode::Char('k') => picker.move_up(),
         KeyCode::Down | KeyCode::Char('j') => picker.move_down(),
         KeyCode::Char('r') => app.refresh_picker().await,
-        KeyCode::Enter | KeyCode::Char(' ') => app.open_confirm_from_picker().await,
+        KeyCode::Enter => app.open_confirm_from_picker().await,
+        KeyCode::Char(' ') => app.open_confirm_from_picker().await,
         KeyCode::Char('n') => open_editor_new(app),
         KeyCode::Char('a') => open_preset_picker(app),
         KeyCode::Char('e') => app.open_editor_edit(),
@@ -67,6 +75,16 @@ pub async fn handle_picker_key(app: &mut App, key: KeyEvent) {
             let idx = (c as u8 - b'1') as usize;
             app.quick_start(idx).await;
         }
+        KeyCode::Backspace => {
+            if !picker.filter.is_empty() {
+                picker.filter.pop();
+                picker.selected = 0;
+            }
+        }
+        KeyCode::Char(c) if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' => {
+            picker.filter.push(c);
+            picker.selected = 0;
+        }
         _ => {}
     }
 }
@@ -79,7 +97,7 @@ pub async fn handle_preset_picker_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Up | KeyCode::Char('k') => state.move_up(),
         KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-        KeyCode::Enter | KeyCode::Char(' ') => app.instantiate_preset().await,
+        KeyCode::Enter => app.instantiate_preset().await,
         _ => {}
     }
 }
@@ -168,8 +186,7 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut last_tier: Option<PresetTier> = None;
     let mut visual_selected: usize = 0;
-    let mut preset_idx: usize = 0;
-    for meta in PRESETS {
+    for (preset_idx, meta) in PRESETS.iter().enumerate() {
         if Some(meta.tier) != last_tier {
             let header = crate::i18n::lookup(meta.tier.label_key()).into_owned();
             items.push(ListItem::new(vec![
@@ -197,7 +214,6 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
             )));
         }
         items.push(ListItem::new(lines));
-        preset_idx += 1;
     }
 
     let list = List::new(items)
@@ -362,6 +378,14 @@ fn draw_picker_list(
         f.render_widget(p, area);
         return;
     }
+
+    // Show filter status in title
+    let title = if picker.filter.is_empty() {
+        " modes ".to_string()
+    } else {
+        format!(" modes · filter: {} ", picker.filter)
+    };
+
     if picker.modes.is_empty() {
         let lines = vec![
             Line::from(""),
@@ -375,25 +399,44 @@ fn draw_picker_list(
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )),
         ];
-        let p = Paragraph::new(lines).alignment(Alignment::Center).block(picker_block(" modes "));
+        let p = Paragraph::new(lines).alignment(Alignment::Center).block(picker_block(&title));
         f.render_widget(p, area);
         return;
     }
 
-    let items: Vec<ListItem> = picker
-        .modes
+    let filtered_modes = picker.filtered_modes();
+
+    if filtered_modes.is_empty() {
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "no matches",
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "press esc to clear filter · backspace to edit",
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )),
+        ];
+        let p = Paragraph::new(lines).alignment(Alignment::Center).block(picker_block(&title));
+        f.render_widget(p, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = filtered_modes
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let running_remaining = active
-                .and_then(|(name, rem)| if *name == m.name { Some(*rem) } else { None });
+            let running_remaining =
+                active.and_then(|(name, rem)| if *name == m.name { Some(*rem) } else { None });
             let slot = if i < 9 { Some(i + 1) } else { None };
             ListItem::new(render_mode_row(m, running_remaining, slot))
         })
         .collect();
 
     let list = List::new(items)
-        .block(picker_block(" modes "))
+        .block(picker_block(&title))
         .highlight_style(Style::default().bg(Color::Rgb(35, 40, 55)).add_modifier(Modifier::BOLD))
         .highlight_symbol("▶ ");
 
@@ -538,11 +581,13 @@ fn picker_block(title: &str) -> Block<'_> {
         .title(Span::styled(title.to_string(), Style::default().fg(ACCENT)))
 }
 
-fn draw_picker_footer(f: &mut Frame, area: Rect, _picker: &PickerState, selected_is_running: bool) {
-    let help = if selected_is_running {
-        "↑/↓ · ⏎ view · 1..9 quick · n new · a preset · e edit · c copy · r refresh · esc back"
+fn draw_picker_footer(f: &mut Frame, area: Rect, picker: &PickerState, selected_is_running: bool) {
+    let help = if !picker.filter.is_empty() {
+        "↑/↓ select · ⏎ start · type to filter · backspace edit · esc clear filter"
+    } else if selected_is_running {
+        "↑/↓ · ⏎ view · type filter · 1..9 quick · n new · a preset · e edit · c copy · r refresh · esc back"
     } else {
-        "↑/↓ · ⏎ start · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh · esc"
+        "↑/↓ · ⏎ start · type filter · 1..9 quick · n new · a preset · e edit · c copy · d del · r refresh · esc"
     };
     let p = Paragraph::new(Span::styled(help, Style::default().fg(DIM)))
         .alignment(Alignment::Center)
