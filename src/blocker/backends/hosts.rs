@@ -165,6 +165,8 @@ impl Blocker for HostsBlocker {
         if result.is_ok() {
             #[cfg(target_os = "macos")]
             return flush_dns_cache();
+            #[cfg(not(target_os = "macos"))]
+            flush_system_dns();
         }
         result
     }
@@ -183,6 +185,8 @@ impl Blocker for HostsBlocker {
         result?;
         #[cfg(target_os = "macos")]
         flush_dns_cache()?;
+        #[cfg(not(target_os = "macos"))]
+        flush_system_dns();
         self.backup = None;
         Ok(())
     }
@@ -203,6 +207,27 @@ impl BlockerBackend for HostsBlocker {
         Ok(Self::default())
     }
 }
+
+/// Best-effort resolver-cache flush after a hosts mutation on non-macOS
+/// platforms. Unlike macOS (where a flush failure propagates), here the block
+/// is already applied, so flush failures are logged and swallowed — fail-closed
+/// means the block stays in place regardless.
+#[cfg(target_os = "linux")]
+fn flush_system_dns() {
+    if let Err(e) = crate::blocker::linux::flush_dns() {
+        debug!(?e, "linux DNS flush failed (ignored)");
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn flush_system_dns() {
+    if let Err(e) = crate::blocker::windows::flush_dns() {
+        debug!(?e, "windows DNS flush failed (ignored)");
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn flush_system_dns() {}
 
 #[cfg(target_os = "macos")]
 fn flush_dns_cache() -> Result<()> {

@@ -48,6 +48,12 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let mut file = opts.open(&tmp).map_err(|e| map_err(e, &tmp))?;
     use std::io::Write;
     file.write_all(contents).map_err(|e| map_err(e, &tmp))?;
+    // fsync the data before the rename. Without this a crash/power loss after
+    // the rename can expose a zero-length or partially-written hosts file —
+    // violating the fail-closed durability guarantee (a block must never be
+    // silently lost). The rename below is atomic, but only swaps directory
+    // entries; it does not flush the file contents.
+    file.sync_all().map_err(|e| map_err(e, &tmp))?;
     drop(file);
 
     #[cfg(unix)]
@@ -63,6 +69,18 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
             tracing::warn!("failed to clean up temp file {}: {}", tmp.display(), remove_err);
         }
         return Err(map_err(e, path));
+    }
+
+    // fsync the parent directory so the rename itself survives a crash —
+    // otherwise the directory entry update may still be in the page cache.
+    // Best-effort: the data was already synced above, so a failure here is
+    // logged rather than fatal. Unix-only: Windows has no portable way to
+    // open a directory handle for flushing through std/fs-err.
+    #[cfg(unix)]
+    if let Ok(dir) = fs_err::File::open(parent) {
+        if let Err(e) = dir.sync_all() {
+            tracing::warn!(?e, dir = %parent.display(), "failed to fsync parent dir after rename");
+        }
     }
     Ok(())
 }

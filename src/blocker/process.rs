@@ -22,10 +22,20 @@ fn self_pid() -> sysinfo::Pid {
     sysinfo::Pid::from_u32(std::process::id())
 }
 
+/// A graceful-quit request we're waiting on. `start_time` pins the request to
+/// the exact process we asked — if the PID is recycled by a new process before
+/// the grace window elapses, the start time differs and we discard the stale
+/// entry instead of force-killing whatever now holds that PID.
+#[derive(Debug, Clone, Copy)]
+struct PendingQuit {
+    asked_at: Instant,
+    start_time: u64,
+}
+
 #[derive(Debug)]
 pub struct ProcessGuard {
     sys: System,
-    pending_quit: HashMap<sysinfo::Pid, Instant>,
+    pending_quit: HashMap<sysinfo::Pid, PendingQuit>,
 }
 
 impl Default for ProcessGuard {
@@ -59,14 +69,19 @@ impl ProcessGuard {
         self.sys.refresh_processes(ProcessesToUpdate::All, false);
 
         // Drop tracking entries for processes that already exited (either by
-        // our graceful quit, by the user, or naturally).
-        self.pending_quit.retain(|pid, _| self.sys.process(*pid).is_some());
+        // our graceful quit, by the user, or naturally). Also drop entries
+        // whose PID was recycled by a different process — the start time no
+        // longer matches what we recorded when we asked it to quit.
+        self.pending_quit.retain(|pid, pending| {
+            self.sys.process(*pid).map(|p| p.start_time() == pending.start_time).unwrap_or(false)
+        });
 
         let current_uid = get_current_uid();
         let now = Instant::now();
         let me = self_pid();
 
-        let mut matches: Vec<(sysinfo::Pid, AppKind, String, String, Option<PathBuf>)> = Vec::new();
+        let mut matches: Vec<(sysinfo::Pid, AppKind, String, String, Option<PathBuf>, u64)> =
+            Vec::new();
         for proc in self.sys.processes().values() {
             if proc.pid() == me {
                 continue;
@@ -93,6 +108,7 @@ impl ProcessGuard {
                 app.id.clone(),
                 proc.name().to_string_lossy().to_string(),
                 exe,
+                proc.start_time(),
             ));
         }
 
@@ -102,10 +118,10 @@ impl ProcessGuard {
         // subprocesses per call.
         let mut quit_sent_for: HashSet<String> = HashSet::new();
         let mut killed = 0;
-        for (pid, kind, app_id, name, exe) in matches {
+        for (pid, kind, app_id, name, exe, start_time) in matches {
             match self.pending_quit.get(&pid).copied() {
                 // Past the grace window — force-kill.
-                Some(asked_at) if now.duration_since(asked_at) >= QUIT_GRACE => {
+                Some(pending) if now.duration_since(pending.asked_at) >= QUIT_GRACE => {
                     if let Some(proc) = self.sys.process(pid) {
                         if proc.kill() {
                             info!(
@@ -136,7 +152,7 @@ impl ProcessGuard {
                         };
                     if asked {
                         info!(?pid, %name, %app_id, kind = ?kind, "requested graceful quit");
-                        self.pending_quit.insert(pid, now);
+                        self.pending_quit.insert(pid, PendingQuit { asked_at: now, start_time });
                     } else {
                         // Graceful path unavailable — fall back to SIGKILL.
                         if let Some(proc) = self.sys.process(pid) {
@@ -230,7 +246,7 @@ fn matches_process(
                 }
             }
             if let Some(expected) = app.exec_path.file_name().and_then(|s| s.to_str()) {
-                return name_lower == expected.to_lowercase();
+                return comm_matches(name_lower, &expected.to_lowercase());
             }
             false
         }
@@ -256,6 +272,29 @@ fn matches_process(
                     .unwrap_or(false)
         }
     }
+}
+
+/// Compare a process's `name()` against an expected binary basename.
+///
+/// On Linux `sysinfo` reads the name from `/proc/<pid>/comm`, which the kernel
+/// truncates to 15 bytes (`TASK_COMM_LEN - 1`). A binary called `signal-desktop`
+/// fits, but anything longer — e.g. `element-desktop` is fine, yet a 20-char
+/// launcher name gets cut. When the expected name exceeds the limit and the
+/// observed name is exactly 15 bytes, fall back to a prefix match so the block
+/// still fires instead of silently leaking the app. This only relaxes matching
+/// for the truncated case; exact comparison is required otherwise.
+fn comm_matches(name_lower: &str, expected_lower: &str) -> bool {
+    if name_lower == expected_lower {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        const COMM_MAX: usize = 15;
+        if expected_lower.len() > COMM_MAX && name_lower.len() == COMM_MAX {
+            return expected_lower.as_bytes().starts_with(name_lower.as_bytes());
+        }
+    }
+    false
 }
 
 fn bundle_root_of(exec_path: &Path) -> Option<PathBuf> {
