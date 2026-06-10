@@ -199,9 +199,7 @@ impl EditorField {
             EditorField::Apps => {
                 "space toggle · + add custom · type to filter · ↑/↓ navigate · tab leaves list"
             }
-            EditorField::Groups => {
-                "space toggle · type to filter · ↑/↓ navigate · tab leaves list"
-            }
+            EditorField::Groups => "space toggle · type to filter · ↑/↓ navigate · tab leaves list",
             EditorField::Brands => {
                 "space toggle · type to filter · auto-resolves domains + apps · tab leaves list"
             }

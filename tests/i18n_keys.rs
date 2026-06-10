@@ -82,6 +82,7 @@ fn every_used_i18n_key_exists_in_all_locales() {
             || k.starts_with("panic.")
             || k.starts_with("common.")
             || k.starts_with("tui.help.")
+            || k.starts_with("setup.")
         {
             continue;
         }

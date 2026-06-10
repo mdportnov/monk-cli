@@ -168,8 +168,7 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut last_tier: Option<PresetTier> = None;
     let mut visual_selected: usize = 0;
-    let mut preset_idx: usize = 0;
-    for meta in PRESETS {
+    for (preset_idx, meta) in PRESETS.iter().enumerate() {
         if Some(meta.tier) != last_tier {
             let header = crate::i18n::lookup(meta.tier.label_key()).into_owned();
             items.push(ListItem::new(vec![
@@ -197,7 +196,6 @@ fn draw_preset_list(f: &mut Frame, area: Rect, state: &PresetPickerState) {
             )));
         }
         items.push(ListItem::new(lines));
-        preset_idx += 1;
     }
 
     let list = List::new(items)
@@ -385,8 +383,8 @@ fn draw_picker_list(
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let running_remaining = active
-                .and_then(|(name, rem)| if *name == m.name { Some(*rem) } else { None });
+            let running_remaining =
+                active.and_then(|(name, rem)| if *name == m.name { Some(*rem) } else { None });
             let slot = if i < 9 { Some(i + 1) } else { None };
             ListItem::new(render_mode_row(m, running_remaining, slot))
         })

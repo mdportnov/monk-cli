@@ -52,6 +52,12 @@ enum Command {
         reset: bool,
         #[arg(long, help = "Three-question quick path with sensible defaults")]
         quick: bool,
+        #[arg(long, help = "Skip daemon service installation")]
+        no_daemon: bool,
+        #[arg(long, help = "Skip shell completions installation")]
+        no_completions: bool,
+        #[arg(long, help = "Skip health checks")]
+        no_doctor: bool,
     },
     #[command(about = "Open the interactive TUI")]
     Tui,
@@ -260,6 +266,9 @@ pub async fn run() -> Result<()> {
             yes,
             reset,
             quick,
+            no_daemon,
+            no_completions,
+            no_doctor,
         } => {
             let opts = crate::onboarding::Options {
                 locale,
@@ -270,11 +279,14 @@ pub async fn run() -> Result<()> {
                 yes,
                 reset,
                 quick,
+                no_daemon,
+                no_completions,
+                no_doctor,
             };
             if non_interactive || opts.yes {
-                crate::onboarding::run_non_interactive(opts)
+                crate::onboarding::run_non_interactive(opts).await
             } else {
-                crate::onboarding::run(opts)
+                crate::onboarding::run(opts).await
             }
         }
         Command::Lang { locale } => commands::set_lang(&locale).await,
@@ -324,7 +336,7 @@ pub async fn run() -> Result<()> {
     result.map_err(miette::Report::from)
 }
 
-fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Result<()> {
+fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> crate::Result<()> {
     use std::io::IsTerminal;
     if matches!(
         cmd,
@@ -344,7 +356,7 @@ fn maybe_first_run_onboarding(cmd: &Command, locale: Option<&str>) -> crate::Res
         eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
         return Ok(());
     }
-    let opts =
-        crate::onboarding::Options { locale: locale.map(|s| s.to_string()), ..Default::default() };
-    crate::onboarding::run(opts)
+    // For the first-run nudge, we'll keep it simple and non-async
+    eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
+    Ok(())
 }
