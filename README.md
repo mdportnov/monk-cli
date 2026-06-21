@@ -23,7 +23,7 @@ A cross-platform focus & distraction blocker built in Rust. One binary, one daem
 
 ## How it works
 
-monk runs a small always-on daemon (`monkd`) that owns the block state. The CLI and TUI talk to it over a local socket. When you start a session:
+monk runs a small always-on daemon — the same `monk` binary launched as `monk daemon run`, registered with your OS service manager under the name `monkd`. It owns the block state; the CLI and TUI talk to it over a local socket. When you start a session:
 
 1. The requested profile is resolved to a concrete set of hosts + installed apps.
 2. Hosts are injected into the system `hosts` file (atomic write, signed block).
@@ -55,21 +55,30 @@ your `PATH`. Then run `monk setup`.
 
 ```sh
 # Linux / macOS  → installs to ~/.local/bin
-curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/master/assets/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell 5+)  → installs to %LOCALAPPDATA%\monk\bin
-irm https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.ps1 | iex
+irm https://raw.githubusercontent.com/mdportnov/monk-cli/master/assets/install.ps1 | iex
 ```
 
 ### From source
 
+Needs the Rust toolchain (1.82+) — install via [rustup](https://rustup.rs). Works the same on Linux, macOS, and Windows.
+
 ```sh
 git clone https://github.com/mdportnov/monk-cli
 cd monk-cli
-cargo install --path .
+
+# Option A — build the release binary and put it on your PATH (recommended)
+cargo install --path .     # → ~/.cargo/bin/monk  (%USERPROFILE%\.cargo\bin\monk.exe on Windows)
+
+# Option B — build the release binary in-tree, run it by path
+cargo build --release      # → target/release/monk  (target\release\monk.exe on Windows)
 ```
+
+A plain `cargo build` (no `--release`) produces a slower debug binary at `target/debug/monk` — use it only for development.
 
 ### cargo-binstall
 
@@ -86,67 +95,83 @@ cargo binstall monk
 
 ### Requirements
 
-- Rust 1.82+ (only for building from source)
-- Root / admin access once, to let monk write the `hosts` file
-- Linux: `systemd` (user session) for `monk daemon install`
-- Windows: nothing extra — the daemon registers as a per-user scheduled task that starts at logon (Task Scheduler)
+- A terminal and admin rights on your machine — blocking edits the system `hosts` file, which is privileged. You grant this **once**, during setup.
+- Rust 1.82+ only if you build from source.
+
+`monk setup` wires the privileges up for you; what happens under the hood differs per OS:
+
+- **macOS** — the daemon is installed as a system service that runs as **root** and owns `/etc/hosts`. Setup shows a native macOS password prompt; the equivalent CLI command is `sudo monk service install`.
+- **Linux** — the daemon runs as **you** via a `systemd` *user* unit (no `sudo`). For blocking to work monk must be able to write `/etc/hosts` (or use a `systemd-resolved` backend) — `monk doctor` tells you if it can't.
+- **Windows** — the daemon is a logon **scheduled task** that needs elevation, so open your terminal **as Administrator** before running `monk setup` / `monk daemon install`.
 
 ## Quick start
 
+Run these in order. On **Windows** open PowerShell **as Administrator** first; on **macOS** you'll get a password prompt during setup.
+
 ```sh
-monk setup                      # first-run wizard: config + daemon + completions + doctor
-monk start deepwork -d 50m      # start a 50-minute session
-monk start deepwork --hard      # commit — no stop until it's over
-monk status                     # what's running, what's left
-monk stop                       # end the session (soft mode only)
-monk tui                        # full dashboard
+monk setup                  # 1. first-run wizard: language, profile, daemon, completions, health check
+monk doctor                 # 2. confirm it's wired up (daemon running, hosts writable)
+monk start deepwork -d 50m  # 3. start a 50-minute focus session
+monk status                 # 4. what's blocked and how long is left
+monk stop                   # 5. end it — soft mode only; hard mode can't be stopped
 ```
+
+Prefer a UI? `monk tui` opens the full dashboard. Start a committed session you can't quit with `monk start deepwork --hard`.
 
 ## Commands
 
 ### Sessions
 
-| Command                         | What it does                                   |
-| ------------------------------- | ---------------------------------------------- |
-| `monk start [profile] [-d DUR]` | Start a focus session                          |
-| `monk start … --hard`           | Start a hard-mode session (irreversible)       |
-| `monk stop`                     | End the active session                         |
-| `monk panic [--phrase …]`       | Request a delayed hard-mode escape             |
-| `monk status`                   | Daemon + session status                        |
+| Command                                              | What it does                                  |
+| ---------------------------------------------------- | --------------------------------------------- |
+| `monk start [PROFILE] [-d DUR] [--hard] [--reason …]` | Start a focus session (`--hard` = irreversible) |
+| `monk stop`                                          | End the active session (soft mode only)       |
+| `monk panic [--phrase …] [--cancel]`                 | Request — or cancel — a delayed hard-mode escape |
+| `monk status`                                        | Daemon + session status                       |
+| `monk stats`                                         | Session statistics                            |
+| `monk tui`                                           | Open the interactive dashboard                |
 
 ### Profiles & apps
 
-| Command                                    | What it does                             |
-| ------------------------------------------ | ---------------------------------------- |
-| `monk profiles`                            | List profiles                            |
-| `monk profile create NAME`                 | Create an empty profile                  |
-| `monk profile delete NAME`                 | Remove a profile                         |
-| `monk profile edit NAME`                   | Interactive picker — apps, groups, hosts |
-| `monk profile edit NAME --add/--remove ID` | Scriptable profile edits                 |
-| `monk apps list [--refresh]`               | Show the installed-app cache             |
-| `monk apps scan`                           | Force a rescan of installed applications |
+| Command                                                          | What it does                              |
+| --------------------------------------------------------------- | ----------------------------------------- |
+| `monk profiles`                                                 | List profiles                             |
+| `monk profile show NAME [--json]`                               | Show a profile's full configuration       |
+| `monk profile create NAME [--preset P]`                         | Create an empty profile or seed from a preset |
+| `monk profile duplicate SOURCE [TARGET]`                        | Copy a profile under a new name           |
+| `monk profile edit NAME`                                        | Interactive picker — apps, groups, hosts  |
+| `monk profile edit NAME --add/--remove ID`                      | Scriptable profile edits                  |
+| `monk profile limits NAME [--max/--min/--cooldown/--daily-cap] [--clear]` | Set or clear time limits        |
+| `monk profile delete NAME`                                      | Remove a profile                          |
+| `monk apps list [--refresh]`                                    | Show the installed-app cache              |
+| `monk apps scan`                                                | Force a rescan of installed applications  |
+
+Built-in presets for `--preset`: `deepwork`, `study`, `detox`, `sleep`, `sober`, `lockdown`, `no-social`, `no-video`, `no-news`, `no-games`, `no-chat`, `no-shopping`, `no-adult`, `no-gambling`, `no-dating`, `no-ai`.
 
 ### Daemon
 
-| Command                 | What it does                                    |
-| ----------------------- | ----------------------------------------------- |
-| `monk daemon start`     | Launch the background daemon                    |
-| `monk daemon stop`      | Shut it down cleanly                            |
-| `monk daemon status`    | Same as `monk status`                           |
-| `monk daemon install`   | Install as systemd / launchd / Windows scheduled task |
-| `monk daemon uninstall` | Remove the service                              |
+`monk service` is an alias for `monk daemon`. `install` needs elevation: `sudo monk service install` on macOS (or the setup password prompt), an Administrator terminal on Windows; on Linux it's a `systemd` user unit and needs no `sudo`.
+
+| Command                            | What it does                                          |
+| ---------------------------------- | ----------------------------------------------------- |
+| `monk daemon start`                | Launch the background daemon                          |
+| `monk daemon stop`                 | Shut it down cleanly                                  |
+| `monk daemon status`               | Same as `monk status`                                 |
+| `monk daemon run`                  | Run in the foreground (used by the service manager; not normally invoked manually) |
+| `monk daemon install [--reinstall]` | Install as systemd / launchd / Windows scheduled task |
+| `monk daemon uninstall [--purge]`  | Remove the service (`--purge` also wipes config + data) |
 
 ### Config & diagnostics
 
-| Command                | What it does                                      |
-| ---------------------- | -------------------------------------------------- |
-| `monk setup` / `monk init` | First-run wizard: config, daemon, completions, doctor |
-| `monk doctor`          | Environment, permissions and daemon health check   |
-| `monk config path`     | Print the config file path                         |
-| `monk config export`   | Dump the current config                            |
-| `monk config import F` | Validate and import a config                       |
-| `monk lang en\|ru`     | Switch interface language                          |
-| `monk completions SH`  | Emit shell completions (bash/zsh/fish/powershell)  |
+| Command                                | What it does                                          |
+| -------------------------------------- | ----------------------------------------------------- |
+| `monk setup` / `monk init [--quick] [--reset] [-y]` | First-run wizard: config, daemon, completions, doctor |
+| `monk doctor [--json] [--fix]`         | Environment, permissions and daemon health check; `--fix` self-repairs common issues |
+| `monk config path`                     | Print the config file path                            |
+| `monk config export`                   | Dump the current config                               |
+| `monk config import FILE`              | Validate and import a config                          |
+| `monk lang en\|ru`                     | Switch interface language                             |
+| `monk completions SHELL`               | Emit shell completions (bash/zsh/fish/powershell/elvish) |
 
 ## Configuration
 

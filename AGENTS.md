@@ -4,7 +4,7 @@ Agent instructions for the `monk` repository.
 
 ## Project Overview
 
-Cross-platform CLI focus & distraction blocker built in Rust. One binary (`monk`) plus a background daemon (`monkd`) that owns the block state and talks to clients over a local socket.
+Cross-platform CLI focus & distraction blocker built in Rust. A single binary (`monk`); the background daemon is the same binary run as `monk daemon run` and registered with the OS service manager under the name `monkd`. The daemon owns the block state and talks to clients over a local socket.
 
 - Repository: `https://github.com/mdportnov/monk-cli`
 - License: MIT OR Apache-2.0

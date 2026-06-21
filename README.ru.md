@@ -23,7 +23,7 @@
 
 ## Как это работает
 
-monk запускает небольшой постоянный демон (`monkd`), который держит состояние блокировок. CLI и TUI общаются с ним по локальному сокету. При старте сессии:
+monk запускает небольшой постоянный демон — это тот же бинарник `monk`, запущенный как `monk daemon run` и зарегистрированный в менеджере сервисов ОС под именем `monkd`. Он держит состояние блокировок; CLI и TUI общаются с ним по локальному сокету. При старте сессии:
 
 1. Выбранный профиль разворачивается в конкретный список хостов и приложений.
 2. Хосты записываются в системный `hosts` (атомарная запись, подписанный блок).
@@ -55,21 +55,30 @@ monk запускает небольшой постоянный демон (`mon
 
 ```sh
 # Linux / macOS  → ставит в ~/.local/bin
-curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mdportnov/monk-cli/master/assets/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell 5+)  → ставит в %LOCALAPPDATA%\monk\bin
-irm https://raw.githubusercontent.com/mdportnov/monk-cli/main/assets/install.ps1 | iex
+irm https://raw.githubusercontent.com/mdportnov/monk-cli/master/assets/install.ps1 | iex
 ```
 
 ### Из исходников
 
+Нужен Rust toolchain (1.82+) — поставь через [rustup](https://rustup.rs). Одинаково работает на Linux, macOS и Windows.
+
 ```sh
 git clone https://github.com/mdportnov/monk-cli
 cd monk-cli
-cargo install --path .
+
+# Вариант A — собрать release-бинарник и положить в PATH (рекомендуется)
+cargo install --path .     # → ~/.cargo/bin/monk  (%USERPROFILE%\.cargo\bin\monk.exe на Windows)
+
+# Вариант B — собрать release-бинарник в дереве и запускать по пути
+cargo build --release      # → target/release/monk  (target\release\monk.exe на Windows)
 ```
+
+Обычный `cargo build` (без `--release`) даёт медленный debug-бинарник в `target/debug/monk` — только для разработки.
 
 ### cargo-binstall
 
@@ -86,67 +95,83 @@ cargo binstall monk
 
 ### Требования
 
-- Rust 1.82+ (только для сборки из исходников)
-- Один раз root / admin — чтобы monk мог писать в `hosts`
-- Linux: `systemd` (user session) для `monk daemon install`
-- Windows: ничего дополнительно — демон регистрируется как пользовательская задача планировщика, стартующая при входе (Task Scheduler)
+- Терминал и права администратора на машине — блокировка правит системный файл `hosts`, а это привилегированная операция. Доступ выдаётся **один раз**, при установке.
+- Rust 1.82+ — только если собираешь из исходников.
+
+`monk setup` сам настраивает права; под капотом это работает по-разному в зависимости от ОС:
+
+- **macOS** — демон ставится как системный сервис, работающий от **root**, и владеет `/etc/hosts`. При установке появляется нативный запрос пароля macOS; эквивалент в CLI — `sudo monk service install`.
+- **Linux** — демон работает от **тебя** через *пользовательский* unit `systemd` (без `sudo`). Чтобы блокировка работала, monk должен иметь право писать в `/etc/hosts` (или использовать бэкенд `systemd-resolved`) — `monk doctor` подскажет, если не может.
+- **Windows** — демон это задача планировщика при входе, которой нужны повышенные права, поэтому открой терминал **от администратора** перед `monk setup` / `monk daemon install`.
 
 ## Быстрый старт
 
+Выполняй по порядку. На **Windows** сначала открой PowerShell **от администратора**; на **macOS** при установке появится запрос пароля.
+
 ```sh
-monk setup                      # визард первого запуска: конфиг + демон + автодополнения + doctor
-monk start deepwork -d 50m      # сессия на 50 минут
-monk start deepwork --hard      # hard mode — отменить нельзя
-monk status                     # что запущено и сколько осталось
-monk stop                       # завершить сессию (только soft mode)
-monk tui                        # полный дашборд
+monk setup                  # 1. визард первого запуска: язык, профиль, демон, автодополнения, проверка
+monk doctor                 # 2. убедиться, что всё на месте (демон запущен, hosts доступен на запись)
+monk start deepwork -d 50m  # 3. запустить сессию фокуса на 50 минут
+monk status                 # 4. что заблокировано и сколько осталось
+monk stop                   # 5. завершить — только soft mode; hard mode остановить нельзя
 ```
+
+Нужен интерфейс? `monk tui` открывает полный дашборд. Запустить сессию без возможности выйти — `monk start deepwork --hard`.
 
 ## Команды
 
 ### Сессии
 
-| Команда                         | Что делает                                 |
-| ------------------------------- | ------------------------------------------ |
-| `monk start [profile] [-d DUR]` | Запустить сессию фокуса                    |
-| `monk start … --hard`           | Запустить hard-mode сессию (без отмены)    |
-| `monk stop`                     | Завершить активную сессию                  |
-| `monk panic [--phrase …]`       | Запросить отложенный выход из hard mode    |
-| `monk status`                   | Статус демона и сессии                     |
+| Команда                                               | Что делает                                  |
+| ----------------------------------------------------- | ------------------------------------------- |
+| `monk start [PROFILE] [-d DUR] [--hard] [--reason …]` | Запустить сессию фокуса (`--hard` = без отмены) |
+| `monk stop`                                           | Завершить активную сессию (только soft mode) |
+| `monk panic [--phrase …] [--cancel]`                  | Запросить — или отменить — отложенный выход из hard mode |
+| `monk status`                                         | Статус демона и сессии                      |
+| `monk stats`                                          | Статистика сессий                           |
+| `monk tui`                                            | Открыть интерактивный дашборд               |
 
 ### Профили и приложения
 
-| Команда                                    | Что делает                                 |
-| ------------------------------------------ | ------------------------------------------ |
-| `monk profiles`                            | Список профилей                            |
-| `monk profile create NAME`                 | Создать пустой профиль                     |
-| `monk profile delete NAME`                 | Удалить профиль                            |
-| `monk profile edit NAME`                   | Интерактивное редактирование               |
-| `monk profile edit NAME --add/--remove ID` | Правки для скриптов                        |
-| `monk apps list [--refresh]`               | Показать кэш установленных приложений      |
-| `monk apps scan`                           | Принудительное пересканирование            |
+| Команда                                                        | Что делает                                |
+| -------------------------------------------------------------- | ----------------------------------------- |
+| `monk profiles`                                                | Список профилей                           |
+| `monk profile show NAME [--json]`                              | Показать полный конфиг профиля            |
+| `monk profile create NAME [--preset P]`                        | Создать пустой профиль или из пресета     |
+| `monk profile duplicate SOURCE [TARGET]`                       | Скопировать профиль под новым именем      |
+| `monk profile edit NAME`                                       | Интерактивное редактирование              |
+| `monk profile edit NAME --add/--remove ID`                     | Правки для скриптов                       |
+| `monk profile limits NAME [--max/--min/--cooldown/--daily-cap] [--clear]` | Задать или сбросить лимиты времени |
+| `monk profile delete NAME`                                     | Удалить профиль                           |
+| `monk apps list [--refresh]`                                   | Показать кэш установленных приложений     |
+| `monk apps scan`                                               | Принудительное пересканирование          |
+
+Встроенные пресеты для `--preset`: `deepwork`, `study`, `detox`, `sleep`, `sober`, `lockdown`, `no-social`, `no-video`, `no-news`, `no-games`, `no-chat`, `no-shopping`, `no-adult`, `no-gambling`, `no-dating`, `no-ai`.
 
 ### Демон
 
-| Команда                 | Что делает                                        |
-| ----------------------- | ------------------------------------------------- |
-| `monk daemon start`     | Запустить фоновый демон                           |
-| `monk daemon stop`      | Корректно остановить                              |
-| `monk daemon status`    | То же, что `monk status`                          |
-| `monk daemon install`   | Установить как systemd / launchd / задачу планировщика Windows |
-| `monk daemon uninstall` | Удалить сервис                                    |
+`monk service` — алиас для `monk daemon`. Команде `install` нужны повышенные права: `sudo monk service install` на macOS (или запрос пароля при установке), терминал от администратора на Windows; на Linux это пользовательский unit `systemd` и `sudo` не требуется.
+
+| Команда                             | Что делает                                          |
+| ----------------------------------- | --------------------------------------------------- |
+| `monk daemon start`                 | Запустить фоновый демон                             |
+| `monk daemon stop`                  | Корректно остановить                                |
+| `monk daemon status`                | То же, что `monk status`                            |
+| `monk daemon run`                   | Запуск на переднем плане (используется менеджером сервисов; вручную обычно не нужен) |
+| `monk daemon install [--reinstall]` | Установить как systemd / launchd / задачу планировщика Windows |
+| `monk daemon uninstall [--purge]`   | Удалить сервис (`--purge` также стирает конфиг и данные) |
 
 ### Конфиг и диагностика
 
-| Команда                | Что делает                                         |
-| ---------------------- | -------------------------------------------------- |
-| `monk setup` / `monk init` | Визард первого запуска: конфиг, демон, автодополнения, doctor |
-| `monk doctor`          | Проверка окружения, прав и здоровья демона         |
-| `monk config path`     | Показать путь к файлу конфига                      |
-| `monk config export`   | Выгрузить текущий конфиг                           |
-| `monk config import F` | Проверить и импортировать конфиг                   |
-| `monk lang en\|ru`     | Сменить язык интерфейса                            |
-| `monk completions SH`  | Сгенерировать автодополнение (bash/zsh/fish/ps)    |
+| Команда                                | Что делает                                          |
+| -------------------------------------- | --------------------------------------------------- |
+| `monk setup` / `monk init [--quick] [--reset] [-y]` | Визард первого запуска: конфиг, демон, автодополнения, doctor |
+| `monk doctor [--json] [--fix]`         | Проверка окружения, прав и здоровья демона; `--fix` чинит частые проблемы |
+| `monk config path`                     | Показать путь к файлу конфига                       |
+| `monk config export`                   | Выгрузить текущий конфиг                            |
+| `monk config import FILE`              | Проверить и импортировать конфиг                    |
+| `monk lang en\|ru`                     | Сменить язык интерфейса                             |
+| `monk completions SHELL`               | Сгенерировать автодополнение (bash/zsh/fish/powershell/elvish) |
 
 ## Конфигурация
 
