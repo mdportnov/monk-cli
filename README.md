@@ -80,6 +80,31 @@ cargo build --release      # → target/release/monk  (target\release\monk.exe o
 
 A plain `cargo build` (no `--release`) produces a slower debug binary at `target/debug/monk` — use it only for development.
 
+#### One-shot setup script
+
+Prefer not to run the steps by hand? From a clone, this script checks for the Rust
+toolchain (and offers to install it), builds and installs `monk` onto your `PATH`,
+and finally runs `monk setup` — narrating each step.
+
+**Prerequisites:** [git](https://git-scm.com/downloads) to clone the repo, plus the C
+linker that the Rust build needs — [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/)
+on macOS (`xcode-select --install`), `build-essential` on Linux, or the
+[Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+on Windows. The [Rust toolchain](https://rustup.rs) itself (1.82+) is installed by the
+script if it is missing.
+
+```sh
+# Linux / macOS
+git clone https://github.com/mdportnov/monk-cli && cd monk-cli
+./scripts/setup.sh
+```
+
+```powershell
+# Windows (PowerShell 5+) — open the terminal as Administrator for the privileged step
+git clone https://github.com/mdportnov/monk-cli; cd monk-cli
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+```
+
 ### cargo-binstall
 
 ```sh
