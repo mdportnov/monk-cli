@@ -88,6 +88,7 @@ pub fn purpose_for(id: &str) -> &'static str {
         "path.log" => "rolling log file for daemon output",
         "path.socket" => "unix socket for cli↔daemon ipc",
         "config" => "parses config.toml and reports profile count",
+        "profiles.apps" => "do profiles reference apps that are no longer installed?",
         "daemon" => "pidfile inspection — is monkd actually alive?",
         "ipc" => "round-trip ping to monkd over the socket",
         "hard_mode" => "is an unescapable session currently locking the machine?",
@@ -146,6 +147,7 @@ pub async fn run() -> Report {
     ];
     checks.extend(checks::check_paths());
     checks.push(checks::check_config());
+    checks.push(checks::check_profile_apps());
     checks.push(checks::check_pidfile());
     checks.push(checks::check_ipc().await);
     checks.push(checks::check_hard_mode().await);

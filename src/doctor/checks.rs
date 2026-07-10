@@ -151,6 +151,76 @@ pub(crate) fn check_config() -> Check {
     }
 }
 
+pub(crate) fn check_profile_apps() -> Check {
+    let cfg = match Config::load() {
+        Ok(c) => c,
+        Err(_) => {
+            return Check::new(
+                "profiles.apps",
+                "profile app refs",
+                Status::Skipped,
+                "config not loadable — see `config` check",
+            )
+        }
+    };
+    let cache = match crate::apps::AppCache::load() {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return Check::new(
+                "profiles.apps",
+                "profile app refs",
+                Status::Skipped,
+                "no app cache yet — run `monk apps refresh`",
+            )
+        }
+        Err(e) => {
+            return Check::new(
+                "profiles.apps",
+                "profile app refs",
+                Status::Skipped,
+                format!("app cache load failed: {e}"),
+            )
+        }
+    };
+    let mut extras = Vec::new();
+    let mut stale_total = 0usize;
+    for (name, profile) in &cfg.profiles {
+        let mut ids = profile.apps.clone();
+        if !profile.brands.is_empty() {
+            if let Ok(resolved) = crate::brands::resolve(&profile.brands) {
+                ids.extend(resolved.apps.iter().cloned());
+            }
+        }
+        let resolution = crate::apps::resolve(&ids, &cache);
+        if !resolution.stale.is_empty() {
+            stale_total += resolution.stale.len();
+            extras.push(format!("{name}: {}", resolution.stale.join(", ")));
+        }
+    }
+    if stale_total == 0 {
+        Check::new(
+            "profiles.apps",
+            "profile app refs",
+            Status::Ok,
+            "all referenced apps are installed",
+        )
+    } else {
+        Check::new(
+            "profiles.apps",
+            "profile app refs",
+            Status::Warn,
+            format!("{stale_total} reference(s) to uninstalled apps"),
+        )
+        .with_hint("remove stale ids from config.toml or reinstall the app — the daemon skips them")
+        .with_extras(extras)
+        .with_actions(vec![Action {
+            key: 'o',
+            label: "open config",
+            kind: ActionKind::OpenConfig,
+        }])
+    }
+}
+
 pub(crate) fn check_pidfile() -> Check {
     let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     let stop = Action { key: 'x', label: "stop daemon", kind: ActionKind::StopDaemon };

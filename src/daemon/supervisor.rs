@@ -776,10 +776,23 @@ fn build_block_set(profile: &Profile) -> Result<BlockSet> {
     let mut combined_apps: Vec<String> = profile.apps.clone();
     combined_apps.extend(brand_apps);
     let resolution = apps::resolve(&combined_apps, &cache);
-    if !resolution.stale.is_empty() {
-        tracing::warn!(stale = ?resolution.stale, "profile references uninstalled apps");
-    }
+    warn_stale_apps_once(&resolution.stale);
     Ok(BlockSet { sites: hosts.into_iter().collect(), apps: resolution.resolved })
+}
+
+// The tick loop rebuilds the block set every second; without dedup this
+// warning floods the log for the whole session.
+fn warn_stale_apps_once(stale: &[String]) {
+    static LAST: once_cell::sync::Lazy<Mutex<Option<Vec<String>>>> =
+        once_cell::sync::Lazy::new(|| Mutex::new(None));
+    let mut last = LAST.lock();
+    if last.as_deref() == Some(stale) {
+        return;
+    }
+    if !stale.is_empty() {
+        tracing::warn!(?stale, "profile references uninstalled apps");
+    }
+    *last = Some(stale.to_vec());
 }
 
 fn lock_to_session(lock: &SessionLock) -> Session {
