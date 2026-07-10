@@ -221,10 +221,16 @@ fn derive_key(session_id: &Uuid) -> [u8; 32] {
 }
 
 fn machine_identity() -> String {
-    if let Ok(id) = machine_uid::get() {
-        return id;
-    }
-    persistent_fallback_identity().unwrap_or_else(|_| "monk-fallback-unresolved".to_string())
+    // machine_uid::get() shells out to `ioreg` on macOS; without caching,
+    // every lock verification spawns a subprocess and a Status request can
+    // take seconds — long enough to trip the client read timeout.
+    static MACHINE_IDENTITY: once_cell::sync::Lazy<String> = once_cell::sync::Lazy::new(|| {
+        if let Ok(id) = machine_uid::get() {
+            return id;
+        }
+        persistent_fallback_identity().unwrap_or_else(|_| "monk-fallback-unresolved".to_string())
+    });
+    MACHINE_IDENTITY.clone()
 }
 
 fn persistent_fallback_identity() -> Result<String> {
