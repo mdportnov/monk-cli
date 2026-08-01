@@ -133,9 +133,11 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     let m = (secs % 3600) / 60;
     let s = secs % 60;
     let timer = format!("{h:02}:{m:02}:{s:02}");
+    // Final minute burns amber — the countdown should feel like it's ending.
+    let timer_color = if secs < 60 { ALERT } else { GLOW };
     let big = BigText::builder()
         .pixel_size(PixelSize::Quadrant)
-        .style(Style::default().fg(GLOW))
+        .style(Style::default().fg(timer_color))
         .alignment(Alignment::Center)
         .lines(vec![Line::from(timer)])
         .build();

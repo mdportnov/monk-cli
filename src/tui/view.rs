@@ -580,6 +580,78 @@ mod snapshot_tests {
         assert!(narrow.contains("Su"), "weekend toggles must be visible at min width");
     }
 
+    /// Crash fuzz: every screen must render at any terminal size — tiny
+    /// (below the 80×20 guard), boundary, and huge — both idle and with an
+    /// active scheduled session. Rendering is pure, so a panic here is a
+    /// panic in production.
+    #[test]
+    fn all_screens_render_without_panic_at_many_sizes() {
+        use crate::config::Profile;
+        use crate::session::Session;
+        use crate::tui::app::{PresetPickerState, SettingsState};
+        use crate::tui::screens::panic::PanicState;
+        use crate::tui::screens::schedules::{ScheduleForm, ScheduleRow, SchedulesState};
+
+        let sizes = [
+            (1, 1),
+            (10, 5),
+            (79, 19),
+            (80, 20),
+            (81, 21),
+            (100, 10),
+            (90, 28),
+            (110, 30),
+            (120, 40),
+            (200, 60),
+            (140, 20),
+        ];
+        let build_screens = || -> Vec<Screen> {
+            vec![
+                Screen::Home(HomeState::default()),
+                Screen::ModePicker(PickerState::default()),
+                Screen::PresetPicker(PresetPickerState::default()),
+                Screen::ModeEditor(Box::new(EditorState::new_mode())),
+                Screen::ModeConfirm(Box::new(ConfirmState::from_mode(
+                    sample_mode("deepwork"),
+                    Duration::from_secs(25 * 60),
+                    false,
+                ))),
+                Screen::Settings(Box::new(SettingsState::from_general(
+                    Default::default(),
+                    vec!["deepwork".into()],
+                ))),
+                Screen::Doctor(Box::default()),
+                Screen::Panic(Box::new(PanicState::new("silent flowing river".into()))),
+                Screen::Schedules(SchedulesState::default()),
+                Screen::Schedules(SchedulesState {
+                    rows: vec![ScheduleRow { name: "m".into(), profile: Profile::default() }],
+                    selected: 0,
+                    error: None,
+                    form: Some(ScheduleForm::from_profile("m", &Profile::default())),
+                }),
+            ]
+        };
+        for (w, h) in sizes {
+            for with_session in [false, true] {
+                for screen in build_screens() {
+                    let mut app = base_app();
+                    app.screen = screen;
+                    app.globals.update_available = Some("9.9.9".into());
+                    app.globals.next_scheduled =
+                        Some(("focus".into(), chrono::Utc::now() + chrono::Duration::hours(3)));
+                    if with_session {
+                        let mut s =
+                            Session::new("deepwork".into(), Duration::from_secs(50 * 60), false);
+                        s.reason = Some("scheduled".into());
+                        app.globals.active = Some(s);
+                        app.globals.active_mode = Some(sample_mode("deepwork"));
+                    }
+                    let _ = render(&app, w, h);
+                }
+            }
+        }
+    }
+
     #[test]
     fn flash_levels_all_render() {
         for level in [FlashLevel::Info, FlashLevel::Success, FlashLevel::Warn, FlashLevel::Error] {

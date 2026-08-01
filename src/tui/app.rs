@@ -518,6 +518,15 @@ impl App {
         if key.kind != KeyEventKind::Press {
             return;
         }
+        // Raw mode swallows SIGINT: without this, ctrl+c does nothing anywhere
+        // in the TUI and the app feels hung. Quitting is always safe — the
+        // daemon owns the block state, so an active session keeps running.
+        if key.code == KeyCode::Char('c')
+            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            self.should_quit = true;
+            return;
+        }
         if self.globals.help_open {
             if matches!(
                 key.code,
@@ -1267,7 +1276,11 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         app.last_effect_tick = Some(now);
         terminal.draw(|f| super::view::draw_with_effects(f, &mut app, dt))?;
 
-        if event::poll(Duration::from_millis(120))? {
+        // Idle cadence (120ms) is plenty for the 1s timer and breathing
+        // companion, but transition effects run ~260ms — poll at 16ms while
+        // one is live so sweeps render at ~60fps instead of ~8.
+        let poll_ms = if app.effect.is_some() { 16 } else { 120 };
+        if event::poll(Duration::from_millis(poll_ms))? {
             while event::poll(Duration::from_millis(0))? {
                 if let Event::Key(key) = event::read()? {
                     app.handle_key(key).await;
@@ -1283,7 +1296,9 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
     }
 
     shutdown.notify_waiters();
-    let _ = worker.await;
+    // The worker may be mid-IPC (bounded by the 2s/3s socket timeouts);
+    // don't make `q` feel laggy waiting for it — the process exits anyway.
+    let _ = tokio::time::timeout(Duration::from_millis(300), worker).await;
     Ok(())
 }
 
