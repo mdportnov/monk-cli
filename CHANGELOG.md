@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-08-01
+
 ### Added
+
+- **Schedules** — profiles auto-start on a weekly recurring schedule
+  (weekday mask, HH:MM window, timezone with `local` following the laptop,
+  cross-midnight windows, DST-safe). New TUI screen (menu → Schedules, `w`):
+  next-run status per mode, upcoming-window preview, space to toggle,
+  structured edit form. Home shows the next scheduled window; scheduled
+  sessions carry a badge and end time. Scheduled presets: new
+  `morning` (daily 06:00–09:00) and `sleep` (daily 22:30–07:00).
+- **Self-update** — `monk update` downloads the latest GitHub release for
+  the current platform, verifies its SHA-256 against the signed manifest,
+  and atomically swaps the binary (with rollback). `monk update --check`
+  and the `u` key in the TUI check without installing; the TUI footer shows
+  the running version plus a badge when a newer release exists (checks are
+  cached for 24h).
+
 
 - **`monk setup` first-run wizard** — detects the platform, installs the
   background daemon service, installs shell completions for the current shell,
@@ -39,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   help overlays updated to match.
 
 ### Fixed
+
+- Schedules with `start == end` are rejected instead of silently becoming
+  a 24-hour window.
 
 - **Hosts-write durability** — `atomic_write` now `fsync`s both the file and its
   parent directory around the rename, so a crash or power loss can no longer
