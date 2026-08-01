@@ -79,11 +79,18 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 fn curl(args: &[&str]) -> Result<Vec<u8>> {
+    // `--connect-timeout` (not `--max-time`): the latter caps the WHOLE
+    // transfer and would abort a multi-MB asset download on a slow link.
+    // The speed floor aborts transfers that stall mid-flight instead.
     let out = Command::new("curl")
         .args([
             "-fsSL",
-            "--max-time",
+            "--connect-timeout",
             &CURL_TIMEOUT_SECS.to_string(),
+            "--speed-time",
+            "30",
+            "--speed-limit",
+            "1024",
             "-A",
             concat!("monk/", env!("CARGO_PKG_VERSION")),
         ])
@@ -291,7 +298,11 @@ pub fn perform_update() -> Result<UpdateOutcome> {
         )));
     }
 
+    // Resolve symlinks so a `~/bin/monk -> /usr/local/bin/monk` style install
+    // replaces the real binary instead of overwriting the symlink. On
+    // windows canonicalize yields a `\\?\` path, which std fs ops accept.
     let current = std::env::current_exe().map_err(Error::Io)?;
+    let current = fs_err::canonicalize(&current).unwrap_or(current);
     let dir =
         current.parent().ok_or_else(|| Error::Other("cannot resolve install directory".into()))?;
 
@@ -300,11 +311,13 @@ pub fn perform_update() -> Result<UpdateOutcome> {
     // on unix and windows alike, deleting it is not (windows).
     let staged = dir.join(format!(".{bin_name}.new"));
     let old = dir.join(format!(".{bin_name}.old"));
+    let elevate_hint = if cfg!(windows) {
+        "rerun `monk update` from an elevated (Administrator) terminal"
+    } else {
+        "rerun with elevated privileges: `sudo monk update`"
+    };
     fs_err::copy(&inner, &staged).map_err(|e| {
-        Error::Other(format!(
-            "cannot write to {} ({e}) — rerun with elevated privileges (e.g. `sudo monk update`)",
-            dir.display()
-        ))
+        Error::Other(format!("cannot write to {} ({e}) — {elevate_hint}", dir.display()))
     })?;
     #[cfg(unix)]
     {
@@ -312,6 +325,14 @@ pub fn perform_update() -> Result<UpdateOutcome> {
         fs_err::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
     }
     let _ = fs_err::remove_file(&old);
+    // Windows: a previous update's `.old` may still be locked by a daemon
+    // that hasn't restarted — park the current binary under a unique name
+    // then, instead of failing the rename into the occupied one.
+    let old = if old.exists() {
+        dir.join(format!(".{bin_name}.old.{}", std::process::id()))
+    } else {
+        old
+    };
     fs_err::rename(&current, &old)?;
     if let Err(e) = fs_err::rename(&staged, &current) {
         // Roll back so the user is never left without a binary.
