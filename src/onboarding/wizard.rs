@@ -70,12 +70,15 @@ pub async fn run(opts: Options) -> Result<()> {
         chosen_apps = pick_apps_for_presets(&cache)?;
     }
 
-    apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
-    for preset in &presets {
+    let (created, kept) = apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
+    // Only freshly created profiles get the wizard's app selection —
+    // customized existing profiles keep whatever the user configured.
+    for preset in &created {
         if let Some(profile) = cfg.profiles.get_mut(preset) {
             profile.apps = chosen_apps.clone();
         }
     }
+    print_apply_notices(&cfg, &created, &kept);
 
     check_hosts();
 
@@ -225,7 +228,9 @@ pub async fn run_non_interactive(opts: Options) -> Result<()> {
     let hard_mode = opts.hard_mode.unwrap_or(cfg.general.hard_mode);
     let autostart = opts.autostart.unwrap_or(cfg.general.autostart);
 
-    apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
+    validate_default_duration(duration)?;
+    let (created, kept) = apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
+    print_apply_notices(&cfg, &created, &kept);
 
     if autostart && !opts.no_daemon {
         let _ = daemon::service_run(ServiceAction::Install);
@@ -248,20 +253,30 @@ pub async fn run_non_interactive(opts: Options) -> Result<()> {
     Ok(())
 }
 
+/// Materialize the chosen presets into the config. Profiles that already
+/// exist are NEVER overwritten — a re-run of the wizard must not wipe the
+/// user's customized sites/apps/schedule. Returns (created, kept) names.
 fn apply(
     cfg: &mut Config,
     presets: &[String],
     duration: Duration,
     hard_mode: bool,
     autostart: bool,
-) -> Result<()> {
+) -> Result<(Vec<String>, Vec<String>)> {
+    let mut created = Vec::new();
+    let mut kept = Vec::new();
     for name in presets {
-        if name == "custom" {
-            cfg.profiles.entry("custom".into()).or_default();
+        if cfg.profiles.contains_key(name) {
+            kept.push(name.clone());
             continue;
         }
-        let profile = load_preset(name)?;
-        cfg.profiles.insert(name.clone(), profile);
+        if name == "custom" {
+            cfg.profiles.entry("custom".into()).or_default();
+        } else {
+            let profile = load_preset(name)?;
+            cfg.profiles.insert(name.clone(), profile);
+        }
+        created.push(name.clone());
     }
     if !presets.is_empty() && presets[0] != "custom" {
         cfg.general.default_profile = presets[0].clone();
@@ -269,7 +284,26 @@ fn apply(
     cfg.general.default_duration = duration;
     cfg.general.hard_mode = hard_mode;
     cfg.general.autostart = autostart;
-    Ok(())
+    Ok((created, kept))
+}
+
+/// Print post-apply notices: which existing profiles were left untouched,
+/// and which freshly created ones carry an auto-start schedule.
+fn print_apply_notices(cfg: &Config, created: &[String], kept: &[String]) {
+    for name in kept {
+        println!("  {}", t!("onboarding.preset_kept", profile = name.as_str()));
+    }
+    for name in created {
+        if let Some(sch) = cfg.profiles.get(name).and_then(|p| p.schedule.as_ref()) {
+            if sch.enabled {
+                let window = sch.human();
+                println!(
+                    "  {}",
+                    t!("onboarding.preset_scheduled", profile = name.as_str(), window = window)
+                );
+            }
+        }
+    }
 }
 
 fn reset() -> Result<()> {
@@ -330,6 +364,7 @@ fn pick_presets() -> Result<Vec<String>> {
         }
     }
     if out.is_empty() {
+        println!("  {}", t!("onboarding.presets_fallback"));
         out.push("deepwork".into());
     }
     Ok(out)
@@ -353,12 +388,30 @@ fn pick_duration(current: Duration) -> Result<Duration> {
     } else if ans == t!("onboarding.duration_long") {
         Ok(Duration::from_secs(90 * 60))
     } else {
-        let raw = Text::new(&t!("onboarding.duration_custom_prompt"))
-            .with_default(&humantime::format_duration(current).to_string())
-            .prompt()
-            .map_err(prompt_err)?;
-        humantime::parse_duration(&raw).map_err(|e| Error::Other(e.to_string()))
+        // Re-prompt on typos instead of aborting the whole wizard; Esc/Ctrl+C
+        // still cancels via prompt_err.
+        loop {
+            let raw = Text::new(&t!("onboarding.duration_custom_prompt"))
+                .with_default(&humantime::format_duration(current).to_string())
+                .prompt()
+                .map_err(prompt_err)?;
+            match humantime::parse_duration(raw.trim()) {
+                Ok(d) => match validate_default_duration(d) {
+                    Ok(()) => return Ok(d),
+                    Err(e) => println!("  {e}"),
+                },
+                Err(e) => println!("  {e}"),
+            }
+        }
     }
+}
+
+/// Sane bounds for the default session length: 1 minute to 24 hours.
+fn validate_default_duration(d: Duration) -> Result<()> {
+    if d < Duration::from_secs(60) || d > Duration::from_secs(24 * 3600) {
+        return Err(Error::Config(t!("onboarding.duration_out_of_range").to_string()));
+    }
+    Ok(())
 }
 
 fn pick_hard_mode(default: bool) -> Result<bool> {
@@ -552,5 +605,39 @@ fn prompt_err(e: inquire::InquireError) -> Error {
             Error::Other("cancelled".into())
         }
         other => Error::Other(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_never_clobbers_existing_profiles() {
+        let mut cfg = Config::default();
+        let customized =
+            crate::config::Profile { sites: vec!["mysite.com".into()], ..Default::default() };
+        cfg.profiles.insert("deepwork".into(), customized);
+
+        let presets = ["deepwork".to_string(), "study".to_string()];
+        let (created, kept) =
+            apply(&mut cfg, &presets, Duration::from_secs(25 * 60), false, false).unwrap();
+
+        assert_eq!(kept, ["deepwork"]);
+        assert_eq!(created, ["study"]);
+        assert_eq!(
+            cfg.profiles["deepwork"].sites,
+            ["mysite.com"],
+            "re-running the wizard must keep user customizations"
+        );
+        assert!(cfg.profiles.contains_key("study"));
+    }
+
+    #[test]
+    fn default_duration_bounds() {
+        assert!(validate_default_duration(Duration::from_secs(59)).is_err());
+        assert!(validate_default_duration(Duration::from_secs(60)).is_ok());
+        assert!(validate_default_duration(Duration::from_secs(24 * 3600)).is_ok());
+        assert!(validate_default_duration(Duration::from_secs(24 * 3600 + 1)).is_err());
     }
 }

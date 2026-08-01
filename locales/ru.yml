@@ -64,7 +64,7 @@ onboarding:
   autostart_q: "Запускать monk автоматически при входе в систему?"
   checking_hosts: "Проверяю доступ на запись в hosts-файл…"
   hosts_ok: "Файл hosts доступен для записи."
-  hosts_ro: "Файл hosts защищён от записи. Запусти демон с повышенными правами."
+  hosts_ro: "Файл hosts недоступен для записи из-под этого пользователя — это нормально, пока не установлен системный демон (следующий шаг, либо `sudo monk daemon install`)."
   done_title: "Готово"
   done_config_at: "Конфиг:"
   done_next_header: "Следующие шаги:"
@@ -72,6 +72,11 @@ onboarding:
   done_next_tui: "  monk tui           открыть интерактивный интерфейс"
   done_next_doctor: "  monk doctor        диагностика окружения"
   done_next_help: "  monk --help        полный список команд"
+  preset_kept: "профиль `%{profile}` уже существует — оставлена ваша настроенная версия"
+  preset_scheduled: "⏰ `%{profile}` будет включаться сам по расписанию: %{window} — управление в `monk tui` → Расписания"
+  presets_fallback: "ничего не выбрано — создан профиль `deepwork` (изменить: `monk profile edit`)"
+  duration_out_of_range: "длительность должна быть от 1m до 24h"
+  first_run_offer: "Похоже, это первый запуск — настроить monk сейчас?"
   first_run_nudge: "Похоже, это первый запуск. Запусти `monk init` для быстрой настройки."
 
 setup:

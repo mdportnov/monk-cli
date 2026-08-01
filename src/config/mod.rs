@@ -172,6 +172,23 @@ impl Weekday {
 }
 
 impl Schedule {
+    /// Compact human form: `Mo,Tu,We 09:00–17:00` (plus ` (off)` when
+    /// disabled). Shared by the TUI and the onboarding wizard.
+    pub fn human(&self) -> String {
+        use Weekday::*;
+        let order = [Mon, Tue, Wed, Thu, Fri, Sat, Sun];
+        let labels = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+        let days: String = order
+            .iter()
+            .zip(labels.iter())
+            .filter(|(d, _)| self.days.contains(d))
+            .map(|(_, l)| *l)
+            .collect::<Vec<_>>()
+            .join(",");
+        let suffix = if self.enabled { "" } else { " (off)" };
+        format!("{} {}–{}{}", days, self.start, self.end, suffix)
+    }
+
     pub fn mask(&self) -> u8 {
         self.days.iter().fold(0u8, |m, d| m | d.bit())
     }

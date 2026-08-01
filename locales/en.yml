@@ -64,7 +64,7 @@ onboarding:
   autostart_q: "Start monk automatically at login?"
   checking_hosts: "Checking write access to the hosts file…"
   hosts_ok: "Hosts file is writable."
-  hosts_ro: "Hosts file is read-only. Run the daemon with elevated privileges."
+  hosts_ro: "Hosts file isn't writable from this account — expected until the system daemon is installed (next step, or `sudo monk daemon install`)."
   done_title: "All set"
   done_config_at: "Config:"
   done_next_header: "Next steps:"
@@ -72,6 +72,11 @@ onboarding:
   done_next_tui: "  monk tui           open the interactive UI"
   done_next_doctor: "  monk doctor        diagnose your setup"
   done_next_help: "  monk --help        full command reference"
+  preset_kept: "profile `%{profile}` already exists — kept your customized version"
+  preset_scheduled: "⏰ `%{profile}` will auto-start on a schedule: %{window} — manage in `monk tui` → Schedules"
+  presets_fallback: "nothing selected — starting with the `deepwork` profile (edit later with `monk profile edit`)"
+  duration_out_of_range: "duration must be between 1m and 24h"
+  first_run_offer: "Looks like this is your first run — set up monk now?"
   first_run_nudge: "Looks like this is your first run. Run `monk init` for a quick setup."
 
 setup:

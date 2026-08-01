@@ -546,27 +546,7 @@ pub async fn daemon_run() -> Result<()> {
 }
 
 pub async fn daemon_start() -> Result<()> {
-    let exe = std::env::current_exe()?;
-    #[cfg(unix)]
-    {
-        use std::process::{Command, Stdio};
-        Command::new(exe)
-            .args(["daemon", "run"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-    }
-    #[cfg(windows)]
-    {
-        use std::process::{Command, Stdio};
-        Command::new(exe)
-            .args(["daemon", "run"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-    }
+    crate::daemon::spawn_detached()?;
     println!("monkd starting");
     Ok(())
 }

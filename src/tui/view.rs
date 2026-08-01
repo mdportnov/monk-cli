@@ -327,18 +327,7 @@ pub fn kv(key: &str, value: &str) -> Line<'static> {
 }
 
 pub fn fmt_schedule(s: &crate::config::Schedule) -> String {
-    use crate::config::Weekday::*;
-    let order = [Mon, Tue, Wed, Thu, Fri, Sat, Sun];
-    let labels = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-    let days: String = order
-        .iter()
-        .zip(labels.iter())
-        .filter(|(d, _)| s.days.contains(d))
-        .map(|(_, l)| *l)
-        .collect::<Vec<_>>()
-        .join(",");
-    let suffix = if s.enabled { "" } else { " (off)" };
-    format!("{} {}–{}{}", days, s.start, s.end, suffix)
+    s.human()
 }
 
 pub fn fmt_limit(d: Option<Duration>) -> String {

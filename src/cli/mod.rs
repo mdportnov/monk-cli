@@ -255,7 +255,7 @@ pub async fn run() -> Result<()> {
     if !is_daemon_run {
         let cfg_locale = crate::config::Config::load().ok().and_then(|c| c.general.locale.clone());
         crate::i18n::init(cfg_locale.as_deref(), cli.locale.as_deref());
-        maybe_first_run_onboarding(&cli.command, cli.locale.as_deref())?;
+        maybe_first_run_onboarding(&cli.command, cli.locale.as_deref()).await?;
     } else {
         crate::i18n::init(None, cli.locale.as_deref());
     }
@@ -342,7 +342,7 @@ pub async fn run() -> Result<()> {
     result.map_err(miette::Report::from)
 }
 
-fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> crate::Result<()> {
+async fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> crate::Result<()> {
     use std::io::IsTerminal;
     if matches!(
         cmd,
@@ -363,7 +363,14 @@ fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> crate::Re
         eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
         return Ok(());
     }
-    // For the first-run nudge, we'll keep it simple and non-async
-    eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
-    Ok(())
+    // Interactive terminal: offer to run the wizard right now instead of
+    // only hinting at it. Declining (or Esc) falls back to the nudge.
+    let offer = crate::i18n::t!("onboarding.first_run_offer").to_string();
+    match inquire::Confirm::new(&offer).with_default(true).prompt() {
+        Ok(true) => crate::onboarding::run(crate::onboarding::Options::default()).await,
+        _ => {
+            eprintln!("{}", crate::i18n::t!("onboarding.first_run_nudge"));
+            Ok(())
+        }
+    }
 }

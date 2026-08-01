@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-01
+
+### Added
+
+- **First run in an interactive terminal now offers to launch the wizard**
+  instead of only printing a hint.
+- Onboarding prints an explicit notice when a scheduled preset is created
+  ("`morning` will auto-start on a schedule: … — manage in `monk tui` →
+  Schedules") and when an empty preset selection falls back to `deepwork`.
+
+### Changed
+
+- **Re-running `monk init`/`monk setup` never overwrites existing profiles**
+  — customized sites/apps/schedules are kept and reported; only newly
+  created profiles receive the wizard's app selection.
+- Custom default-duration prompt re-asks on a typo instead of aborting the
+  whole wizard, and enforces sane bounds (1m–24h) in both interactive and
+  `--yes` runs.
+- Hosts-file warning during onboarding now explains that the system-daemon
+  install (the next step) resolves it, with the exact command.
+
+### Fixed
+
+- **User-mode daemon survives its terminal closing** — `monk daemon start`
+  and the TUI's auto-spawn now detach the daemon (own process group on
+  unix, `DETACHED_PROCESS` on windows). System-service installs were never
+  affected.
+
 ## [0.0.3] - 2026-08-01
 
 ### Added

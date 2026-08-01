@@ -1207,14 +1207,7 @@ async fn ensure_daemon() {
         return;
     }
 
-    let Ok(exe) = std::env::current_exe() else { return };
-    use std::process::{Command, Stdio};
-    let _ = Command::new(&exe)
-        .args(["daemon", "run"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
+    let _ = crate::daemon::spawn_detached();
     for _ in 0..20 {
         tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(ipc::send(&Request::Ping).await, Ok(Response::Pong { version }) if version == expected)
