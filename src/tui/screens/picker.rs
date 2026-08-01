@@ -327,6 +327,17 @@ fn draw_preset_preview(f: &mut Frame, area: Rect, state: &PresetPickerState) {
         lines.push(kv("  panic", &fmt_short(pd)));
     }
 
+    if let Some(sch) = &profile.schedule {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("⏰ ", Style::default().fg(ACCENT)),
+            Span::styled(
+                crate::tui::view::fmt_schedule(sch),
+                Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+
     // Custom sites (when used by a user-modified preset)
     if !profile.sites.is_empty() {
         lines.push(Line::from(""));
@@ -478,6 +489,11 @@ fn render_mode_row(
     if m.is_default {
         spans.push(Span::raw("  "));
         spans.push(Span::styled("★", Style::default().fg(Color::Rgb(220, 180, 90))));
+    }
+
+    if m.has_schedule {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled("⏰", Style::default().fg(ACCENT)));
     }
 
     let line_width = spans.iter().map(|s| s.content.chars().count()).sum::<usize>();

@@ -34,6 +34,7 @@ pub struct PresetMeta {
 
 pub const PRESETS: &[PresetMeta] = &[
     PresetMeta { id: "deepwork", tier: PresetTier::Scenario },
+    PresetMeta { id: "morning", tier: PresetTier::Scenario },
     PresetMeta { id: "study", tier: PresetTier::Scenario },
     PresetMeta { id: "detox", tier: PresetTier::Scenario },
     PresetMeta { id: "sleep", tier: PresetTier::Scenario },
@@ -53,6 +54,7 @@ pub const PRESETS: &[PresetMeta] = &[
 
 pub const PRESET_NAMES: &[&str] = &[
     "deepwork",
+    "morning",
     "study",
     "detox",
     "sleep",
@@ -71,6 +73,7 @@ pub const PRESET_NAMES: &[&str] = &[
 ];
 
 const DEEPWORK: &str = include_str!("../../assets/presets/deepwork.toml");
+const MORNING: &str = include_str!("../../assets/presets/morning.toml");
 const STUDY: &str = include_str!("../../assets/presets/study.toml");
 const DETOX: &str = include_str!("../../assets/presets/detox.toml");
 const SLEEP: &str = include_str!("../../assets/presets/sleep.toml");
@@ -90,6 +93,7 @@ const NO_AI: &str = include_str!("../../assets/presets/no-ai.toml");
 pub fn load_preset(name: &str) -> Result<Profile> {
     let raw = match name {
         "deepwork" => DEEPWORK,
+        "morning" => MORNING,
         "study" => STUDY,
         "detox" => DETOX,
         "sleep" => SLEEP,

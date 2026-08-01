@@ -803,6 +803,7 @@ fn lock_to_session(lock: &SessionLock) -> Session {
         duration: Duration::from_millis(u64::try_from(lock.duration_ms).unwrap_or(u64::MAX)),
         hard_mode: lock.hard_mode,
         state: if lock.is_expired() { SessionState::Completed } else { SessionState::Running },
+        reason: lock.reason.clone(),
     }
 }
 

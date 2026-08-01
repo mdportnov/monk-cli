@@ -5,4 +5,5 @@ pub mod editor;
 pub mod home;
 pub mod panic;
 pub mod picker;
+pub mod schedules;
 pub mod settings;

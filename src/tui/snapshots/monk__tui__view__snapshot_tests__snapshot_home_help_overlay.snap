@@ -8,24 +8,24 @@ expression: "render(&app, 90, 28)"
 ╭ menu ──────────────────────────────────────────╮╭ companion ───────────────────────────╮
 │▶   Start session                               ││               ·   *   ·              │
 │    Stop session                                ││              *         *             │
-│    Panic escape                                ││                  ___                 │
-│    Modes             ╭ help ────────────────────────────────────╮ /   \                │
-│    Settings          │home                                      │( -.- )               │
-│    Doctor            │                                          │ \___/                │
-│    Quit              │  ↑/↓ · j/k    navigate menu              │  |_|                 │
-│                      │  enter        activate item              │__|_|__               │
-│                      │  s · x · p    start · stop · panic       │       \              │
-│                      │  c            cancel scheduled panic     │  ___   |             │
-│                      │  m            open modes picker          │ /   \  |             │
+│    Panic escape      ╭ help ────────────────────────────────────╮  ___                 │
+│    Modes             │home                                      │ /   \                │
+│    Schedules ⏰       │                                          │( -.- )               │
+│    Settings          │  ↑/↓ · j/k    navigate menu              │ \___/                │
+│    Doctor            │  enter        activate item              │  |_|                 │
+│    Quit              │  s · x · p    start · stop · panic       │__|_|__               │
+│                      │  c            cancel scheduled panic     │       \              │
+│                      │  m            open modes picker          │  ___   |             │
+│                      │  w            open schedules             │ /   \  |             │
 │                      │  1..9         quick-start mode by slot   │ \___/  |             │
 │                      │  ? · F1       toggle help                │       /              │
 │                      │  q · esc      quit                       │________\             │
-│                      │                                          │_________)            │
-╰──────────────────────│                                          │~~~~~~~               │
-╭ status ──────────────╰──────────────────────────────────────────╯                      │
-│daemon  running                                 ││             breathe in …             │
-│session idle                                    ││                                      │
+╰──────────────────────│                                          │_________)            │
+╭ status ──────────────│                                          │~~~~~~~               │
+│daemon  running       ╰──────────────────────────────────────────╯                      │
+│session idle                                    ││             breathe in …             │
 │pick a mode and start a focus session           ││                                      │
+│                                                ││                                      │
 ╰────────────────────────────────────────────────╯╰──────────────────────────────────────╯
 ──────────────────────────────────────────────────────────────────────────────────────────
                      ↑/↓ move   ⏎ select   s start   m modes   q quit

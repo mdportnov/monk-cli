@@ -26,17 +26,19 @@ pub enum MenuItem {
     Stop,
     Panic,
     Profiles,
+    Schedules,
     Settings,
     Doctor,
     Quit,
 }
 
 impl MenuItem {
-    pub const ALL: [MenuItem; 7] = [
+    pub const ALL: [MenuItem; 8] = [
         MenuItem::Start,
         MenuItem::Stop,
         MenuItem::Panic,
         MenuItem::Profiles,
+        MenuItem::Schedules,
         MenuItem::Settings,
         MenuItem::Doctor,
         MenuItem::Quit,
@@ -48,6 +50,7 @@ impl MenuItem {
             MenuItem::Stop => "tui.menu.stop",
             MenuItem::Panic => "tui.menu.panic",
             MenuItem::Profiles => "tui.menu.modes",
+            MenuItem::Schedules => "tui.menu.schedules",
             MenuItem::Settings => "tui.menu.settings",
             MenuItem::Doctor => "tui.menu.doctor",
             MenuItem::Quit => "tui.menu.quit",
@@ -61,6 +64,7 @@ impl MenuItem {
             MenuItem::Stop => "tui.menu_hint.stop",
             MenuItem::Panic => "tui.menu_hint.panic",
             MenuItem::Profiles => "tui.menu_hint.modes",
+            MenuItem::Schedules => "tui.menu_hint.schedules",
             MenuItem::Settings => "tui.menu_hint.settings",
             MenuItem::Doctor => "tui.menu_hint.doctor",
             MenuItem::Quit => "tui.menu_hint.quit",
@@ -234,6 +238,7 @@ pub enum Screen {
     Doctor(Box<DoctorState>),
     PresetPicker(PresetPickerState),
     Panic(Box<screens::panic::PanicState>),
+    Schedules(screens::schedules::SchedulesState),
 }
 
 #[derive(Debug)]
@@ -446,7 +451,11 @@ impl App {
         if matches!(key.code, KeyCode::Char('?'))
             && !matches!(
                 self.screen,
-                Screen::ModeEditor(_) | Screen::Settings(_) | Screen::Doctor(_) | Screen::Panic(_)
+                Screen::ModeEditor(_)
+                    | Screen::Settings(_)
+                    | Screen::Doctor(_)
+                    | Screen::Panic(_)
+                    | Screen::Schedules(_)
             )
         {
             self.globals.help_open = true;
@@ -461,7 +470,12 @@ impl App {
             Screen::Doctor(_) => screens::doctor::handle_doctor_key(self, key).await,
             Screen::PresetPicker(_) => screens::picker::handle_preset_picker_key(self, key).await,
             Screen::Panic(_) => screens::panic::handle_panic_key(self, key).await,
+            Screen::Schedules(_) => screens::schedules::handle_schedules_key(self, key).await,
         }
+    }
+
+    pub fn open_schedules(&mut self) {
+        self.set_screen(Screen::Schedules(screens::schedules::SchedulesState::load()));
     }
 
     pub async fn instantiate_preset(&mut self) {

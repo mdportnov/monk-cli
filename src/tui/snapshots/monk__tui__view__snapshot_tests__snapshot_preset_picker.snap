@@ -10,19 +10,21 @@ expression: "render(&app, 110, 40)"
 │   ◆  Scenarios                                            ││                                               │
 │▶   Deep Work                                              ││Work-session focus: social, video, news and    │
 │      Work-session focus: social, video, news and tech-news││tech-news traps are blocked. Chat stays open   │
-│    Study                                                  ││for Slack.                                     │
-│      Student mode: social, video, games, chat, AI tools an││                                               │
-│    Digital Detox                                          ││blocks                                         │
-│      Long content cleanse: social, video, news, shopping a││  news, productivity_trap, social, video       │
-│    Sleep Mode                                             ││  8 groups · 791 hosts                         │
-│      Evening wind-down: social, video, news and games. Lon││                                               │
-│    Sober                                                  ││limits                                         │
-│      Recovery: adult, betting, crypto, dating, finance doo││  max      3h                                  │
-│                                                           ││  min      25m                                 │
-│   •  Single category                                      ││  cooldown 30m                                 │
-│    No Social                                              ││  day cap  6h                                  │
+│    Morning Routine                                        ││for Slack.                                     │
+│      Auto-starts daily 06:00–09:00 (your laptop's timezone││                                               │
+│    Study                                                  ││blocks                                         │
+│      Student mode: social, video, games, chat, AI tools an││  news, productivity_trap, social, video       │
+│    Digital Detox                                          ││  8 groups · 791 hosts                         │
+│      Long content cleanse: social, video, news, shopping a││                                               │
+│    Sleep Mode                                             ││limits                                         │
+│      Evening wind-down: social, video, news and games. Aut││  max      3h                                  │
+│    Sober                                                  ││  min      25m                                 │
+│      Recovery: adult, betting, crypto, dating, finance doo││  cooldown 30m                                 │
+│                                                           ││  day cap  6h                                  │
+│   •  Single category                                      ││                                               │
+│    No Social                                              ││press enter to instantiate                     │
 │      FB, IG, X, TikTok, Reddit, Threads, VK, OK and the re││                                               │
-│    No Video                                               ││press enter to instantiate                     │
+│    No Video                                               ││                                               │
 │      Anti-binge: YouTube, Netflix, Twitch, Disney+, stream││                                               │
 │    No News                                                ││                                               │
 │      Cuts the doom-scroll loop: BBC, CNN, NYT, Lenta, RBC,││                                               │
@@ -36,8 +38,6 @@ expression: "render(&app, 110, 40)"
 │      Adult content. Long min-duration and cooldown so it a││                                               │
 │    No Gambling                                            ││                                               │
 │      Betting, crypto exchanges and finance-doom feeds — on││                                               │
-│    No Dating                                              ││                                               │
-│      Tinder, Bumble, Hinge, Mamba and rest. Useful when yo││                                               │
 ╰───────────────────────────────────────────────────────────╯╰───────────────────────────────────────────────╯
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                          ↑/↓ select   ⏎ add   esc back

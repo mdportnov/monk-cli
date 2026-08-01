@@ -16,6 +16,8 @@ pub struct Session {
     pub duration: Duration,
     pub hard_mode: bool,
     pub state: SessionState,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,6 +38,7 @@ impl Session {
             duration,
             hard_mode,
             state: SessionState::Running,
+            reason: None,
         }
     }
 

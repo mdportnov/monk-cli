@@ -189,8 +189,16 @@ impl Schedule {
         if self.days.is_empty() {
             return Err(Error::Config("schedule.days must not be empty".into()));
         }
-        Self::parse_hhmm(&self.start)?;
-        Self::parse_hhmm(&self.end)?;
+        let start = Self::parse_hhmm(&self.start)?;
+        let end = Self::parse_hhmm(&self.end)?;
+        // Equal times would silently become a 24h window (end <= start means
+        // "crosses midnight" in the scheduler) — almost never what was meant.
+        if start == end {
+            return Err(Error::Config(format!(
+                "schedule start and end are both `{}` — the window must have a duration",
+                self.start
+            )));
+        }
         if self.tz != "local" {
             self.tz
                 .parse::<chrono_tz::Tz>()
@@ -394,6 +402,18 @@ mod tests {
         cfg.profiles.insert("focus".into(), p);
         cfg.general.default_profile = "focus".into();
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn schedule_rejects_equal_times() {
+        let s = Schedule {
+            enabled: true,
+            days: vec![Weekday::Mon],
+            start: "09:00".into(),
+            end: "09:00".into(),
+            tz: "local".into(),
+        };
+        assert!(s.validate().is_err());
     }
 
     #[test]

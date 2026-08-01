@@ -24,6 +24,7 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Down | KeyCode::Char('j') => home.move_down(),
         KeyCode::Enter => activate_home(app).await,
         KeyCode::Char('m') => app.open_picker(),
+        KeyCode::Char('w') => app.open_schedules(),
         KeyCode::Char('s') => {
             home.selected = 0;
             activate_home(app).await;
@@ -68,29 +69,15 @@ pub fn draw_home(f: &mut Frame, app: &App, home: &HomeState) {
         .split(outer[1]);
 
     draw_menu(f, body[0], app, home);
-    if app.globals.active.is_some() {
-        draw_session_card(f, body[1], app);
-    } else {
-        draw_monk(f, body[1], app);
-    }
+    draw_session_card(f, body[1], app);
     draw_footer(f, outer[2], app);
 }
 
 fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
+    // The upcoming-schedule hint lives in the status box (build_info_lines);
+    // the companion pane stays clean when idle.
     let Some(session) = &app.globals.active else {
         draw_monk(f, area, app);
-        if let Some((name, at)) = &app.globals.next_scheduled {
-            let remaining = (*at - chrono::Utc::now()).to_std().unwrap_or_default();
-            let text = format!("next  {}  in {}", name, fmt_short(remaining));
-            let line = Paragraph::new(Line::from(Span::styled(
-                text,
-                Style::default().fg(ACCENT).add_modifier(Modifier::ITALIC),
-            )))
-            .alignment(Alignment::Center);
-            let y = area.y + area.height.saturating_sub(2);
-            let bar = Rect { x: area.x + 1, y, width: area.width.saturating_sub(2), height: 1 };
-            f.render_widget(line, bar);
-        }
         return;
     };
     let block = Block::default()
@@ -128,6 +115,14 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(Color::White).bg(ALERT).add_modifier(Modifier::BOLD),
         ));
     }
+    let scheduled = session.reason.as_deref() == Some("scheduled");
+    if scheduled {
+        title_spans.push(Span::raw("   "));
+        title_spans.push(Span::styled(
+            format!(" {} ", crate::i18n::t!("tui.home.scheduled_badge")),
+            Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    }
     let title = Paragraph::new(Line::from(title_spans)).alignment(Alignment::Center);
     f.render_widget(title, layout[0]);
 
@@ -158,6 +153,15 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(gauge, layout[2]);
 
     let mut info_lines: Vec<Line> = Vec::new();
+    if scheduled {
+        let ends =
+            session.started_at + chrono::Duration::from_std(session.duration).unwrap_or_default();
+        let ends_local = ends.with_timezone(&chrono::Local).format("%H:%M").to_string();
+        info_lines.push(Line::from(Span::styled(
+            crate::i18n::t!("tui.home.ends_at", time = ends_local).to_string(),
+            Style::default().fg(TEXT),
+        )));
+    }
     if let Some(mode) = &app.globals.active_mode {
         if let Some(cap) = mode.limits.daily_cap {
             let used = mode.stats.used_24h;
@@ -237,7 +241,7 @@ fn draw_session_card(f: &mut Frame, area: Rect, app: &App) {
 fn draw_menu(f: &mut Frame, area: Rect, app: &App, home: &HomeState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(5)])
+        .constraints([Constraint::Min(8), Constraint::Length(6)])
         .split(area);
 
     let has_session = app.globals.active.is_some();
@@ -325,6 +329,19 @@ fn build_info_lines(app: &App, home: &HomeState) -> Vec<Line<'static>> {
         ])),
     }
 
+    if app.globals.active.is_none() {
+        if let Some((name, at)) = &app.globals.next_scheduled {
+            let remaining = fmt_short((*at - chrono::Utc::now()).to_std().unwrap_or_default());
+            let text =
+                crate::i18n::t!("tui.home.next_scheduled", profile = name, remaining = remaining)
+                    .to_string();
+            lines.push(Line::from(vec![
+                Span::styled("⏰ ", Style::default().fg(ACCENT)),
+                Span::styled(text, Style::default().fg(ACCENT)),
+            ]));
+        }
+    }
+
     if let Some(f) = &app.globals.flash {
         let color = match f.level {
             FlashLevel::Success => GLOW,
@@ -378,6 +395,7 @@ async fn activate_home(app: &mut App) {
             }
         }
         MenuItem::Profiles => app.open_picker(),
+        MenuItem::Schedules => app.open_schedules(),
         MenuItem::Settings => app.open_settings().await,
         MenuItem::Doctor => app.open_doctor().await,
         MenuItem::Quit => app.should_quit = true,

@@ -59,6 +59,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Settings(st) => screens::settings::draw_settings(f, app, st.as_ref()),
         Screen::Doctor(st) => screens::doctor::draw_doctor(f, app, st.as_ref()),
         Screen::PresetPicker(state) => screens::picker::draw_preset_picker(f, app, state),
+        Screen::Schedules(state) => screens::schedules::draw_schedules(f, app, state),
         Screen::Panic(st) => {
             // Render the home screen behind the modal so context remains
             // visible (timer, blocklist, etc.).
@@ -119,6 +120,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  s · x · p    start · stop · panic"),
             Line::from("  c            cancel scheduled panic"),
             Line::from("  m            open modes picker"),
+            Line::from("  w            open schedules"),
             Line::from("  1..9         quick-start mode by slot"),
             Line::from("  ? · F1       toggle help"),
             Line::from("  q · esc      quit"),
@@ -206,6 +208,21 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  ↑/↓ · j/k    navigate presets"),
             Line::from("  enter        prefill editor with preset"),
             Line::from("  esc · q      back to picker"),
+        ],
+        Screen::Schedules(_) => vec![
+            Line::from(Span::styled(
+                "schedules",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("  ↑/↓ · j/k    navigate modes"),
+            Line::from("  space        enable / disable schedule"),
+            Line::from("  ⏎ · e        edit schedule (form)"),
+            Line::from("  d            remove schedule"),
+            Line::from("  r            reload"),
+            Line::from("  form: 1..7 / space toggle days · w/a/n presets"),
+            Line::from("  form: ⏎ save · esc cancel"),
+            Line::from("  esc · q      back to home"),
         ],
     };
     let width = 44.min(area.width.saturating_sub(4));
@@ -494,6 +511,48 @@ mod snapshot_tests {
         let mut app = base_app();
         app.screen = Screen::PresetPicker(PresetPickerState::default());
         insta::assert_snapshot!(render(&app, 110, 40));
+    }
+
+    #[test]
+    fn snapshot_schedules() {
+        use crate::config::{Profile, Schedule, Weekday};
+        use crate::tui::screens::schedules::{ScheduleRow, SchedulesState};
+        let mut app = base_app();
+        // Only time-independent rows (disabled schedule / no schedule) so the
+        // snapshot doesn't depend on the wall clock.
+        let with_sch = Profile {
+            schedule: Some(Schedule {
+                enabled: false,
+                days: vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri],
+                start: "09:00".into(),
+                end: "17:00".into(),
+                tz: "local".into(),
+            }),
+            ..Default::default()
+        };
+        let rows = vec![
+            ScheduleRow { name: "deepwork".into(), profile: with_sch },
+            ScheduleRow { name: "reading".into(), profile: Profile::default() },
+        ];
+        app.screen =
+            Screen::Schedules(SchedulesState { rows, selected: 0, error: None, form: None });
+        insta::assert_snapshot!(render(&app, 110, 30));
+    }
+
+    #[test]
+    fn snapshot_schedules_form() {
+        use crate::config::Profile;
+        use crate::tui::screens::schedules::{ScheduleForm, ScheduleRow, SchedulesState};
+        let mut app = base_app();
+        let rows = vec![ScheduleRow { name: "deepwork".into(), profile: Profile::default() }];
+        let form = ScheduleForm::from_profile("deepwork", &Profile::default());
+        app.screen =
+            Screen::Schedules(SchedulesState { rows, selected: 0, error: None, form: Some(form) });
+        insta::assert_snapshot!(render(&app, 110, 30));
+        // The day-cell row is exactly 34 columns; make sure all seven day
+        // toggles stay visible at the 80×20 terminal minimum.
+        let narrow = render(&app, 80, 20);
+        assert!(narrow.contains("Su"), "weekend toggles must be visible at min width");
     }
 
     #[test]

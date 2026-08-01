@@ -5,19 +5,20 @@ site_groups = [
     "ru.video",
     "global.news",
     "ru.news",
-    "global.games",
-    "ru.games",
+    "global.chat",
+    "ru.chat",
+    "global.productivity_trap",
+    "ru.productivity_trap",
 ]
 sites = []
 apps = []
 
 [limits]
-max_duration = "14h"
-cooldown = "30m"
+max_duration = "4h"
 
 [schedule]
 enabled = true
 days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-start = "22:30"
-end = "07:00"
+start = "06:00"
+end = "09:00"
 tz = "local"
