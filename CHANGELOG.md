@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-08-01
+
+### Added
+
+- **Ctrl+C quits the TUI** — raw mode swallows SIGINT, so previously the
+  key did nothing anywhere in the interface.
+- Session timer turns amber during the final minute.
+
+### Changed
+
+- Transition effects now render at ~60fps (event poll drops to 16ms while
+  an animation is live; idle cadence unchanged at 120ms).
+- Quitting the TUI no longer waits for an in-flight daemon refresh.
+
+### Fixed
+
+- Self-update hardening: large downloads are no longer cut off after 15s
+  on slow links; symlinked installs replace the real binary instead of the
+  symlink; a locked `.old` binary on Windows (daemon not yet restarted)
+  no longer blocks the next update; elevation hint is platform-specific.
+
 ## [0.0.2] - 2026-08-01
 
 ### Added
