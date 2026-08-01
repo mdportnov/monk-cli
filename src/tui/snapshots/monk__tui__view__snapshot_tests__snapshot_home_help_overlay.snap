@@ -17,15 +17,15 @@ expression: "render(&app, 90, 28)"
 │                      │  c            cancel scheduled panic     │       \              │
 │                      │  m            open modes picker          │  ___   |             │
 │                      │  w            open schedules             │ /   \  |             │
-│                      │  1..9         quick-start mode by slot   │ \___/  |             │
-│                      │  ? · F1       toggle help                │       /              │
-│                      │  q · esc      quit                       │________\             │
-╰──────────────────────│                                          │_________)            │
+│                      │  u            check for updates          │ \___/  |             │
+│                      │  1..9         quick-start mode by slot   │       /              │
+│                      │  ? · F1       toggle help                │________\             │
+╰──────────────────────│  q · esc      quit                       │_________)            │
 ╭ status ──────────────│                                          │~~~~~~~               │
-│daemon  running       ╰──────────────────────────────────────────╯                      │
-│session idle                                    ││             breathe in …             │
+│daemon  running       │                                          │                      │
+│session idle          ╰──────────────────────────────────────────╯athe in …             │
 │pick a mode and start a focus session           ││                                      │
 │                                                ││                                      │
 ╰────────────────────────────────────────────────╯╰──────────────────────────────────────╯
 ──────────────────────────────────────────────────────────────────────────────────────────
-                     ↑/↓ move   ⏎ select   s start   m modes   q quit
+ monk v0.0.1         ↑/↓ move   ⏎ select   s start   m modes   q quit

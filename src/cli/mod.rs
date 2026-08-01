@@ -115,6 +115,11 @@ enum Command {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    #[command(about = "Check GitHub releases for a new version and self-update")]
+    Update {
+        #[arg(long, help = "Only check and report; do not download or install")]
+        check: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -332,6 +337,7 @@ pub async fn run() -> Result<()> {
             clap_complete::generate(shell, &mut Cli::command(), "monk", &mut std::io::stdout());
             Ok(())
         }
+        Command::Update { check } => commands::update(check).await,
     };
     result.map_err(miette::Report::from)
 }
@@ -345,6 +351,7 @@ fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> crate::Re
             | Command::Daemon(_)
             | Command::Lang { .. }
             | Command::Doctor { .. }
+            | Command::Update { .. }
     ) {
         return Ok(());
     }

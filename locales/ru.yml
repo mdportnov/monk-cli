@@ -121,6 +121,15 @@ panic:
   scheduled: "Выход запланирован. Сессия завершится в {at}."
   cancelled: "Запрос выхода отменён."
 
+update:
+  checking: "проверяю github releases…"
+  up_to_date: "monk v%{current} актуален (последний релиз: v%{latest})"
+  available: "доступно обновление: v%{current} → v%{latest}"
+  run_hint: "выполните `monk update`, чтобы скачать и установить"
+  downloading: "скачиваю v%{latest} и проверяю контрольную сумму…"
+  updated: "обновлено до v%{version} (%{path}) — перезапустите monk"
+  daemon_hint: "если установлен демон, перезапустите и его: `monk daemon stop && monk daemon start`"
+
 tui:
   narrow_terminal: "Терминал слишком маленький — увеличь до минимум %{min_w}×%{min_h} (сейчас %{cur_w}×%{cur_h})"
   flash:
@@ -326,6 +335,12 @@ tui:
     scheduled_badge: "⏰ ПО РАСПИСАНИЮ"
     next_scheduled: "далее  %{profile}  через %{remaining}"
     ends_at: "закончится в %{time}"
+  update:
+    checking: "проверяю обновления…"
+    up_to_date: "monk v%{current} актуален"
+    available: "доступна v%{latest} — выполните `monk update`"
+    failed: "проверка обновлений не удалась: %{error}"
+    badge: "⬆ доступна v%{latest} · monk update"
   schedules:
     title: "расписания"
     details: "детали"

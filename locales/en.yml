@@ -121,6 +121,15 @@ panic:
   scheduled: "Panic scheduled. Session will release at {at}."
   cancelled: "Panic request cancelled."
 
+update:
+  checking: "checking github releases…"
+  up_to_date: "monk v%{current} is up to date (latest release: v%{latest})"
+  available: "update available: v%{current} → v%{latest}"
+  run_hint: "run `monk update` to download and install it"
+  downloading: "downloading v%{latest} and verifying checksum…"
+  updated: "updated to v%{version} (%{path}) — restart monk to use it"
+  daemon_hint: "if the daemon is installed, restart it too: `monk daemon stop && monk daemon start`"
+
 tui:
   narrow_terminal: "Terminal too small — resize to at least %{min_w}×%{min_h} (now %{cur_w}×%{cur_h})"
   flash:
@@ -326,6 +335,12 @@ tui:
     scheduled_badge: "⏰ SCHEDULED"
     next_scheduled: "next  %{profile}  in %{remaining}"
     ends_at: "ends at %{time}"
+  update:
+    checking: "checking for updates…"
+    up_to_date: "monk v%{current} is up to date"
+    available: "v%{latest} available — run `monk update`"
+    failed: "update check failed: %{error}"
+    badge: "⬆ v%{latest} available · monk update"
   schedules:
     title: "schedules"
     details: "details"

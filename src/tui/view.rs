@@ -121,6 +121,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App) {
             Line::from("  c            cancel scheduled panic"),
             Line::from("  m            open modes picker"),
             Line::from("  w            open schedules"),
+            Line::from("  u            check for updates"),
             Line::from("  1..9         quick-start mode by slot"),
             Line::from("  ? · F1       toggle help"),
             Line::from("  q · esc      quit"),
@@ -385,6 +386,30 @@ pub fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(DIM)));
     f.render_widget(p, area);
+
+    // Build version + update badge in the footer's bottom-left corner, on
+    // top of the centered help line's row.
+    let mut spans = vec![Span::styled(
+        format!("monk v{}", crate::update::CURRENT_VERSION),
+        Style::default().fg(DIM),
+    )];
+    if let Some(latest) = &app.globals.update_available {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            crate::i18n::t!("tui.update.badge", latest = latest).to_string(),
+            Style::default().fg(GLOW).add_modifier(Modifier::BOLD),
+        ));
+    }
+    let width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let rect = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: (width as u16).min(area.width.saturating_sub(2)),
+        height: 1,
+    };
+    if area.height > 1 {
+        f.render_widget(Paragraph::new(Line::from(spans)), rect);
+    }
 }
 
 #[cfg(test)]

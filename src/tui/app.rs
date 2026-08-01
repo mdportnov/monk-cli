@@ -307,6 +307,8 @@ pub struct Globals {
     pub help_open: bool,
     pub cached_modes: Vec<ModeSummary>,
     pub next_scheduled: Option<(String, chrono::DateTime<chrono::Utc>)>,
+    /// Set when a newer release is known (value = latest version).
+    pub update_available: Option<String>,
 }
 
 /// Live snapshot of daemon-side state, updated by the refresh worker.
@@ -344,6 +346,27 @@ impl Globals {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum UpdateCheckState {
+    #[default]
+    Idle,
+    Checking,
+    Done {
+        latest: String,
+        newer: bool,
+    },
+    Failed(String),
+}
+
+/// Shared slot the background update-check task writes into; the render
+/// loop mirrors it into `Globals` on every frame.
+#[derive(Debug, Default)]
+pub struct UpdateSlot {
+    pub state: UpdateCheckState,
+    /// True when the check was requested manually — completion should flash.
+    pub announce: bool,
+}
+
 #[derive(Default)]
 pub struct App {
     pub screen: Screen,
@@ -353,6 +376,7 @@ pub struct App {
     pub last_effect_tick: Option<std::time::Instant>,
     pub snapshot: std::sync::Arc<parking_lot::RwLock<Snapshot>>,
     pub refresh_kick: std::sync::Arc<tokio::sync::Notify>,
+    pub update_slot: std::sync::Arc<parking_lot::Mutex<UpdateSlot>>,
 }
 
 impl std::fmt::Debug for App {
@@ -419,6 +443,68 @@ impl App {
         }
         self.globals.cached_modes = s.cached_modes;
         self.globals.next_scheduled = s.next_scheduled;
+        self.pull_update_state();
+    }
+
+    fn pull_update_state(&mut self) {
+        let mut slot = self.update_slot.lock();
+        let state = slot.state.clone();
+        match &state {
+            UpdateCheckState::Done { latest, newer } => {
+                self.globals.update_available = newer.then(|| latest.clone());
+                if slot.announce {
+                    slot.announce = false;
+                    if *newer {
+                        self.globals.set_flash(
+                            crate::i18n::t!("tui.update.available", latest = latest).to_string(),
+                            FlashLevel::Info,
+                        );
+                    } else {
+                        let cur = crate::update::CURRENT_VERSION;
+                        self.globals.set_flash(
+                            crate::i18n::t!("tui.update.up_to_date", current = cur).to_string(),
+                            FlashLevel::Success,
+                        );
+                    }
+                }
+            }
+            UpdateCheckState::Failed(err) => {
+                if slot.announce {
+                    slot.announce = false;
+                    self.globals.set_flash(
+                        crate::i18n::t!("tui.update.failed", error = err.clone()).to_string(),
+                        FlashLevel::Warn,
+                    );
+                }
+            }
+            UpdateCheckState::Idle | UpdateCheckState::Checking => {}
+        }
+    }
+
+    /// Kick off a release check on a blocking thread. `force` bypasses the
+    /// 24h cache (manual `u` key); `announce` flashes the outcome.
+    pub fn spawn_update_check(&mut self, force: bool, announce: bool) {
+        {
+            let mut slot = self.update_slot.lock();
+            if slot.state == UpdateCheckState::Checking {
+                return;
+            }
+            slot.state = UpdateCheckState::Checking;
+            slot.announce = announce;
+        }
+        if announce {
+            self.globals
+                .set_flash(crate::i18n::t!("tui.update.checking").to_string(), FlashLevel::Info);
+        }
+        let slot = self.update_slot.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = crate::update::check(force);
+            let mut slot = slot.lock();
+            slot.state = match result {
+                Ok(s) => UpdateCheckState::Done { latest: s.latest, newer: s.newer },
+                Err(e) => UpdateCheckState::Failed(e.to_string()),
+            };
+        });
     }
 
     /// Ask the background worker to refresh ASAP — called after actions that
@@ -1168,6 +1254,9 @@ async fn main_loop<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> 
         spawn_refresh_worker(app.snapshot.clone(), app.refresh_kick.clone(), shutdown.clone());
     // Kick once so we have data before the first frame.
     app.refresh_kick.notify_one();
+    // Passive release check: served from the 24h cache when fresh, so this
+    // touches the network at most once a day.
+    app.spawn_update_check(false, false);
 
     loop {
         let now = std::time::Instant::now();

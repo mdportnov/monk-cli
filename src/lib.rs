@@ -18,5 +18,6 @@ pub mod sites;
 pub mod storage;
 pub mod telemetry;
 pub mod tui;
+pub mod update;
 
 pub use error::{Error, Result};

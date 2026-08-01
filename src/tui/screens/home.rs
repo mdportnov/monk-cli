@@ -25,6 +25,7 @@ pub async fn handle_home_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => activate_home(app).await,
         KeyCode::Char('m') => app.open_picker(),
         KeyCode::Char('w') => app.open_schedules(),
+        KeyCode::Char('u') => app.spawn_update_check(true, true),
         KeyCode::Char('s') => {
             home.selected = 0;
             activate_home(app).await;

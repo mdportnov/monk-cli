@@ -677,3 +677,29 @@ pub async fn doctor(json: bool, fix: bool) -> Result<()> {
     }
     Ok(())
 }
+
+pub async fn update(check_only: bool) -> Result<()> {
+    println!("{}", crate::i18n::t!("update.checking"));
+    let status = tokio::task::spawn_blocking(|| crate::update::check(true))
+        .await
+        .map_err(|e| crate::Error::Other(e.to_string()))??;
+    let cur = crate::update::CURRENT_VERSION;
+    let latest = status.latest.clone();
+    if !status.newer {
+        println!("{}", crate::i18n::t!("update.up_to_date", current = cur, latest = latest));
+        return Ok(());
+    }
+    println!("{}", crate::i18n::t!("update.available", current = cur, latest = latest));
+    if check_only {
+        println!("{}", crate::i18n::t!("update.run_hint"));
+        return Ok(());
+    }
+    println!("{}", crate::i18n::t!("update.downloading", latest = latest));
+    let outcome = tokio::task::spawn_blocking(crate::update::perform_update)
+        .await
+        .map_err(|e| crate::Error::Other(e.to_string()))??;
+    let path = outcome.exe.display().to_string();
+    println!("{}", crate::i18n::t!("update.updated", version = outcome.version, path = path));
+    println!("{}", crate::i18n::t!("update.daemon_hint"));
+    Ok(())
+}
