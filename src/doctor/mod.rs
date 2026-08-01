@@ -53,6 +53,8 @@ pub enum ActionKind {
     ReinstallService,
     InstallCompletions,
     PrintPathHint,
+    PruneStaleAppRefs,
+    ResetConfig,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -73,6 +75,8 @@ impl ActionKind {
             ActionKind::ReinstallService => actions::reinstall_service(),
             ActionKind::InstallCompletions => actions::install_completions(),
             ActionKind::PrintPathHint => actions::print_path_hint(),
+            ActionKind::PruneStaleAppRefs => actions::prune_stale_app_refs(),
+            ActionKind::ResetConfig => actions::reset_config(),
         }
     }
 }
@@ -186,6 +190,7 @@ pub async fn run_fix() -> crate::Result<()> {
                 ActionKind::ReinstallService
                     | ActionKind::InstallCompletions
                     | ActionKind::PrintPathHint
+                    | ActionKind::PruneStaleAppRefs
             ) {
                 continue;
             }

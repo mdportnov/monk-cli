@@ -1190,19 +1190,39 @@ fn hosts_writable() -> bool {
 
 async fn ensure_daemon() {
     let expected = env!("CARGO_PKG_VERSION");
+    let system = crate::paths::system_mode();
     match ipc::send(&Request::Ping).await {
         Ok(Response::Pong { version }) if version == expected => return,
-        Ok(Response::Pong { .. }) => {
+        Ok(Response::Pong { version }) => {
+            if system {
+                // The system daemon binary can only be replaced with root.
+                // Shutting it down here just makes launchd respawn the same
+                // old binary (dropping the block for a moment) — keep talking
+                // to it and tell the user how to actually update.
+                eprintln!(
+                    "monk: system daemon is v{version}, cli is v{expected} — \
+                     update it with `sudo monk service install`"
+                );
+                return;
+            }
             let _ = ipc::send(&Request::Shutdown).await;
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
         _ => {}
     }
 
-    if crate::paths::system_mode() {
+    if system {
+        // launchd KeepAlive respawns monkd within ~ThrottleInterval (5s);
+        // wait it out before declaring the daemon dead.
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if matches!(ipc::send(&Request::Ping).await, Ok(Response::Pong { .. })) {
+                return;
+            }
+        }
         eprintln!(
             "monk: daemon unreachable. \
-             reload it with `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.monk.monkd.plist`"
+             restart it with `sudo launchctl kickstart -k system/dev.monk.monkd`"
         );
         return;
     }

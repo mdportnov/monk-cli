@@ -137,6 +137,50 @@ fn zshrc_line_uses_fpath_dir(line: &str, dir: &str) -> bool {
     trimmed[idx..].contains(dir)
 }
 
+/// Remove references to uninstalled apps from every profile in config.toml.
+///
+/// Forces a fresh app scan first — pruning against a stale cache could drop
+/// ids for apps the user reinstalled since the last scan. Only direct
+/// `profile.apps` entries are touched; brand-derived ids live in bundled
+/// presets, not in the user's config.
+pub(crate) fn prune_stale_app_refs() -> std::result::Result<String, String> {
+    let mut cfg = crate::config::Config::load().map_err(|e| e.to_string())?;
+    let cache = crate::apps::load_or_scan(true).map_err(|e| format!("app scan failed: {e}"))?;
+    let mut removed = Vec::new();
+    for (name, profile) in cfg.profiles.iter_mut() {
+        let stale = crate::apps::resolve(&profile.apps, &cache).stale;
+        if stale.is_empty() {
+            continue;
+        }
+        profile.apps.retain(|id| !stale.contains(id));
+        removed.push(format!("{name}: removed {}", stale.join(", ")));
+    }
+    if removed.is_empty() {
+        return Ok("nothing to remove — a fresh scan found all referenced apps installed".into());
+    }
+    cfg.save().map_err(|e| e.to_string())?;
+    let mut msg = removed.join("\n");
+    msg.push_str("\nconfig.toml updated");
+    Ok(msg)
+}
+
+/// Move a broken config.toml aside (timestamped backup) and write a fresh
+/// default config so monk becomes usable again without hand-editing toml.
+pub(crate) fn reset_config() -> std::result::Result<String, String> {
+    let path = crate::paths::config_file().map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Err("config file does not exist — nothing to reset".into());
+    }
+    let backup =
+        path.with_extension(format!("toml.bak-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
+    fs_err::rename(&path, &backup).map_err(|e| e.to_string())?;
+    crate::config::Config::default().save().map_err(|e| e.to_string())?;
+    Ok(format!(
+        "backed up old config → {}\nwrote a fresh default config — your profiles from the backup can be copied back by hand",
+        backup.display()
+    ))
+}
+
 pub(crate) fn print_path_hint() -> std::result::Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let parent = exe.parent().ok_or("binary has no parent dir")?.to_path_buf();

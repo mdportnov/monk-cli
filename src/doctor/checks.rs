@@ -147,7 +147,11 @@ pub(crate) fn check_config() -> Check {
             Check::new("config", "config", Status::Ok, "loaded").with_extras(extras)
         }
         Err(e) => Check::new("config", "config", Status::Fail, format!("{e}"))
-            .with_hint("fix or delete the file at `path.config`"),
+            .with_hint("press [R] to back it up and start fresh, or [o] to edit it by hand")
+            .with_actions(vec![
+                Action { key: 'R', label: "backup & reset config", kind: ActionKind::ResetConfig },
+                Action { key: 'o', label: "open config", kind: ActionKind::OpenConfig },
+            ]),
     }
 }
 
@@ -182,16 +186,13 @@ pub(crate) fn check_profile_apps() -> Check {
             )
         }
     };
+    // Only direct `profile.apps` entries count: brand presets bundle every
+    // known app of a brand, so brand-derived ids pointing at apps the user
+    // never installed are expected and not actionable.
     let mut extras = Vec::new();
     let mut stale_total = 0usize;
     for (name, profile) in &cfg.profiles {
-        let mut ids = profile.apps.clone();
-        if !profile.brands.is_empty() {
-            if let Ok(resolved) = crate::brands::resolve(&profile.brands) {
-                ids.extend(resolved.apps.iter().cloned());
-            }
-        }
-        let resolution = crate::apps::resolve(&ids, &cache);
+        let resolution = crate::apps::resolve(&profile.apps, &cache);
         if !resolution.stale.is_empty() {
             stale_total += resolution.stale.len();
             extras.push(format!("{name}: {}", resolution.stale.join(", ")));
@@ -211,13 +212,14 @@ pub(crate) fn check_profile_apps() -> Check {
             Status::Warn,
             format!("{stale_total} reference(s) to uninstalled apps"),
         )
-        .with_hint("remove stale ids from config.toml or reinstall the app — the daemon skips them")
+        .with_hint(
+            "harmless — the daemon skips them; press [f] (or run `monk doctor --fix`) to clean up automatically",
+        )
         .with_extras(extras)
-        .with_actions(vec![Action {
-            key: 'o',
-            label: "open config",
-            kind: ActionKind::OpenConfig,
-        }])
+        .with_actions(vec![
+            Action { key: 'f', label: "remove stale refs", kind: ActionKind::PruneStaleAppRefs },
+            Action { key: 'o', label: "open config", kind: ActionKind::OpenConfig },
+        ])
     }
 }
 
@@ -238,9 +240,7 @@ pub(crate) fn check_pidfile() -> Check {
             Ok(None) => {
                 let mut c = Check::new("daemon", "daemon", Status::Warn, "not running");
                 if in_system_mode {
-                    c = c.with_hint(
-                        "reload: `sudo launchctl bootstrap system /Library/LaunchDaemons/dev.monk.monkd.plist`",
-                    );
+                    c = c.with_hint("restart: `sudo launchctl kickstart -k system/dev.monk.monkd`");
                 } else {
                     c = c
                         .with_hint("start it with `monk daemon` (or `sudo monk service install`)")
@@ -259,7 +259,20 @@ pub(crate) async fn check_ipc() -> Check {
     let start = Action { key: 's', label: "start daemon", kind: ActionKind::StartDaemon };
     match ipc::send(&Request::Ping).await {
         Ok(Response::Pong { version }) => {
-            Check::new("ipc", "ipc", Status::Ok, format!("daemon v{version} responds"))
+            let cli = env!("CARGO_PKG_VERSION");
+            if version == cli {
+                Check::new("ipc", "ipc", Status::Ok, format!("daemon v{version} responds"))
+            } else {
+                Check::new(
+                    "ipc",
+                    "ipc",
+                    Status::Warn,
+                    format!("daemon v{version} responds, but cli is v{cli}"),
+                )
+                .with_hint(
+                    "the installed daemon binary is outdated — update it with `sudo monk service install`",
+                )
+            }
         }
         Ok(other) => Check::new("ipc", "ipc", Status::Warn, format!("unexpected: {other:?}")),
         Err(e) => Check::new("ipc", "ipc", Status::Fail, format!("send failed: {e}"))
@@ -571,12 +584,43 @@ pub(crate) fn check_completions() -> Check {
     let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) else {
         return Check::new("env.completions", "completions", Status::Skipped, "no home dir");
     };
-    let (label, candidate) = match shell.as_deref() {
-        Some("zsh") => ("zsh", home.join(".local/share/zsh/site-functions").join("_monk")),
-        Some("bash") => {
-            ("bash", home.join(".local/share/bash-completion/completions").join("monk"))
+    // First candidate is where `[c]`/`--fix` installs; the rest are common
+    // spots (homebrew, distro packages, oh-my-zsh, hand installs) so we don't
+    // warn when completions are already set up some other way.
+    let (label, candidates): (&str, Vec<std::path::PathBuf>) = match shell.as_deref() {
+        Some("zsh") => {
+            let mut c = vec![
+                home.join(".local/share/zsh/site-functions/_monk"),
+                home.join(".zfunc/_monk"),
+                home.join(".oh-my-zsh/completions/_monk"),
+                std::path::PathBuf::from("/opt/homebrew/share/zsh/site-functions/_monk"),
+                std::path::PathBuf::from("/usr/local/share/zsh/site-functions/_monk"),
+                std::path::PathBuf::from("/usr/share/zsh/site-functions/_monk"),
+            ];
+            if let Ok(fpath) = std::env::var("FPATH") {
+                c.extend(std::env::split_paths(&fpath).map(|d| d.join("_monk")));
+            }
+            ("zsh", c)
         }
-        Some("fish") => ("fish", home.join(".config/fish/completions").join("monk.fish")),
+        Some("bash") => (
+            "bash",
+            vec![
+                home.join(".local/share/bash-completion/completions/monk"),
+                std::path::PathBuf::from("/opt/homebrew/etc/bash_completion.d/monk"),
+                std::path::PathBuf::from("/usr/local/etc/bash_completion.d/monk"),
+                std::path::PathBuf::from("/etc/bash_completion.d/monk"),
+                std::path::PathBuf::from("/usr/share/bash-completion/completions/monk"),
+            ],
+        ),
+        Some("fish") => (
+            "fish",
+            vec![
+                home.join(".config/fish/completions/monk.fish"),
+                std::path::PathBuf::from("/opt/homebrew/share/fish/vendor_completions.d/monk.fish"),
+                std::path::PathBuf::from("/usr/local/share/fish/vendor_completions.d/monk.fish"),
+                std::path::PathBuf::from("/usr/share/fish/vendor_completions.d/monk.fish"),
+            ],
+        ),
         other => {
             return Check::new(
                 "env.completions",
@@ -586,21 +630,22 @@ pub(crate) fn check_completions() -> Check {
             );
         }
     };
-    if candidate.exists() {
+    if let Some(found) = candidates.iter().find(|p| p.exists()) {
         Check::new(
             "env.completions",
             "completions",
             Status::Ok,
-            format!("{label}: {}", candidate.display()),
+            format!("{label}: {}", found.display()),
         )
     } else {
         Check::new(
             "env.completions",
             "completions",
             Status::Warn,
-            format!("{label} completions not installed at {}", candidate.display()),
+            format!("{label} completions not installed (tab-completion for monk commands)"),
         )
-        .with_hint("install with `monk doctor --fix` or `monk completions <SHELL> > …`")
+        .with_hint("press [c] to install now — no manual steps needed")
+        .with_extras(vec![format!("will install to {}", candidates[0].display())])
         .with_actions(vec![Action {
             key: 'c',
             label: "install completions",
