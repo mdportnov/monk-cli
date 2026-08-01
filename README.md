@@ -268,4 +268,10 @@ The repo enforces `unsafe_code = "deny"` and a strict clippy profile. CI runs on
 
 ## License
 
-Dual-licensed under MIT or Apache-2.0.
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
+---
+
+<p align="center">
+  Built by <a href="https://mikeportnov.com/en/projects">Mike Portnov</a> · <a href="https://github.com/mdportnov">@mdportnov</a>
+</p>

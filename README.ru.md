@@ -267,4 +267,10 @@ just run init   # cargo run -- init
 
 ## Лицензия
 
-Dual-licensed: MIT или Apache-2.0.
+Двойная лицензия: [MIT](LICENSE-MIT) или [Apache-2.0](LICENSE-APACHE) на выбор.
+
+---
+
+<p align="center">
+  Автор – <a href="https://mikeportnov.com/ru/projects">Mike Portnov</a> · <a href="https://github.com/mdportnov">@mdportnov</a>
+</p>
