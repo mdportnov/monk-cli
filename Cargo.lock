@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "monk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_cmd",
  "blake3",

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-01
+
+### Added
+
+- **Doctor auto-fixes for config problems**:
+  - `profile app refs` warning now has a `[f] remove stale refs` action —
+    rescans installed apps and prunes dead ids from `config.toml`
+    automatically (also runs via `monk doctor --fix`).
+  - A broken `config.toml` offers `[R] backup & reset config` — the old
+    file is kept as a timestamped `.bak` and a fresh default config is
+    written.
+- Doctor `ipc` check warns when the installed system daemon is older than
+  the cli, with the exact update command.
+
+### Changed
+
+- Doctor `completions` check probes common install locations (homebrew,
+  oh-my-zsh, `$FPATH`, distro dirs) before warning, so completions
+  installed outside monk's default path no longer trigger a false warning.
+- Profile references to uninstalled apps that come from brand presets no
+  longer warn — presets naturally list apps you may not have installed.
+
+### Fixed
+
+- **`monk tui` no longer shuts down the system daemon on a version
+  mismatch** — it cannot replace the root-owned binary, so launchd just
+  respawned the same old version while the block briefly dropped and a
+  bogus "daemon unreachable" error was printed. The tui now keeps talking
+  to the running daemon and tells you to run `sudo monk service install`.
+- When the system daemon is genuinely unreachable, the tui waits out the
+  launchd KeepAlive respawn (~6s) before erroring, and the suggested
+  recovery command is now `sudo launchctl kickstart -k
+  system/dev.monk.monkd` — the previously suggested `launchctl bootstrap`
+  fails with "error 5" while the service is still loaded.
+
 ## [0.1.0] - 2026-08-01
 
 ### Added
