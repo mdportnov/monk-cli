@@ -1,15 +1,37 @@
-# monk
+<p align="center">
+  <img src="assets/logo.svg" width="116" alt="Логотип monk" />
+</p>
 
-Кроссплатформенный блокировщик отвлечений на Rust. Один бинарник, один демон, без лишнего — блокируй приложения и сайты, запускай жёсткие сессии и возвращай себе внимание.
+<h1 align="center">monk</h1>
 
-> 🇬🇧 English version: [README.md](./README.md)
+<p align="center">
+  <b>фокус без компромиссов.</b><br/>
+  Кроссплатформенный CLI-блокировщик отвлечений на Rust.<br/>
+  Один бинарник, один демон, без лишнего – блокируй приложения и сайты,<br/>
+  запускай жёсткие сессии и возвращай себе внимание.
+</p>
 
-```
-  ┏┳┓ ┏┓ ┏┓ ┃┏
-  ┃┃┃ ┃┃ ┃┃ ┣┻┓
-  ┛ ┗ ┗┛ ┛┗ ┛ ┗
-  фокус без компромиссов.
-```
+<p align="center">
+  <a href="https://github.com/mdportnov/monk-cli/actions/workflows/ci.yml"><img src="https://github.com/mdportnov/monk-cli/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/mdportnov/monk-cli/actions/workflows/release.yml"><img src="https://github.com/mdportnov/monk-cli/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
+  <img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue.svg" alt="Лицензия: MIT OR Apache-2.0" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-5a5a5a" alt="Платформы" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-1.82%2B-DEA584?logo=rust&logoColor=black" alt="Rust" />
+  <img src="https://img.shields.io/badge/TUI-ratatui-7aa2f7" alt="ratatui" />
+  <img src="https://img.shields.io/badge/async-tokio-orange" alt="tokio" />
+  <img src="https://img.shields.io/badge/stats-SQLite-044a64?logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/unsafe-forbidden-success" alt="deny(unsafe_code)" />
+  <img src="https://img.shields.io/badge/i18n-EN%20%2F%20RU-bb9af7" alt="EN/RU" />
+</p>
+
+<p align="center">
+  🇬🇧 English version: <a href="./README.md">README.md</a>
+</p>
+
+---
 
 ## Ключевые возможности
 
