@@ -52,7 +52,7 @@ blake3 = "1.5"
 hex = "0.4"
 machine-uid = "0.5"
 rand = "0.9.2"
-plist = "1.8.0"
+plist = "1.10.0"
 lnk = "=0.6.3"
 chrono-tz = "0.10.4"
 
