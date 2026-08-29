@@ -748,3 +748,37 @@ fn refresh_service_after_update() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+pub fn menubar_run() -> Result<()> {
+    crate::menubar::run()
+}
+
+#[cfg(target_os = "macos")]
+pub fn menubar_install() -> Result<()> {
+    crate::menubar::install_agent()?;
+    println!("{}", crate::i18n::t!("menubar.installed"));
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn menubar_uninstall() -> Result<()> {
+    crate::menubar::uninstall_agent()?;
+    println!("{}", crate::i18n::t!("menubar.uninstalled"));
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_run() -> Result<()> {
+    Err(Error::Other(crate::i18n::t!("menubar.macos_only").to_string()))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_install() -> Result<()> {
+    menubar_run()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_uninstall() -> Result<()> {
+    menubar_run()
+}

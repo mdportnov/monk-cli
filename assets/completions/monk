@@ -40,6 +40,9 @@ _monk() {
             monk,lang)
                 cmd="monk__lang"
                 ;;
+            monk,menubar)
+                cmd="monk__menubar"
+                ;;
             monk,panic)
                 cmd="monk__panic"
                 ;;
@@ -175,6 +178,9 @@ _monk() {
             monk__help,lang)
                 cmd="monk__help__lang"
                 ;;
+            monk__help,menubar)
+                cmd="monk__help__menubar"
+                ;;
             monk__help,panic)
                 cmd="monk__help__panic"
                 ;;
@@ -235,6 +241,12 @@ _monk() {
             monk__help__daemon,uninstall)
                 cmd="monk__help__daemon__uninstall"
                 ;;
+            monk__help__menubar,install)
+                cmd="monk__help__menubar__install"
+                ;;
+            monk__help__menubar,uninstall)
+                cmd="monk__help__menubar__uninstall"
+                ;;
             monk__help__profile,create)
                 cmd="monk__help__profile__create"
                 ;;
@@ -252,6 +264,24 @@ _monk() {
                 ;;
             monk__help__profile,show)
                 cmd="monk__help__profile__show"
+                ;;
+            monk__menubar,help)
+                cmd="monk__menubar__help"
+                ;;
+            monk__menubar,install)
+                cmd="monk__menubar__install"
+                ;;
+            monk__menubar,uninstall)
+                cmd="monk__menubar__uninstall"
+                ;;
+            monk__menubar__help,help)
+                cmd="monk__menubar__help__help"
+                ;;
+            monk__menubar__help,install)
+                cmd="monk__menubar__help__install"
+                ;;
+            monk__menubar__help,uninstall)
+                cmd="monk__menubar__help__uninstall"
                 ;;
             monk__profile,create)
                 cmd="monk__profile__create"
@@ -302,7 +332,7 @@ _monk() {
 
     case "${cmd}" in
         monk)
-            opts="-h -V --locale --help --version init tui lang start stop panic status profiles profile apps stats doctor config daemon completions update help"
+            opts="-h -V --locale --help --version init tui lang start stop panic status profiles profile apps stats doctor config daemon menubar completions update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -846,7 +876,7 @@ _monk() {
             return 0
             ;;
         monk__help)
-            opts="init tui lang start stop panic status profiles profile apps stats doctor config daemon completions update help"
+            opts="init tui lang start stop panic status profiles profile apps stats doctor config daemon menubar completions update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1125,6 +1155,48 @@ _monk() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        monk__help__menubar)
+            opts="install uninstall"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__help__menubar__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__help__menubar__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         monk__help__panic)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1376,6 +1448,116 @@ _monk() {
                 return 0
             fi
             case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar)
+            opts="-h -V --locale --help --version install uninstall help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --locale)
+                    COMPREPLY=($(compgen -W "en ru" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__help)
+            opts="install uninstall help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__help__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__help__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__help__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__install)
+            opts="-h -V --locale --help --version"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --locale)
+                    COMPREPLY=($(compgen -W "en ru" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__menubar__uninstall)
+            opts="-h -V --locale --help --version"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --locale)
+                    COMPREPLY=($(compgen -W "en ru" -- "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;

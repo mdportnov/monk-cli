@@ -110,6 +110,11 @@ enum Command {
     Config(ConfigCmd),
     #[command(subcommand, about = "Manage the background daemon", alias = "service")]
     Daemon(DaemonCmd),
+    #[command(about = "Run the menu bar companion app (macOS only)")]
+    Menubar {
+        #[command(subcommand)]
+        cmd: Option<MenubarCmd>,
+    },
     #[command(about = "Generate shell completions")]
     Completions {
         #[arg(value_enum)]
@@ -199,6 +204,14 @@ enum AppsCmd {
     },
     #[command(about = "Force a rescan of installed applications")]
     Scan,
+}
+
+#[derive(Debug, Subcommand)]
+enum MenubarCmd {
+    #[command(about = "Install the menu bar app as a login item")]
+    Install,
+    #[command(about = "Remove the menu bar app login item")]
+    Uninstall,
 }
 
 #[derive(Debug, Subcommand)]
@@ -336,6 +349,11 @@ pub async fn run() -> Result<()> {
         Command::Daemon(DaemonCmd::Status) => commands::daemon_status().await,
         Command::Daemon(DaemonCmd::Install { reinstall }) => commands::daemon_install(reinstall),
         Command::Daemon(DaemonCmd::Uninstall { purge }) => commands::daemon_uninstall(purge).await,
+        Command::Menubar { cmd } => match cmd {
+            None => commands::menubar_run(),
+            Some(MenubarCmd::Install) => commands::menubar_install(),
+            Some(MenubarCmd::Uninstall) => commands::menubar_uninstall(),
+        },
         Command::Completions { shell } => {
             use clap::CommandFactory;
             clap_complete::generate(shell, &mut Cli::command(), "monk", &mut std::io::stdout());
@@ -353,6 +371,7 @@ async fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> cra
         Command::Init { .. }
             | Command::Completions { .. }
             | Command::Daemon(_)
+            | Command::Menubar { .. }
             | Command::Lang { .. }
             | Command::Doctor { .. }
             | Command::Update { .. }
