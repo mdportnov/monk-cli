@@ -61,7 +61,8 @@ onboarding:
   duration_custom_prompt: "Enter duration (e.g. 30m, 1h30m)"
   hard_mode_q: "Enable hard mode by default?"
   hard_mode_hint: "You won't be able to cancel sessions early."
-  autostart_q: "Start monk automatically at login?"
+  autostart_q: "Install the background service? (required for blocking; also starts monk at login)"
+  autostart_skipped: "Background service skipped — blocking stays off until you run `monk service install`."
   checking_hosts: "Checking write access to the hosts file…"
   hosts_ok: "Hosts file is writable."
   hosts_ro: "Hosts file isn't writable from this account — expected until the system daemon is installed (next step, or `sudo monk daemon install`)."
@@ -134,6 +135,9 @@ update:
   downloading: "downloading v%{latest} and verifying checksum…"
   updated: "updated to v%{version} (%{path}) — restart monk to use it"
   daemon_hint: "if the daemon is installed, restart it too: `monk daemon stop && monk daemon start`"
+  service_refreshing: "refreshing the background service so it runs the new version…"
+  service_refreshed: "background service now runs the new version"
+  service_refresh_failed: "could not refresh the background service: %{error} — run `sudo monk service install` to finish the update"
 
 tui:
   narrow_terminal: "Terminal too small — resize to at least %{min_w}×%{min_h} (now %{cur_w}×%{cur_h})"

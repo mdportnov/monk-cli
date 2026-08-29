@@ -6,6 +6,10 @@ BIN="monk"
 INSTALL_DIR="${MONK_INSTALL_DIR:-$HOME/.local/bin}"
 
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# Set by main(), removed by the EXIT trap. Must be a global: the trap fires
+# after main()'s locals are gone, and `set -u` would abort on an unset one.
+tmp=""
 msg() { printf '==> %s\n' "$*"; }
 
 detect_target() {
@@ -29,15 +33,18 @@ main() {
     command -v curl >/dev/null || err "curl is required"
     command -v tar  >/dev/null || err "tar is required"
 
-    local target version url tmp
+    local target version url
     target="$(detect_target)"
     version="${MONK_VERSION:-latest}"
 
     if [ "$version" = "latest" ]; then
         version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
             | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-        [ -n "$version" ] || err "could not resolve latest version"
+        [ -n "$version" ] || err "could not resolve latest version (github api rate limit? set MONK_VERSION=vX.Y.Z)"
     fi
+    # Release tags and asset names carry the `v`; accept MONK_VERSION with or
+    # without it instead of building a 404 URL.
+    case "$version" in v*) ;; *) version="v${version}" ;; esac
 
     url="https://github.com/${REPO}/releases/download/${version}/${BIN}-${version}-${target}.tar.gz"
     tmp="$(mktemp -d)"
@@ -81,9 +88,62 @@ main() {
             ;;
     esac
 
-    if [ "$(uname -s)" = "Darwin" ]; then
-        msg "next: run \`$BIN setup\` for a one-shot install (will prompt for admin password once)"
+    maybe_run_setup
+}
+
+next_step_hint() {
+    case "$(uname -s)" in
+        Darwin) msg "next: run \`$BIN setup\` — one shot; it asks for your admin password once" ;;
+        Linux)  msg "next: run \`$BIN setup\` — installs a systemd *user* unit, no sudo needed" ;;
+        *)      msg "next: run \`$BIN setup\`" ;;
+    esac
+}
+
+# Finish the job: an installed binary alone blocks nothing until the service
+# is wired up. `curl … | bash` leaves stdin on the pipe, so reopen the
+# terminal — otherwise the wizard would take its non-interactive path and ask
+# nothing. MONK_SETUP=1 forces it (unattended), MONK_SETUP=0 skips it.
+maybe_run_setup() {
+    local bin="$INSTALL_DIR/$BIN" reply=""
+    case "${MONK_SETUP:-}" in
+        0|no|false)
+            next_step_hint
+            return
+            ;;
+        1|yes|true)
+            if has_tty; then
+                "$bin" setup < /dev/tty || warn_setup
+            else
+                "$bin" setup --yes || warn_setup
+            fi
+            return
+            ;;
+    esac
+
+    if ! has_tty; then
+        next_step_hint
+        return
     fi
+
+    next_step_hint
+    printf '==> run "%s setup" now? [Y/n] ' "$BIN" > /dev/tty
+    read -r reply < /dev/tty || reply=""
+    case "$reply" in
+        [nN]*) return ;;
+        *) "$bin" setup < /dev/tty || warn_setup ;;
+    esac
+}
+
+# `[ -r /dev/tty ]` is not enough: inside a container the node exists but
+# opening it fails with ENXIO. Try the open for real.
+has_tty() {
+    [ -e /dev/tty ] || return 1
+    (exec 3<>/dev/tty) 2>/dev/null || return 1
+    return 0
+}
+
+warn_setup() {
+    printf 'warning: "%s setup" did not finish — run it again later\n' "$BIN" >&2
 }
 
 main "$@"

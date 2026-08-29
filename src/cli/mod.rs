@@ -213,7 +213,9 @@ enum DaemonCmd {
         about = "Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)"
     )]
     Run,
-    #[command(about = "Install the daemon as a system service (requires sudo)")]
+    #[command(
+        about = "Install the daemon as a system service (asks for admin rights when needed)"
+    )]
     Install {
         #[arg(
             long,
@@ -221,7 +223,9 @@ enum DaemonCmd {
         )]
         reinstall: bool,
     },
-    #[command(about = "Remove the system service (add --purge to also wipe data)")]
+    #[command(
+        about = "Remove the system service, asking for admin rights when needed (add --purge to also wipe data)"
+    )]
     Uninstall {
         #[arg(long, help = "Also delete config, audit log, and cached data")]
         purge: bool,

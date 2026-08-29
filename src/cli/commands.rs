@@ -570,20 +570,26 @@ pub async fn daemon_status() -> Result<()> {
 }
 
 pub fn daemon_install(reinstall: bool) -> Result<()> {
+    // Ask the OS for admin rights where the service is root-owned (macOS)
+    // instead of dying on `require_root`; on Linux/Windows these are the
+    // plain calls. Note `--reinstall` is two privileged steps, hence two
+    // prompts.
     if reinstall {
-        match crate::daemon::service_run(crate::daemon::ServiceAction::Uninstall { purge: false }) {
-            Ok(msg) => println!("{msg}"),
+        match crate::platform::elevate_uninstall_service(false) {
+            Ok(msg) => println!("{}", crate::platform::strip_service_markers(&msg)),
             Err(e) => eprintln!("uninstall step (continuing): {e}"),
         }
     }
-    let msg = crate::daemon::service_run(crate::daemon::ServiceAction::Install)?;
-    println!("{msg}");
+    let msg = crate::platform::elevate_install_service()?;
+    println!("{}", crate::platform::strip_service_markers(&msg));
     Ok(())
 }
 
 pub async fn daemon_uninstall(purge: bool) -> Result<()> {
-    let msg = crate::daemon::service_run(crate::daemon::ServiceAction::Uninstall { purge })?;
-    println!("{msg}");
+    // On macOS the service is root-owned: ask for admin rights instead of
+    // failing on `require_root` and leaving the LaunchDaemon behind.
+    let msg = crate::platform::elevate_uninstall_service(purge)?;
+    println!("{}", crate::platform::strip_service_markers(&msg));
     Ok(())
 }
 
@@ -680,6 +686,65 @@ pub async fn update(check_only: bool) -> Result<()> {
         .map_err(|e| crate::Error::Other(e.to_string()))??;
     let path = outcome.exe.display().to_string();
     println!("{}", crate::i18n::t!("update.updated", version = outcome.version, path = path));
-    println!("{}", crate::i18n::t!("update.daemon_hint"));
+    refresh_service_after_update();
     Ok(())
+}
+
+/// Bring the installed background service up to the version we just wrote.
+///
+/// In system mode the service runs its *own* copy of the binary (macOS keeps
+/// it under `/usr/local/libexec/monk`), so replacing the CLI alone leaves an
+/// old daemon running forever — silent version skew between client and
+/// daemon. Re-running the service install copies the fresh binary over and
+/// re-bootstraps launchd. Failure here is not fatal: the CLI is already
+/// updated, so we degrade to a hint.
+fn refresh_service_after_update() {
+    if !crate::paths::system_mode() {
+        // Not system mode (Linux user unit, Windows logon task): the service
+        // points at the path we just rewrote, so a bounce is enough.
+        match crate::platform::restart_service() {
+            Some(Ok(msg)) => {
+                println!("  {msg}");
+                println!("{}", crate::i18n::t!("update.service_refreshed"));
+            }
+            Some(Err(e)) => {
+                eprintln!(
+                    "{}",
+                    crate::i18n::t!("update.service_refresh_failed", error = e.to_string())
+                );
+            }
+            None => println!("{}", crate::i18n::t!("update.daemon_hint")),
+        }
+        return;
+    }
+    println!("{}", crate::i18n::t!("update.service_refreshing"));
+    let is_root = {
+        #[cfg(unix)]
+        {
+            nix::unistd::geteuid().is_root()
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    };
+    let result = if is_root {
+        crate::daemon::service_run(crate::daemon::ServiceAction::Install)
+    } else {
+        crate::platform::elevate_install_service()
+    };
+    match result {
+        Ok(msg) => {
+            for line in crate::platform::strip_service_markers(&msg).lines() {
+                println!("  {line}");
+            }
+            println!("{}", crate::i18n::t!("update.service_refreshed"));
+        }
+        Err(e) => {
+            eprintln!(
+                "{}",
+                crate::i18n::t!("update.service_refresh_failed", error = e.to_string())
+            );
+        }
+    }
 }

@@ -60,6 +60,12 @@ pub fn elevate_install_service() -> Result<String> {
     install_service(&bin)
 }
 
+/// Windows has no in-process elevation path here — the caller is expected to
+/// already run in an Administrator terminal, same as for the install.
+pub fn elevate_uninstall_service(purge: bool) -> Result<String> {
+    uninstall_service(purge)
+}
+
 /// Restrict the ACL on `path` to the current user only (no inheriting from
 /// parent, replaces any existing DACL). Called on the runtime socket dir so
 /// other local users cannot connect to the IPC socket.
@@ -161,14 +167,64 @@ pub fn set_acl_current_user(path: &Path) -> Result<()> {
 
 pub fn install_service(bin: &str) -> Result<String> {
     // Quote the binary path to handle spaces (e.g. "C:\Program Files\...").
-    let status = std::process::Command::new("schtasks")
+    let out = std::process::Command::new("schtasks")
         .args(["/Create", "/F", "/SC", "ONLOGON", "/RL", "HIGHEST", "/TN", "monkd", "/TR"])
         .arg(format!("\"{bin}\" daemon run"))
-        .status()?;
-    if !status.success() {
-        return Err(Error::Other("schtasks /Create failed".into()));
+        .output()?;
+    if !out.status.success() {
+        // `/RL HIGHEST` needs an elevated terminal — by far the most common
+        // reason to land here, and schtasks' own wording is localized.
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let reason =
+            stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("schtasks /Create failed");
+        return Err(Error::Permission(format!(
+            "{reason} — open PowerShell as Administrator and run `monk service install` again"
+        )));
     }
-    Ok("installed scheduled task `monkd` (runs at logon, elevated)".into())
+    let mut msgs = vec!["installed scheduled task `monkd` (runs at logon, elevated)".to_string()];
+
+    // ONLOGON alone would leave the daemon down until the next sign-in, so
+    // the install would "succeed" with nothing running — start it now, the
+    // way launchd's bootstrap and systemd's `enable --now` do.
+    match run_task() {
+        Ok(()) => msgs.push("started it now".into()),
+        Err(e) => {
+            tracing::warn!(?e, "schtasks /Run failed");
+            msgs.push(format!("NOT started: {e} — start it with `schtasks /Run /TN monkd`"));
+        }
+    }
+    Ok(msgs.join("\n"))
+}
+
+/// Start the logon task immediately.
+fn run_task() -> Result<()> {
+    let out = std::process::Command::new("schtasks").args(["/Run", "/TN", "monkd"]).output()?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    Err(Error::Other(
+        stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("schtasks /Run failed").to_string(),
+    ))
+}
+
+/// True when the logon task exists. Used to keep uninstall idempotent and to
+/// decide whether a restart makes sense.
+fn task_exists() -> bool {
+    std::process::Command::new("schtasks")
+        .args(["/Query", "/TN", "monkd"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Bounce the task so it picks up a replaced binary.
+pub fn restart_service() -> Option<Result<String>> {
+    if !task_exists() {
+        return None;
+    }
+    let _ = std::process::Command::new("schtasks").args(["/End", "/TN", "monkd"]).output();
+    Some(run_task().map(|()| "restarted scheduled task `monkd`".to_string()))
 }
 
 pub fn uninstall_service(purge: bool) -> Result<String> {
@@ -178,13 +234,23 @@ pub fn uninstall_service(purge: bool) -> Result<String> {
         tracing::debug!("daemon shutdown failed during uninstall");
     }
 
-    let _ = std::process::Command::new("schtasks").args(["/End", "/TN", "monkd"]).status();
-    let status =
-        std::process::Command::new("schtasks").args(["/Delete", "/F", "/TN", "monkd"]).status()?;
-    if !status.success() {
-        return Err(Error::Other("schtasks /Delete failed".into()));
+    // Removing what is not there is a no-op, not an error: `uninstall` has to
+    // stay runnable after a partial or failed install.
+    if task_exists() {
+        let _ = std::process::Command::new("schtasks").args(["/End", "/TN", "monkd"]).output();
+        let out = std::process::Command::new("schtasks")
+            .args(["/Delete", "/F", "/TN", "monkd"])
+            .output()?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let reason =
+                stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("schtasks /Delete failed");
+            return Err(Error::Permission(format!(
+                "{reason} — open PowerShell as Administrator and run `monk service uninstall` again"
+            )));
+        }
+        msgs.push("removed scheduled task `monkd`".into());
     }
-    msgs.push("removed scheduled task `monkd`".into());
 
     super::cleanup_hosts();
 

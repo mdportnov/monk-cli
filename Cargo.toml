@@ -1,6 +1,6 @@
 [package]
 name = "monk"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.82"
 description = "A cross-platform CLI focus & distraction blocker"
@@ -81,7 +81,7 @@ priority = "optional"
 depends = "libc6"
 assets = [
     ["target/release/monk", "usr/bin/", "755"],
-    ["assets/systemd/monk.service", "lib/systemd/user/", "644"],
+    ["assets/systemd/monk-packaged.service", "lib/systemd/user/monk.service", "644"],
     ["assets/completions/monk", "usr/share/bash-completion/completions/", "644"],
     ["assets/completions/_monk", "usr/share/zsh/site-functions/", "644"],
     ["assets/completions/monk.fish", "usr/share/fish/vendor_completions.d/", "644"],
@@ -91,7 +91,7 @@ assets = [
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/monk", dest = "/usr/bin/monk", mode = "755" },
-    { source = "assets/systemd/monk.service", dest = "/usr/lib/systemd/user/monk.service", mode = "644" },
+    { source = "assets/systemd/monk-packaged.service", dest = "/usr/lib/systemd/user/monk.service", mode = "644" },
     { source = "assets/completions/monk", dest = "/usr/share/bash-completion/completions/monk", mode = "644" },
     { source = "assets/completions/_monk", dest = "/usr/share/zsh/site-functions/_monk", mode = "644" },
     { source = "assets/completions/monk.fish", dest = "/usr/share/fish/vendor_completions.d/monk.fish", mode = "644" },

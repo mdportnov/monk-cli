@@ -1,6 +1,6 @@
 # Build monk from source, put it on your PATH, and wire up privileges.
 # Windows (PowerShell 5+). Run from a clone of the repo:
-#   .\assets\setup.ps1
+#   .\scripts\setup.ps1
 # For the privileged step, open the terminal *as Administrator*.
 $ErrorActionPreference = 'Stop'
 

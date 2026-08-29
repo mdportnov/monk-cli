@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
+Install and first-run pass across all three platforms: the recurring theme is
+a setup that reported success while leaving the machine without a working
+daemon.
+
+### Added
+
+- `install.sh` / `install.ps1` finish the job: after copying the binary they
+  offer to run `monk setup` (reading the answer from `/dev/tty`, so
+  `curl … | bash` still asks). `MONK_SETUP=1` runs it unattended,
+  `MONK_SETUP=0` skips it.
+- `monk update` now refreshes the installed service so the daemon never keeps
+  running an older binary — a privileged reinstall on macOS, a
+  `systemctl --user restart` on Linux, a task bounce on Windows.
+- `monk service uninstall` asks for admin rights on macOS instead of failing
+  on a root check, so `monk init --reset` can actually remove the
+  LaunchDaemon.
+- Doctor's `system service` check is real on every platform: the installed
+  daemon's version on macOS, unit presence / `ExecStart` target / active
+  state on Linux, logon task presence and its binary on Windows — each with a
+  `[r] reinstall service` action.
+- Doctor `--fix` installs PowerShell completions on Windows (dot-sourced from
+  `$PROFILE`) and wires bash completions into `~/.bash_profile` /
+  `~/.bashrc`, which stock macOS never reads on its own.
+
+### Changed
+
+- **The background service is installed by default.** `autostart` now
+  defaults to on (including for configs written before the field existed) and
+  the wizard asks "Install the background service?" with yes preselected —
+  without it monk blocks nothing. Declining now prints exactly that.
+- `monk service install` / `uninstall` prompt for admin rights when run
+  without `sudo` on macOS.
+- Linux `service install` reports the real reason when
+  `systemctl --user enable --now` fails instead of a vague "manual start"
+  line, and says what to do without systemd.
+- Windows `service install` starts the logon task immediately rather than
+  leaving the daemon down until the next sign-in, and explains that
+  `/RL HIGHEST` needs an Administrator terminal when it fails.
+- Release `.pkg` is signed when a `MACOS_INSTALLER_IDENTITY` secret is
+  configured; the README documents the Gatekeeper workaround when it is not.
+
+### Fixed
+
+- **`curl … | bash` exited 1 and left its temp directory behind**: the EXIT
+  trap referenced a variable that was local to `main()`, which `set -u`
+  rejects. It also mistook a container's unopenable `/dev/tty` for a
+  terminal.
+- **`.deb` / `.rpm` shipped the unrendered systemd unit** — every package
+  user got `ExecStart=__BIN__ daemon run`, a unit that cannot start. Packages
+  now install a rendered copy, and a test keeps it in sync with the template.
+- The shipped shell completions were stale: they still offered a `setup`
+  subcommand that no longer exists and knew nothing about `update`. A test
+  now fails when they drift from the CLI.
+- **Re-running the wizard after the service was installed died with EACCES**
+  on its last step: in system mode the config is root-owned, so the save now
+  goes through the daemon that owns it. Same for `doctor --fix` pruning
+  stale app refs.
+- **Reinstalling the service while the daemon was running failed** on macOS
+  with "text file busy": the binary is now unloaded and unlinked before the
+  new one is copied in.
+- `monk setup` no longer installs the service silently-and-not-at-all when
+  stdin is not a terminal (a script, a pipe): the non-interactive path
+  elevates and reports failures like the interactive one.
+- Windows `service uninstall` is a no-op instead of an error when the task
+  is not there — it has to stay runnable after a failed install.
+- The app-scan cache falls back to a per-user path when the daemon owns the
+  data directory, instead of silently failing to save and rescanning every
+  installed application on every command.
+- `MONK_VERSION=1.2.3` (without the `v`) no longer builds a 404 download URL
+  in either install script.
+
 ## [0.1.1] - 2026-08-01
 
 ### Added
@@ -167,4 +240,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (1.82) check, and quieted an unmaintained-advisory notice for the transitive,
   build-time `proc-macro-error2` dependency. All CI jobs are green.
 
-[Unreleased]: https://github.com/mdportnov/monk-cli/commits/main
+[Unreleased]: https://github.com/mdportnov/monk-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mdportnov/monk-cli/releases/tag/v0.2.0

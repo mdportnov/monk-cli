@@ -75,6 +75,8 @@ jobs:
       - name: build macOS .pkg
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           [ -z "$version" ] && version="0.0.0-dev"
@@ -82,12 +84,27 @@ jobs:
           mkdir -p "$root/usr/local/bin"
           cp "target/${{ matrix.target }}/release/${BIN}" "$root/usr/local/bin/${BIN}"
           chmod 755 "$root/usr/local/bin/${BIN}"
-          pkgbuild \
-            --identifier "dev.monk.monkd" \
-            --version "$version" \
-            --root "$root" \
-            --install-location "/" \
-            "dist/${BIN}-v${version}-${{ matrix.target }}.pkg"
+          out="dist/${BIN}-v${version}-${{ matrix.target }}.pkg"
+          # Sign only when a Developer ID Installer identity is configured.
+          # An unsigned .pkg is still useful (right-click → Open), but it must
+          # not masquerade as a signed one — warn loudly in the build log.
+          if [ -n "${MACOS_INSTALLER_IDENTITY:-}" ]; then
+            pkgbuild \
+              --identifier "dev.monk.monk" \
+              --version "$version" \
+              --root "$root" \
+              --install-location "/" \
+              --sign "$MACOS_INSTALLER_IDENTITY" \
+              "$out"
+          else
+            pkgbuild \
+              --identifier "dev.monk.monk" \
+              --version "$version" \
+              --root "$root" \
+              --install-location "/" \
+              "$out"
+            echo "::warning::built an UNSIGNED .pkg — Gatekeeper blocks it on double-click; set the MACOS_INSTALLER_IDENTITY secret to sign"
+          fi
 
       - name: install cargo-deb
         if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'

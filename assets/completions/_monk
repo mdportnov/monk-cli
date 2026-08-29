@@ -41,6 +41,9 @@ _arguments "${_arguments_options[@]}" : \
 '--yes[]' \
 '--reset[]' \
 '--quick[Three-question quick path with sensible defaults]' \
+'--no-daemon[Skip daemon service installation]' \
+'--no-completions[Skip shell completions installation]' \
+'--no-doctor[Skip health checks]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
@@ -552,13 +555,10 @@ _arguments "${_arguments_options[@]}" : \
 ':shell:(bash elvish fish powershell zsh)' \
 && ret=0
 ;;
-(setup)
+(update)
 _arguments "${_arguments_options[@]}" : \
 '--locale=[]:LOCALE:(en ru)' \
-'--non-interactive[Skip interactive prompts, use defaults]' \
-'--no-daemon[Skip daemon service installation]' \
-'--no-completions[Skip shell completions installation]' \
-'--no-doctor[Skip health checks]' \
+'--check[Only check and report; do not download or install]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \
@@ -753,7 +753,7 @@ esac
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
-(setup)
+(update)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -788,7 +788,7 @@ _monk_commands() {
 'config:Manage configuration' \
 'daemon:Manage the background daemon' \
 'completions:Generate shell completions' \
-'setup:Interactive first-run setup wizard' \
+'update:Check GitHub releases for a new version and self-update' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'monk commands' commands "$@"
@@ -903,8 +903,8 @@ _monk__daemon_commands() {
 'stop:Stop the running daemon' \
 'status:Show daemon status (running / not running, pid)' \
 'run:Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)' \
-'install:Install the daemon as a system service (requires sudo)' \
-'uninstall:Remove the system service (add --purge to also wipe data)' \
+'install:Install the daemon as a system service (asks for admin rights when needed)' \
+'uninstall:Remove the system service, asking for admin rights when needed (add --purge to also wipe data)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'monk daemon commands' commands "$@"
@@ -916,8 +916,8 @@ _monk__daemon__help_commands() {
 'stop:Stop the running daemon' \
 'status:Show daemon status (running / not running, pid)' \
 'run:Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)' \
-'install:Install the daemon as a system service (requires sudo)' \
-'uninstall:Remove the system service (add --purge to also wipe data)' \
+'install:Install the daemon as a system service (asks for admin rights when needed)' \
+'uninstall:Remove the system service, asking for admin rights when needed (add --purge to also wipe data)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'monk daemon help commands' commands "$@"
@@ -1010,7 +1010,7 @@ _monk__help_commands() {
 'config:Manage configuration' \
 'daemon:Manage the background daemon' \
 'completions:Generate shell completions' \
-'setup:Interactive first-run setup wizard' \
+'update:Check GitHub releases for a new version and self-update' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'monk help commands' commands "$@"
@@ -1069,8 +1069,8 @@ _monk__help__daemon_commands() {
 'stop:Stop the running daemon' \
 'status:Show daemon status (running / not running, pid)' \
 'run:Run the daemon in the foreground (used by launchd / systemd; not normally invoked manually)' \
-'install:Install the daemon as a system service (requires sudo)' \
-'uninstall:Remove the system service (add --purge to also wipe data)' \
+'install:Install the daemon as a system service (asks for admin rights when needed)' \
+'uninstall:Remove the system service, asking for admin rights when needed (add --purge to also wipe data)' \
     )
     _describe -t commands 'monk help daemon commands' commands "$@"
 }
@@ -1176,11 +1176,6 @@ _monk__help__profiles_commands() {
     local commands; commands=()
     _describe -t commands 'monk help profiles commands' commands "$@"
 }
-(( $+functions[_monk__help__setup_commands] )) ||
-_monk__help__setup_commands() {
-    local commands; commands=()
-    _describe -t commands 'monk help setup commands' commands "$@"
-}
 (( $+functions[_monk__help__start_commands] )) ||
 _monk__help__start_commands() {
     local commands; commands=()
@@ -1205,6 +1200,11 @@ _monk__help__stop_commands() {
 _monk__help__tui_commands() {
     local commands; commands=()
     _describe -t commands 'monk help tui commands' commands "$@"
+}
+(( $+functions[_monk__help__update_commands] )) ||
+_monk__help__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk help update commands' commands "$@"
 }
 (( $+functions[_monk__init_commands] )) ||
 _monk__init_commands() {
@@ -1317,11 +1317,6 @@ _monk__profiles_commands() {
     local commands; commands=()
     _describe -t commands 'monk profiles commands' commands "$@"
 }
-(( $+functions[_monk__setup_commands] )) ||
-_monk__setup_commands() {
-    local commands; commands=()
-    _describe -t commands 'monk setup commands' commands "$@"
-}
 (( $+functions[_monk__start_commands] )) ||
 _monk__start_commands() {
     local commands; commands=()
@@ -1346,6 +1341,11 @@ _monk__stop_commands() {
 _monk__tui_commands() {
     local commands; commands=()
     _describe -t commands 'monk tui commands' commands "$@"
+}
+(( $+functions[_monk__update_commands] )) ||
+_monk__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk update commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_monk" ]; then

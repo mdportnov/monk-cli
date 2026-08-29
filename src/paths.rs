@@ -91,6 +91,18 @@ pub fn runtime_dir() -> Result<PathBuf> {
     Ok(p)
 }
 
+/// Per-user cache dir, deliberately independent of `system_mode()`.
+///
+/// Used for data that is derived and per-user (the installed-apps scan): in
+/// system mode the shared data dir is root-owned, so a user's CLI cannot
+/// refresh it and would rescan on every single command.
+pub fn user_cache_dir() -> Result<PathBuf> {
+    let p = dirs()?.cache_dir().to_path_buf();
+    fs_err::create_dir_all(&p)?;
+    platform::chown_to_sudo_user(&p);
+    Ok(p)
+}
+
 pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }

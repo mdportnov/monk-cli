@@ -1,0 +1,27 @@
+# Distro-package copy of monk.service: identical to the template next to it,
+# except ExecStart points at the packaged binary instead of the placeholder
+# that `monk service install` fills in at runtime.
+# Keep both files in sync — tests/packaging.rs enforces it.
+[Unit]
+Description=monk focus & distraction blocker daemon
+Documentation=https://github.com/mdportnov/monk-cli
+After=network.target
+StartLimitIntervalSec=0
+StartLimitBurst=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/monk daemon run
+Restart=always
+RestartSec=1s
+Environment=MONK_LOG=info
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/etc/hosts
+AmbientCapabilities=CAP_DAC_OVERRIDE
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
+
+[Install]
+WantedBy=default.target

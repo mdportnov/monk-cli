@@ -42,7 +42,7 @@ pub struct General {
     pub default_profile: String,
     #[serde(default = "default_duration", with = "humantime_serde")]
     pub default_duration: Duration,
-    #[serde(default)]
+    #[serde(default = "default_autostart")]
     pub autostart: bool,
     #[serde(default)]
     pub hard_mode_level: HardModeLevel,
@@ -60,7 +60,7 @@ impl Default for General {
             hard_mode: default_hard_mode(),
             default_profile: default_default_profile(),
             default_duration: default_duration(),
-            autostart: false,
+            autostart: default_autostart(),
             hard_mode_level: HardModeLevel::Off,
             panic_delay: default_panic_delay(),
             tamper_penalty: default_tamper_penalty(),
@@ -77,6 +77,13 @@ fn default_tamper_penalty() -> Duration {
 
 fn default_hard_mode() -> bool {
     false
+}
+
+/// On by default: without the background service monk cannot block anything
+/// on macOS (the root daemon owns `/etc/hosts`), so an opt-out beats an
+/// opt-in that silently leaves a non-functional install behind.
+fn default_autostart() -> bool {
+    true
 }
 fn default_default_profile() -> String {
     "deepwork".into()
@@ -382,6 +389,15 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn autostart_defaults_on_including_for_older_config_files() {
+        // Without the background service monk cannot block anything, so a
+        // config that predates the field must still opt in.
+        assert!(General::default().autostart);
+        let cfg: Config = toml::from_str("[general]\n").unwrap();
+        assert!(cfg.general.autostart);
+    }
 
     #[test]
     fn schedule_roundtrip() {

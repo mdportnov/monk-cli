@@ -138,7 +138,7 @@ cargo binstall monk
 - **Debian / Ubuntu**: `cargo deb` produces a `.deb` wired up for systemd user units; bash/zsh/fish completions are bundled.
 - **Fedora / RHEL**: `cargo generate-rpm` produces an `.rpm` (completions bundled).
 - **Windows**: `assets/install.ps1` (above). MSI / Scoop manifest coming soon.
-- **macOS**: Homebrew tap coming soon.
+- **macOS**: a `.pkg` is attached to every release; it drops `monk` into `/usr/local/bin` and nothing else — you still run `monk setup` afterwards. Unless the release was built with a Developer ID identity the package is **unsigned**, so Gatekeeper blocks a double-click: right-click → *Open*, or use the install script above. Homebrew tap coming soon.
 
 ### Requirements
 
@@ -197,7 +197,7 @@ Built-in presets for `--preset`: `deepwork`, `study`, `detox`, `sleep`, `sober`,
 
 ### Daemon
 
-`monk service` is an alias for `monk daemon`. `install` needs elevation: `sudo monk service install` on macOS (or the setup password prompt), an Administrator terminal on Windows; on Linux it's a `systemd` user unit and needs no `sudo`.
+`monk service` is an alias for `monk daemon`. `install` and `uninstall` need elevation: on macOS they show the native admin prompt when you didn't start them with `sudo`; on Windows use an Administrator terminal; on Linux it's a `systemd` user unit and needs no `sudo`. After `monk update` the service is refreshed automatically so the daemon never keeps running an older binary — `monk doctor` warns if it ever does.
 
 | Command                            | What it does                                          |
 | ---------------------------------- | ----------------------------------------------------- |

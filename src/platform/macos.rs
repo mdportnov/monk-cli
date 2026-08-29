@@ -6,6 +6,7 @@ use crate::{Error, Result};
 
 pub use unix_shared::{apply_sudo_user_home, chown_to_sudo_user, sudo_user_ids};
 
+const LAUNCHD_LABEL: &str = "dev.monk.monkd";
 const SYSTEM_LAUNCHD_PLIST: &str = "/Library/LaunchDaemons/dev.monk.monkd.plist";
 const SYSTEM_DATA_DIR: &str = "/Library/Application Support/monk";
 const SYSTEM_RUNTIME_DIR: &str = "/var/run/monk";
@@ -17,6 +18,9 @@ const SYSTEM_BIN: &str = "/usr/local/libexec/monk/monkd";
 /// distinguish a working child from an osascript that returned 0 over a
 /// silently-failed `monk service install`.
 const INSTALL_SUCCESS_MARKER: &str = "monk:service:install:ok";
+
+/// Same idea for the uninstall side — see [`INSTALL_SUCCESS_MARKER`].
+const UNINSTALL_SUCCESS_MARKER: &str = "monk:service:uninstall:ok";
 
 /// True when the system-wide LaunchDaemon is installed: all paths resolve to
 /// system locations regardless of who's calling.
@@ -158,6 +162,15 @@ pub fn install_service(bin: &str) -> Result<String> {
     let src = Path::new(bin);
     let dst = Path::new(SYSTEM_BIN);
     if src.canonicalize().ok().as_deref() != Some(dst) {
+        // Stop the running daemon *before* touching its executable, and
+        // unlink the old copy instead of writing over it: macOS refuses to
+        // open a running executable for writing (ETXTBSY), which used to
+        // make every reinstall-over-a-live-daemon fail here. Unlinking is
+        // safe — a running process keeps its inode alive.
+        bootout_existing();
+        if dst.exists() {
+            fs_err::remove_file(dst)?;
+        }
         fs_err::copy(src, dst)?;
         msgs.push(format!("copied binary → {}", dst.display()));
     }
@@ -204,7 +217,7 @@ pub fn install_service(bin: &str) -> Result<String> {
 
     // bootout system on a not-yet-bootstrapped plist errors with code 5; we
     // expect that on first install — suppress the noise.
-    let _ = quiet_launchctl(&["bootout", "system"], Some(Path::new(SYSTEM_LAUNCHD_PLIST)));
+    bootout_existing();
     let status =
         Command::new("launchctl").args(["bootstrap", "system"]).arg(SYSTEM_LAUNCHD_PLIST).status();
     match status {
@@ -232,7 +245,7 @@ pub fn uninstall_service(purge: bool) -> Result<String> {
     }
 
     if Path::new(SYSTEM_LAUNCHD_PLIST).exists() {
-        let _ = quiet_launchctl(&["bootout", "system"], Some(Path::new(SYSTEM_LAUNCHD_PLIST)));
+        bootout_existing();
         fs_err::remove_file(SYSTEM_LAUNCHD_PLIST)?;
         msgs.push(format!("removed {SYSTEM_LAUNCHD_PLIST}"));
     }
@@ -273,7 +286,27 @@ pub fn uninstall_service(purge: bool) -> Result<String> {
     if msgs.is_empty() {
         msgs.push("uninstalled".into());
     }
+    msgs.push(UNINSTALL_SUCCESS_MARKER.into());
     Ok(msgs.join(", "))
+}
+
+/// Nothing to restart in isolation on macOS: the service runs its own copy
+/// of the binary under `/usr/local/libexec`, so picking up a new version
+/// means a full (privileged) reinstall, not a bounce.
+pub fn restart_service() -> Option<Result<String>> {
+    None
+}
+
+/// Unload a previously bootstrapped monkd, by label and by plist path.
+///
+/// The label form (`system/dev.monk.monkd`) also works when the plist file is
+/// missing or has already been replaced; the path form covers older launchctl
+/// behaviour. Both are noisy no-ops on a first install, hence `quiet_*`.
+fn bootout_existing() {
+    let _ = quiet_launchctl(&["bootout", &format!("system/{LAUNCHD_LABEL}")], None);
+    if Path::new(SYSTEM_LAUNCHD_PLIST).exists() {
+        let _ = quiet_launchctl(&["bootout", "system"], Some(Path::new(SYSTEM_LAUNCHD_PLIST)));
+    }
 }
 
 fn quiet_launchctl(
@@ -289,50 +322,72 @@ fn quiet_launchctl(
     cmd.stdout(Stdio::null()).stderr(Stdio::null()).status()
 }
 
-/// Run `sudo monk service install` via the native macOS authorization prompt
-/// (osascript `with administrator privileges`). Returns Ok with the child's
-/// stdout when the child reports a success marker; Err with a user-actionable
-/// message otherwise.
-pub fn elevate_install_service() -> Result<String> {
-    if nix::unistd::geteuid().is_root() {
-        let bin = std::env::current_exe()?.to_string_lossy().into_owned();
-        return install_service(&bin);
-    }
+/// Run a privileged `monk service …` subcommand through the native macOS
+/// authorization prompt (osascript `with administrator privileges`).
+///
+/// osascript exiting 0 only proves the AppleScript ran — the child may have
+/// failed silently — so the child's stable success marker is required before
+/// we report success.
+fn elevate_service_command(args: &str, prompt: &str, marker: &str, retry: &str) -> Result<String> {
     let exe = std::env::current_exe()?;
     let exe_str = exe.to_string_lossy().to_string();
     let sh_quoted = shell_single_quote(&exe_str);
-    let inner = format!("{sh_quoted} service install");
+    let inner = format!("{sh_quoted} {args}");
     let as_inner = escape_applescript(&inner);
+    let as_prompt = escape_applescript(prompt);
     let script = format!(
-        "do shell script \"{as_inner}\" with prompt \"monk wants to install the system service\" with administrator privileges"
+        "do shell script \"{as_inner}\" with prompt \"{as_prompt}\" with administrator privileges"
     );
     let out = Command::new("osascript").args(["-e", &script]).output().map_err(|e| {
-        Error::Elevation(format!(
-            "osascript failed to launch: {e} — install manually: sudo monk service install"
-        ))
+        Error::Elevation(format!("osascript failed to launch: {e} — run manually: {retry}"))
     })?;
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if !out.status.success() {
         return Err(if is_user_cancelled(out.status.code(), &stderr) {
-            Error::Elevation(
-                "admin prompt cancelled — install later with `sudo monk service install`".into(),
-            )
+            Error::Elevation(format!("admin prompt cancelled — run `{retry}` when ready"))
         } else {
-            Error::Elevation(format!("{stderr} — try `sudo monk service install`"))
+            Error::Elevation(format!("{stderr} — try `{retry}`"))
         });
     }
-    // osascript exit 0 only confirms the AppleScript ran. The child `monk
-    // service install` may have failed silently. Require the stable success
-    // marker the child always emits on completion (including no-op
-    // reinstalls where the plist already exists).
-    if stdout.contains(INSTALL_SUCCESS_MARKER) {
+    if stdout.contains(marker) {
         Ok(stdout)
     } else {
         Err(Error::Elevation(format!(
-            "child install did not confirm — stdout: {stdout:?} stderr: {stderr:?}"
+            "child command did not confirm — stdout: {stdout:?} stderr: {stderr:?}"
         )))
     }
+}
+
+/// Install the system service, asking for admin rights when we lack them.
+pub fn elevate_install_service() -> Result<String> {
+    if nix::unistd::geteuid().is_root() {
+        let bin = std::env::current_exe()?.to_string_lossy().into_owned();
+        return install_service(&bin);
+    }
+    elevate_service_command(
+        "service install",
+        "monk wants to install the system service",
+        INSTALL_SUCCESS_MARKER,
+        "sudo monk service install",
+    )
+}
+
+/// Remove the system service, asking for admin rights when we lack them.
+///
+/// Without this the user-facing `monk service uninstall` / `monk setup
+/// --reset` simply failed on `require_root` and left the LaunchDaemon behind.
+pub fn elevate_uninstall_service(purge: bool) -> Result<String> {
+    if nix::unistd::geteuid().is_root() {
+        return uninstall_service(purge);
+    }
+    let args = if purge { "service uninstall --purge" } else { "service uninstall" };
+    elevate_service_command(
+        args,
+        "monk wants to remove the system service",
+        UNINSTALL_SUCCESS_MARKER,
+        "sudo monk service uninstall",
+    )
 }
 
 fn is_user_cancelled(code: Option<i32>, stderr: &str) -> bool {

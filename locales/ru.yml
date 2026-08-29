@@ -61,7 +61,8 @@ onboarding:
   duration_custom_prompt: "Введи длительность (например 30m, 1h30m)"
   hard_mode_q: "Включить hard mode по умолчанию?"
   hard_mode_hint: "Сессии нельзя будет прервать досрочно."
-  autostart_q: "Запускать monk автоматически при входе в систему?"
+  autostart_q: "Установить фоновый сервис? (без него блокировка не работает; заодно запуск при входе в систему)"
+  autostart_skipped: "Фоновый сервис не установлен — блокировка не заработает, пока не выполните `monk service install`."
   checking_hosts: "Проверяю доступ на запись в hosts-файл…"
   hosts_ok: "Файл hosts доступен для записи."
   hosts_ro: "Файл hosts недоступен для записи из-под этого пользователя — это нормально, пока не установлен системный демон (следующий шаг, либо `sudo monk daemon install`)."
@@ -134,6 +135,9 @@ update:
   downloading: "скачиваю v%{latest} и проверяю контрольную сумму…"
   updated: "обновлено до v%{version} (%{path}) — перезапустите monk"
   daemon_hint: "если установлен демон, перезапустите и его: `monk daemon stop && monk daemon start`"
+  service_refreshing: "обновляю фоновый сервис, чтобы он работал на новой версии…"
+  service_refreshed: "фоновый сервис работает на новой версии"
+  service_refresh_failed: "не удалось обновить фоновый сервис: %{error} — выполните `sudo monk service install`, чтобы завершить обновление"
 
 tui:
   narrow_terminal: "Терминал слишком маленький — увеличь до минимум %{min_w}×%{min_h} (сейчас %{cur_w}×%{cur_h})"

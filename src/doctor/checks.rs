@@ -31,13 +31,42 @@ pub(crate) fn check_service_install() -> Check {
     {
         let plist = std::path::Path::new("/Library/LaunchDaemons/dev.monk.monkd.plist");
         if plist.exists() {
-            Check::new(
-                "service.install",
-                "system service",
-                Status::Ok,
-                "LaunchDaemon installed; daemon runs as root",
-            )
-            .with_extras(vec![plist.display().to_string()])
+            let cli = env!("CARGO_PKG_VERSION");
+            let reinstall =
+                Action { key: 'r', label: "reinstall service", kind: ActionKind::ReinstallService };
+            // The service runs its own copy of the binary, so `monk update`
+            // (which only replaces the CLI) can leave an old daemon behind.
+            // Compare on disk, not over IPC: this must also fire when the
+            // daemon is down.
+            match installed_daemon_version() {
+                Some(v) if v == cli => Check::new(
+                    "service.install",
+                    "system service",
+                    Status::Ok,
+                    format!("LaunchDaemon installed (v{v}); daemon runs as root"),
+                )
+                .with_extras(vec![plist.display().to_string()]),
+                Some(v) => Check::new(
+                    "service.install",
+                    "system service",
+                    Status::Warn,
+                    format!("installed daemon is v{v}, cli is v{cli}"),
+                )
+                .with_hint(
+                    "the service still runs the old binary — refresh it with `sudo monk service install`",
+                )
+                .with_extras(vec![plist.display().to_string()])
+                .with_actions(vec![reinstall]),
+                None => Check::new(
+                    "service.install",
+                    "system service",
+                    Status::Warn,
+                    "LaunchDaemon installed, but its binary is missing or unreadable",
+                )
+                .with_hint("reinstall it with `sudo monk service install`")
+                .with_extras(vec![plist.display().to_string()])
+                .with_actions(vec![reinstall]),
+            }
         } else {
             Check::new(
                 "service.install",
@@ -53,10 +82,209 @@ pub(crate) fn check_service_install() -> Check {
             }])
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
-        Check::new("service.install", "system service", Status::Info, "n/a on this platform")
+        check_service_install_linux()
     }
+
+    #[cfg(windows)]
+    {
+        check_service_install_windows()
+    }
+}
+
+/// systemd *user* unit: installed at all, pointing at a binary that still
+/// exists, and actually running?
+///
+/// `monk service install` reports "manual start: …" and still returns success
+/// when `systemctl --user enable --now` fails (no systemd, no user session,
+/// a container) — without this check nothing else ever tells the user their
+/// daemon is not running.
+#[cfg(target_os = "linux")]
+fn check_service_install_linux() -> Check {
+    let reinstall =
+        Action { key: 'r', label: "reinstall service", kind: ActionKind::ReinstallService };
+    let user_unit = directories::BaseDirs::new()
+        .map(|d| d.config_dir().join("systemd/user/monk.service"))
+        .filter(|p| p.exists());
+    let packaged_unit = ["/usr/lib/systemd/user/monk.service", "/lib/systemd/user/monk.service"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists());
+
+    let Some(unit) = user_unit.or(packaged_unit) else {
+        return Check::new(
+            "service.install",
+            "system service",
+            Status::Warn,
+            "systemd user unit not installed",
+        )
+        .with_hint("install it with `monk service install` (no sudo needed on Linux)")
+        .with_actions(vec![reinstall]);
+    };
+
+    let mut extras = vec![unit.display().to_string()];
+
+    // A unit left over from an older install can point at a binary that has
+    // since moved (`cargo install` → package install, a deleted checkout).
+    if let Some(exec) = fs_err::read_to_string(&unit).ok().and_then(|raw| unit_exec_binary(&raw)) {
+        extras.push(format!("ExecStart: {exec}"));
+        if !std::path::Path::new(&exec).exists() {
+            return Check::new(
+                "service.install",
+                "system service",
+                Status::Fail,
+                format!("unit points at a binary that no longer exists: {exec}"),
+            )
+            .with_hint("re-point it with `monk service install`")
+            .with_extras(extras)
+            .with_actions(vec![reinstall]);
+        }
+    }
+
+    match systemctl_user(&["is-active", "monk"]) {
+        Some(state) if state == "active" => {
+            Check::new("service.install", "system service", Status::Ok, "systemd user unit active")
+                .with_extras(extras)
+        }
+        Some(state) => Check::new(
+            "service.install",
+            "system service",
+            Status::Warn,
+            format!("systemd user unit is {state}"),
+        )
+        .with_hint("start it with `systemctl --user enable --now monk`")
+        .with_extras(extras)
+        .with_actions(vec![reinstall]),
+        None => Check::new(
+            "service.install",
+            "system service",
+            Status::Info,
+            "unit installed; systemctl unavailable, cannot query state",
+        )
+        .with_extras(extras),
+    }
+}
+
+/// First `ExecStart=` binary in a unit file, unquoted. Systemd allows
+/// `ExecStart=-/path`, `@/path` and friends — strip those prefixes.
+///
+/// Compiled on every platform so its tests run everywhere, not only on the
+/// one OS that uses it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn unit_exec_binary(unit: &str) -> Option<String> {
+    let line = unit.lines().find(|l| l.trim_start().starts_with("ExecStart="))?;
+    let value = line.split_once('=')?.1.trim();
+    let value = value.trim_start_matches(['-', '@', '+', '!', ':']);
+    // A quoted path may contain spaces, so honour the quotes before falling
+    // back to whitespace splitting.
+    if let Some(rest) = value.strip_prefix('"') {
+        return rest.split_once('"').map(|(path, _)| path.to_string());
+    }
+    Some(value.split_whitespace().next()?.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn systemctl_user(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("systemctl").arg("--user").args(args).output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
+/// The logon scheduled task: present, and pointing at a binary that still
+/// exists? `schtasks /Create` needs an elevated terminal, so a plain failure
+/// here is the usual "setup looked fine but nothing runs" report.
+#[cfg(windows)]
+fn check_service_install_windows() -> Check {
+    let reinstall =
+        Action { key: 'r', label: "reinstall service", kind: ActionKind::ReinstallService };
+    let out = std::process::Command::new("schtasks")
+        .args(["/Query", "/TN", "monkd", "/V", "/FO", "LIST"])
+        .output();
+    let Ok(out) = out else {
+        return Check::new(
+            "service.install",
+            "system service",
+            Status::Warn,
+            "schtasks not available — cannot check the logon task",
+        );
+    };
+    if !out.status.success() {
+        return Check::new(
+            "service.install",
+            "system service",
+            Status::Warn,
+            "logon scheduled task `monkd` not installed",
+        )
+        .with_hint(
+            "install it from an Administrator terminal: `monk service install` (the task needs elevation)",
+        )
+        .with_actions(vec![reinstall]);
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    match task_binary(&text) {
+        Some(bin) if !std::path::Path::new(&bin).exists() => Check::new(
+            "service.install",
+            "system service",
+            Status::Fail,
+            format!("task `monkd` points at a binary that no longer exists: {bin}"),
+        )
+        .with_hint("re-point it from an Administrator terminal: `monk service install`")
+        .with_actions(vec![reinstall]),
+        Some(bin) => Check::new(
+            "service.install",
+            "system service",
+            Status::Ok,
+            "logon task `monkd` present",
+        )
+        .with_extras(vec![bin]),
+        None => Check::new(
+            "service.install",
+            "system service",
+            Status::Ok,
+            "logon task `monkd` present",
+        ),
+    }
+}
+
+/// Pull the quoted `...monk.exe` path out of `schtasks /Query /V /FO LIST`
+/// output. Header labels are localized, the path is not — so match on the
+/// value, never on the label.
+///
+/// Compiled on every platform so its tests run everywhere, not only on the
+/// one OS that uses it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn task_binary(query_output: &str) -> Option<String> {
+    for line in query_output.lines() {
+        let mut parts = line.split('"');
+        // ["… label: ", "C:\path\monk.exe", " daemon run"]
+        while let Some(candidate) = parts.nth(1) {
+            if candidate.to_ascii_lowercase().ends_with("monk.exe") {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Version of the binary the system service actually runs, read by executing
+/// it with `--version` (clap prints `monk <semver>`). `None` when the file is
+/// missing or does not answer.
+#[cfg(target_os = "macos")]
+fn installed_daemon_version() -> Option<String> {
+    let bin = std::path::Path::new("/usr/local/libexec/monk/monkd");
+    if !bin.exists() {
+        return None;
+    }
+    let out = std::process::Command::new(bin).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.split_whitespace().last().map(|v| v.trim_start_matches('v').to_string())
 }
 
 pub(crate) fn check_privileges() -> Check {
@@ -272,6 +500,11 @@ pub(crate) async fn check_ipc() -> Check {
                 .with_hint(
                     "the installed daemon binary is outdated — update it with `sudo monk service install`",
                 )
+                .with_actions(vec![Action {
+                    key: 'r',
+                    label: "reinstall service",
+                    kind: ActionKind::ReinstallService,
+                }])
             }
         }
         Ok(other) => Check::new("ipc", "ipc", Status::Warn, format!("unexpected: {other:?}")),
@@ -621,6 +854,22 @@ pub(crate) fn check_completions() -> Check {
                 std::path::PathBuf::from("/usr/share/fish/vendor_completions.d/monk.fish"),
             ],
         ),
+        // Windows without a SHELL variable: PowerShell, whose completions are
+        // a script dot-sourced from the profile.
+        #[cfg(windows)]
+        _ => {
+            let Some(profile) = super::actions::powershell_profile() else {
+                return Check::new(
+                    "env.completions",
+                    "completions",
+                    Status::Info,
+                    "powershell profile not found — run `monk completions powershell` manually",
+                );
+            };
+            let dir = profile.parent().map(std::path::Path::to_path_buf).unwrap_or(home);
+            ("powershell", vec![dir.join("monk.completion.ps1")])
+        }
+        #[cfg(not(windows))]
         other => {
             return Check::new(
                 "env.completions",
@@ -714,5 +963,36 @@ mod tests {
     #[test]
     fn parse_dns_a_answer_rejects_empty() {
         assert!(parse_dns_a_answer(&[0u8; 11]).is_err());
+    }
+
+    #[test]
+    fn unit_exec_binary_handles_systemd_prefixes() {
+        let unit = "[Service]\nType=simple\nExecStart=/usr/bin/monk daemon run\n";
+        assert_eq!(unit_exec_binary(unit).as_deref(), Some("/usr/bin/monk"));
+        assert_eq!(
+            unit_exec_binary("ExecStart=-/home/u/.cargo/bin/monk daemon run").as_deref(),
+            Some("/home/u/.cargo/bin/monk")
+        );
+        assert_eq!(
+            unit_exec_binary("ExecStart=\"/opt/my monk/monk\" daemon run").as_deref(),
+            Some("/opt/my monk/monk")
+        );
+        assert_eq!(unit_exec_binary("[Unit]\nDescription=x\n"), None);
+    }
+
+    #[test]
+    fn unit_exec_binary_flags_the_unrendered_template() {
+        // The bug this guards: shipping the template verbatim in a package.
+        assert_eq!(unit_exec_binary("ExecStart=__BIN__ daemon run").as_deref(), Some("__BIN__"));
+    }
+
+    #[test]
+    fn task_binary_reads_localized_schtasks_output() {
+        let en = "Task To Run:  \"C:\\Users\\u\\monk.exe\" daemon run\n";
+        assert_eq!(task_binary(en).as_deref(), Some("C:\\Users\\u\\monk.exe"));
+        // ru-RU labels differ, the value does not
+        let ru = "Задача для выполнения: \"C:\\monk\\monk.exe\" daemon run\n";
+        assert_eq!(task_binary(ru).as_deref(), Some("C:\\monk\\monk.exe"));
+        assert_eq!(task_binary("Status: Ready\n"), None);
     }
 }

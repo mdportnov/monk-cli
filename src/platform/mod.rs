@@ -10,6 +10,10 @@
 //! - `system_data_dir() / system_runtime_dir()` — daemon paths in system mode
 //! - `migrate_legacy_if_needed()` — one-shot per-user → system migration
 //! - `install_service(bin) / uninstall_service(purge)` — service lifecycle
+//! - `elevate_install_service() / elevate_uninstall_service(purge)` — same,
+//!   asking the OS for admin rights first where the service is root-owned
+//! - `restart_service()` — bounce the service in place; `None` where that
+//!   makes no sense (macOS runs its own copy of the binary)
 
 use std::path::PathBuf;
 
@@ -97,6 +101,25 @@ pub fn legacy_user_config_file_for(user: &str) -> Option<PathBuf> {
     }
 }
 
+/// Drop the machine-readable success markers from a service-install /
+/// -uninstall message.
+///
+/// They are a handshake between the elevated child and its parent (an
+/// osascript that exits 0 proves nothing about the child), never something a
+/// user should read.
+pub fn strip_service_markers(msg: &str) -> String {
+    msg.lines()
+        .map(|line| {
+            line.split(", ")
+                .filter(|part| !part.trim().starts_with("monk:service:"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Shared by every platform's service-install path: best-effort hosts revert
 /// so a stale block doesn't outlive a reinstall.
 pub(crate) fn cleanup_hosts() {
@@ -129,4 +152,30 @@ pub(crate) fn try_shutdown_daemon() -> Result<()> {
     })
     .join()
     .map_err(|_| Error::Other("shutdown thread panicked".into()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markers_are_stripped_from_both_message_shapes() {
+        // install joins with newlines, uninstall with ", "
+        let install = "wrote /Library/LaunchDaemons/x.plist\nloaded\nmonk:service:install:ok";
+        assert_eq!(strip_service_markers(install), "wrote /Library/LaunchDaemons/x.plist\nloaded");
+
+        let uninstall = "removed /Library/LaunchDaemons/x.plist, monk:service:uninstall:ok";
+        assert_eq!(strip_service_markers(uninstall), "removed /Library/LaunchDaemons/x.plist");
+    }
+
+    #[test]
+    fn a_marker_only_message_collapses_to_empty() {
+        assert_eq!(strip_service_markers("monk:service:install:ok"), "");
+    }
+
+    #[test]
+    fn ordinary_text_survives_untouched() {
+        let msg = "copied binary → /usr/local/libexec/monk/monkd";
+        assert_eq!(strip_service_markers(msg), msg);
+    }
 }

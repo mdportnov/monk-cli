@@ -8,6 +8,7 @@ use crate::{
     config::Config,
     daemon::{self, ServiceAction},
     i18n::{self, t},
+    ipc::{self, Request, Response},
     onboarding::{
         curated,
         presets::{load_preset, preset_blurb, preset_label, PresetTier, PRESETS, PRESET_NAMES},
@@ -86,10 +87,14 @@ pub async fn run(opts: Options) -> Result<()> {
     // (or relies on its own defaults). If we save *after*, the root child can
     // race the parent and observe stale state.
     cfg.general.initialized = true;
-    cfg.save()?;
+    persist_config(&cfg).await?;
 
-    if autostart && !opts.no_daemon {
-        run_service_install();
+    if !opts.no_daemon {
+        if autostart {
+            run_service_install();
+        } else {
+            println!("  {}", t!("onboarding.autostart_skipped"));
+        }
     }
 
     // Install shell completions if not skipped
@@ -130,6 +135,31 @@ fn curated_only(cache: &crate::apps::AppCache) -> Vec<String> {
         .collect()
 }
 
+/// Persist the wizard's config.
+///
+/// Once the system service is installed the config file is root-owned
+/// (`/Library/Application Support/monk` on macOS), so a direct write from the
+/// user's CLI fails with EACCES and the wizard would die on its last step
+/// after asking every question. The daemon owns that file — route the save
+/// through it, and only fall back to a direct write when it is unreachable.
+async fn persist_config(cfg: &Config) -> Result<()> {
+    if crate::paths::system_mode() && !nix_is_root() {
+        match ipc::send(&Request::SaveConfig { config: Box::new(cfg.clone()) }).await {
+            Ok(Response::Ok) => return Ok(()),
+            Ok(Response::Error { message }) => {
+                return Err(Error::Other(format!("daemon refused the config: {message}")))
+            }
+            Ok(other) => {
+                tracing::warn!(?other, "unexpected SaveConfig response; trying a direct write");
+            }
+            Err(e) => {
+                tracing::warn!(?e, "config save via daemon failed; trying a direct write");
+            }
+        }
+    }
+    cfg.save()
+}
+
 fn run_service_install() {
     let needs_elevation = cfg!(target_os = "macos") && !nix_is_root();
     let result = if needs_elevation {
@@ -140,7 +170,7 @@ fn run_service_install() {
     };
     match result {
         Ok(msg) => {
-            for line in msg.lines() {
+            for line in platform::strip_service_markers(&msg).lines() {
                 println!("  {line}");
             }
         }
@@ -232,12 +262,18 @@ pub async fn run_non_interactive(opts: Options) -> Result<()> {
     let (created, kept) = apply(&mut cfg, &presets, duration, hard_mode, autostart)?;
     print_apply_notices(&cfg, &created, &kept);
 
-    if autostart && !opts.no_daemon {
-        let _ = daemon::service_run(ServiceAction::Install);
-    }
-
+    // Persist before elevation, exactly like the interactive path: the
+    // elevated child re-reads config from disk.
     cfg.general.initialized = true;
-    cfg.save()?;
+    persist_config(&cfg).await?;
+
+    if !opts.no_daemon {
+        if autostart {
+            run_service_install();
+        } else {
+            println!("  {}", t!("onboarding.autostart_skipped"));
+        }
+    }
 
     // Install shell completions if not skipped
     if !opts.no_completions {
@@ -307,7 +343,17 @@ fn print_apply_notices(cfg: &Config, created: &[String], kept: &[String]) {
 }
 
 fn reset() -> Result<()> {
-    let _ = daemon::service_run(ServiceAction::Uninstall { purge: false });
+    // Elevate: on macOS the service is root-owned, and a failed uninstall
+    // leaves both the LaunchDaemon and a root-owned config behind — which is
+    // exactly what the user asked us to remove.
+    match platform::elevate_uninstall_service(false) {
+        Ok(msg) => {
+            for line in platform::strip_service_markers(&msg).lines() {
+                println!("  {line}");
+            }
+        }
+        Err(e) => eprintln!("  service uninstall failed (continuing): {e}"),
+    }
     let path = paths::config_file()?;
     if path.exists() {
         fs_err::remove_file(&path)?;

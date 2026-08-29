@@ -30,6 +30,11 @@ pub fn elevate_install_service() -> Result<String> {
     install_service(&bin)
 }
 
+/// No elevation needed: the Linux service is a systemd *user* unit.
+pub fn elevate_uninstall_service(purge: bool) -> Result<String> {
+    uninstall_service(purge)
+}
+
 /// Best-effort native notification. Fire-and-forget: `notify-send` can block
 /// indefinitely on a hung D-Bus, and a missed notification is far less bad
 /// than freezing the CLI. We detach stdin/stdout/stderr and drop the child
@@ -73,6 +78,9 @@ pub fn install_service(bin: &str) -> Result<String> {
         }
     }
 
+    // A failure here is the Linux flavour of "setup said OK but nothing
+    // runs" (no systemd, no user session, a container). Surface the real
+    // reason to the user instead of only logging it.
     let enable_start =
         Command::new("systemctl").args(["--user", "enable", "--now", "monk"]).output();
     match enable_start {
@@ -82,16 +90,38 @@ pub fn install_service(bin: &str) -> Result<String> {
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 tracing::warn!("systemctl --user enable --now monk failed: {}", stderr);
-                msgs.push("manual start: `systemctl --user enable --now monk`".into());
+                let reason = stderr.lines().find(|l| !l.trim().is_empty()).unwrap_or("unknown");
+                msgs.push(format!("NOT started: {reason}"));
+                msgs.push("start it yourself: `systemctl --user enable --now monk`".into());
             }
         }
         Err(e) => {
             tracing::debug!(?e, "systemctl --user enable --now monk failed");
-            msgs.push("manual start: `systemctl --user enable --now monk`".into());
+            msgs.push(format!("NOT started: systemctl unavailable ({e})"));
+            msgs.push(
+                "without systemd, run the daemon yourself: `monk daemon start` (or a supervisor \
+                 of your choice)"
+                    .into(),
+            );
         }
     }
 
     Ok(msgs.join("\n"))
+}
+
+/// Restart the systemd user unit so it picks up a replaced binary. Returns
+/// `None` when there is no unit (or no systemd) to restart.
+pub fn restart_service() -> Option<Result<String>> {
+    let unit = dirs_config().ok()?.join("systemd/user/monk.service");
+    if !unit.exists() {
+        return None;
+    }
+    let out = Command::new("systemctl").args(["--user", "restart", "monk"]).output();
+    Some(match out {
+        Ok(o) if o.status.success() => Ok("restarted monk.service".into()),
+        Ok(o) => Err(Error::Other(String::from_utf8_lossy(&o.stderr).trim().to_string())),
+        Err(e) => Err(Error::Other(e.to_string())),
+    })
 }
 
 pub fn uninstall_service(purge: bool) -> Result<String> {

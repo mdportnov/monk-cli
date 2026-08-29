@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build monk from source, put it on your PATH, and wire up privileges.
-# Linux / macOS. Run from a clone of the repo:  ./assets/setup.sh
+# Linux / macOS. Run from a clone of the repo:  ./scripts/setup.sh
 set -euo pipefail
 
 BIN="monk"
@@ -85,6 +85,8 @@ case ":$PATH:" in
             if ask "Run 'fish_add_path $CARGO_BIN'?"; then
                 fish -c "fish_add_path $CARGO_BIN" && ok "PATH updated for fish"
             fi
+        elif [ -n "$rc" ] && grep -qF "# added by monk setup" "$rc" 2>/dev/null; then
+            ok "$rc already carries the monk PATH block — open a new shell"
         elif [ -n "$rc" ] && ask "Append it to $rc?"; then
             printf '\n# added by monk setup\n%s\n' "$line" >> "$rc"
             ok "added to $rc — open a new shell or run: source $rc"
