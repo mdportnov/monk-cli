@@ -1408,7 +1408,7 @@ _monk() {
             return 0
             ;;
         monk__init)
-            opts="-y -h -V --non-interactive --locale --preset --duration --hard --autostart --yes --reset --quick --no-daemon --no-completions --no-doctor --help --version"
+            opts="-y -h -V --non-interactive --locale --preset --duration --hard --autostart --yes --reset --quick --no-daemon --no-completions --no-doctor --no-menubar --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

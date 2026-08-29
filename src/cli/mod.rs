@@ -58,6 +58,8 @@ enum Command {
         no_completions: bool,
         #[arg(long, help = "Skip health checks")]
         no_doctor: bool,
+        #[arg(long, help = "Skip menu bar app setup (macOS)")]
+        no_menubar: bool,
     },
     #[command(about = "Open the interactive TUI")]
     Tui,
@@ -291,6 +293,7 @@ pub async fn run() -> Result<()> {
             no_daemon,
             no_completions,
             no_doctor,
+            no_menubar,
         } => {
             let opts = crate::onboarding::Options {
                 locale,
@@ -304,6 +307,7 @@ pub async fn run() -> Result<()> {
                 no_daemon,
                 no_completions,
                 no_doctor,
+                no_menubar,
             };
             if non_interactive || opts.yes {
                 crate::onboarding::run_non_interactive(opts).await

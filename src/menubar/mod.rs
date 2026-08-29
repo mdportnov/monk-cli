@@ -8,7 +8,9 @@
 
 mod agent;
 
-pub use agent::{install as install_agent, uninstall as uninstall_agent};
+pub use agent::{
+    install as install_agent, spawn_now as launch_detached, uninstall_and_stop as uninstall_agent,
+};
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -339,7 +341,11 @@ impl Ui {
                 let _ = cmd_tx.send(Cmd::StartDaemon);
             }
             "login" => {
-                let result = if agent::installed() { agent::uninstall() } else { agent::install() };
+                let result = if agent::installed() {
+                    agent::uninstall()
+                } else {
+                    agent::install().map(|_| ())
+                };
                 if let Err(e) = result {
                     tracing::error!(error = %e, "toggling login item failed");
                 }

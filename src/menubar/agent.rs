@@ -20,7 +20,11 @@ pub fn installed() -> bool {
     agent_plist_path().map(|p| p.exists()).unwrap_or(false)
 }
 
-pub fn install() -> Result<()> {
+/// Registers the login item and asks launchd to start it now
+/// (`RunAtLoad`). Returns whether the bootstrap succeeded — when it did not,
+/// the plist is still in place (the agent loads at next login) and the
+/// caller may fall back to [`spawn_now`].
+pub fn install() -> Result<bool> {
     let bin = std::env::current_exe()?;
     let bin = bin.to_str().ok_or_else(|| Error::Other("non-utf8 binary path".into()))?;
     let plist = agent_plist_path()?;
@@ -41,6 +45,22 @@ pub fn install() -> Result<()> {
     if !status.success() {
         tracing::warn!(?plist, "launchctl bootstrap failed; agent loads at next login");
     }
+    Ok(status.success())
+}
+
+/// Starts `monk menubar` directly, detached from the calling terminal.
+/// The single-instance lock makes this idempotent: a second copy exits
+/// immediately, so callers may fire this without checking first.
+pub fn spawn_now() -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe()?;
+    Command::new(exe)
+        .arg("menubar")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()?;
     Ok(())
 }
 
@@ -54,6 +74,15 @@ pub fn uninstall() -> Result<()> {
         fs_err::remove_file(&plist)?;
     }
     Ok(())
+}
+
+/// Full removal for CLI / reset flows: stops the launchd-managed instance
+/// (if any) and deletes the plist. Not for use from inside the menu bar app
+/// itself — the bootout would kill it mid-click.
+pub fn uninstall_and_stop() -> Result<()> {
+    let uid = nix::unistd::getuid();
+    let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}/{AGENT_LABEL}")]);
+    uninstall()
 }
 
 fn quiet_launchctl(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {

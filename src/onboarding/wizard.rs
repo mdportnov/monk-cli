@@ -29,6 +29,7 @@ pub struct Options {
     pub no_daemon: bool,
     pub no_completions: bool,
     pub no_doctor: bool,
+    pub no_menubar: bool,
 }
 
 pub async fn run(opts: Options) -> Result<()> {
@@ -100,6 +101,12 @@ pub async fn run(opts: Options) -> Result<()> {
     // Install shell completions if not skipped
     if !opts.no_completions {
         install_completions_step();
+    }
+
+    if !opts.no_menubar {
+        // Quick mode keeps its three-question promise: no extra prompt,
+        // the menu bar app is simply part of the default setup.
+        menubar_setup_step(!opts.quick)?;
     }
 
     // Print health checks if not skipped
@@ -179,6 +186,50 @@ fn run_service_install() {
             eprintln!("  → run `monk doctor --fix` later to retry");
         }
     }
+}
+
+/// macOS: register the menu bar companion as a login item and start it now.
+///
+/// Never fails the wizard. Declining the prompt (or Esc) skips the step;
+/// Ctrl+C still cancels setup as everywhere else. On install errors we print
+/// the recovery command and move on — a missing tray icon must not leave the
+/// user without a configured blocker.
+#[cfg(target_os = "macos")]
+fn menubar_setup_step(ask: bool) -> Result<()> {
+    if ask {
+        let yes = t!("common.yes").to_string();
+        let no = t!("common.no").to_string();
+        let opts = vec![yes.clone(), no.clone()];
+        match Select::new(&t!("setup.menubar_q"), opts).with_starting_cursor(0).prompt() {
+            Ok(ans) if ans == yes => {}
+            Ok(_) | Err(inquire::InquireError::OperationCanceled) => {
+                println!("  {}", t!("setup.menubar_skipped"));
+                return Ok(());
+            }
+            Err(e) => return Err(prompt_err(e)),
+        }
+    }
+    match crate::menubar::install_agent() {
+        Ok(started) => {
+            if !started {
+                if let Err(e) = crate::menubar::launch_detached() {
+                    tracing::warn!(error = %e, "menubar direct launch failed");
+                }
+            }
+            println!("  {}", t!("setup.menubar_ok"));
+            println!("  {}", t!("setup.menubar_hidden_hint"));
+        }
+        Err(e) => {
+            eprintln!("  {}", t!("setup.menubar_failed", error = e.to_string()));
+            eprintln!("  {}", t!("setup.menubar_later"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn menubar_setup_step(_ask: bool) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -280,6 +331,10 @@ pub async fn run_non_interactive(opts: Options) -> Result<()> {
         install_completions_step();
     }
 
+    if !opts.no_menubar {
+        menubar_setup_step(false)?;
+    }
+
     // Run health checks if not skipped
     if !opts.no_doctor {
         print_basic_doctor_summary().await;
@@ -353,6 +408,10 @@ fn reset() -> Result<()> {
             }
         }
         Err(e) => eprintln!("  service uninstall failed (continuing): {e}"),
+    }
+    #[cfg(target_os = "macos")]
+    if let Err(e) = crate::menubar::uninstall_agent() {
+        eprintln!("  menubar cleanup failed (continuing): {e}");
     }
     let path = paths::config_file()?;
     if path.exists() {

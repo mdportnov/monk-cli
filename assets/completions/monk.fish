@@ -61,6 +61,7 @@ complete -c monk -n "__fish_monk_using_subcommand init" -l quick -d 'Three-quest
 complete -c monk -n "__fish_monk_using_subcommand init" -l no-daemon -d 'Skip daemon service installation'
 complete -c monk -n "__fish_monk_using_subcommand init" -l no-completions -d 'Skip shell completions installation'
 complete -c monk -n "__fish_monk_using_subcommand init" -l no-doctor -d 'Skip health checks'
+complete -c monk -n "__fish_monk_using_subcommand init" -l no-menubar -d 'Skip menu bar app setup (macOS)'
 complete -c monk -n "__fish_monk_using_subcommand init" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c monk -n "__fish_monk_using_subcommand init" -s V -l version -d 'Print version'
 complete -c monk -n "__fish_monk_using_subcommand tui" -l locale -r -f -a "en\t''

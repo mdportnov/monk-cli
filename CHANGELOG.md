@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration choices and a hard-mode start. Shows the next scheduled session,
   can start the daemon when it is offline, and `monk menubar install` /
   the "Launch at login" toggle register it as a per-user launch agent.
+- The setup wizard wires up the menu bar app on macOS: interactive setup
+  asks (decline just skips the step), `--quick` and non-interactive runs
+  enable it by default, `--no-menubar` opts out. Install failures print the
+  `monk menubar install` recovery command instead of aborting setup, and
+  `monk init --reset` / `monk daemon uninstall --purge` also retire the
+  login item.
 
 ## [0.2.0] - 2026-08-29
 
