@@ -59,8 +59,13 @@ fn shipped_completions_match_the_current_cli() {
         let mut buf: Vec<u8> = Vec::new();
         clap_complete::generate(shell, &mut cmd, "monk", &mut buf);
         let generated = String::from_utf8(buf).expect("completions are utf-8");
+        // Compare content, not line endings: a Windows checkout with
+        // core.autocrlf turns the committed LF files into CRLF, while
+        // clap_complete always emits LF.
+        let normalize = |s: &str| s.replace("\r\n", "\n");
         assert_eq!(
-            generated, bytes,
+            normalize(&generated),
+            normalize(bytes),
             "{path} is stale — regenerate the shipped completions with `just completions`"
         );
     }
