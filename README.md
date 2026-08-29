@@ -40,6 +40,7 @@
 - **Hard mode** — tamper-evident session lock signed with BLAKE3 keyed HMAC. No `monk stop`, no config edits, no daemon kill can shortcut it.
 - **Background daemon** — Unix domain / local socket IPC, fail-closed reconciliation loop, SIGTERM-safe cleanup, systemd / launchd / Windows Task Scheduler install.
 - **Interactive TUI** — ratatui-powered dashboard for sessions, live stats, profile editing, type-to-filter mode search, daily-cap progress, and a high-contrast hard-mode badge.
+- **Menu bar app (macOS)** — native status item with the session countdown and one-click mode start/stop; set up automatically by the wizard, or via `monk menubar install`.
 - **Localized** — English and Русский out of the box via `rust-i18n`.
 - **Zero unsafe** — `#![deny(unsafe_code)]` in the main crate.
 
@@ -208,11 +209,21 @@ Built-in presets for `--preset`: `deepwork`, `study`, `detox`, `sleep`, `sober`,
 | `monk daemon install [--reinstall]` | Install as systemd / launchd / Windows scheduled task |
 | `monk daemon uninstall [--purge]`  | Remove the service (`--purge` also wipes config + data) |
 
+### Menu bar (macOS)
+
+A native status item next to the clock: a ring when idle, a filled dot with a countdown while a session runs (🔒 in hard mode). Every profile gets a submenu with blocked-site/app counts, duration choices and a hard-mode start; hard sessions can't be stopped from the menu — `monk panic` in a terminal stays the only escape. The setup wizard offers it on macOS (skip with `--no-menubar`); if you use a menu bar manager like Ice or Bartender, the icon may start in the hidden section — Cmd-drag it out once.
+
+| Command                  | What it does                                            |
+| ------------------------ | ------------------------------------------------------- |
+| `monk menubar`           | Run the menu bar app in the foreground                  |
+| `monk menubar install`   | Register it as a login item and start it now            |
+| `monk menubar uninstall` | Stop the login-item instance and remove the registration |
+
 ### Config & diagnostics
 
 | Command                                | What it does                                          |
 | -------------------------------------- | ----------------------------------------------------- |
-| `monk setup` / `monk init [--quick] [--reset] [-y]` | First-run wizard: config, daemon, completions, doctor |
+| `monk setup` / `monk init [--quick] [--reset] [-y]` | First-run wizard: config, daemon, completions, menu bar (macOS), doctor |
 | `monk doctor [--json] [--fix]`         | Environment, permissions and daemon health check; `--fix` self-repairs common issues |
 | `monk config path`                     | Print the config file path                            |
 | `monk config export`                   | Dump the current config                               |

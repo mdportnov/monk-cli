@@ -58,6 +58,8 @@ enum Command {
         no_completions: bool,
         #[arg(long, help = "Skip health checks")]
         no_doctor: bool,
+        #[arg(long, help = "Skip menu bar app setup (macOS)")]
+        no_menubar: bool,
     },
     #[command(about = "Open the interactive TUI")]
     Tui,
@@ -110,6 +112,11 @@ enum Command {
     Config(ConfigCmd),
     #[command(subcommand, about = "Manage the background daemon", alias = "service")]
     Daemon(DaemonCmd),
+    #[command(about = "Run the menu bar companion app (macOS only)")]
+    Menubar {
+        #[command(subcommand)]
+        cmd: Option<MenubarCmd>,
+    },
     #[command(about = "Generate shell completions")]
     Completions {
         #[arg(value_enum)]
@@ -202,6 +209,14 @@ enum AppsCmd {
 }
 
 #[derive(Debug, Subcommand)]
+enum MenubarCmd {
+    #[command(about = "Install the menu bar app as a login item")]
+    Install,
+    #[command(about = "Remove the menu bar app login item")]
+    Uninstall,
+}
+
+#[derive(Debug, Subcommand)]
 enum DaemonCmd {
     #[command(about = "Start the background daemon (user mode)")]
     Start,
@@ -278,6 +293,7 @@ pub async fn run() -> Result<()> {
             no_daemon,
             no_completions,
             no_doctor,
+            no_menubar,
         } => {
             let opts = crate::onboarding::Options {
                 locale,
@@ -291,6 +307,7 @@ pub async fn run() -> Result<()> {
                 no_daemon,
                 no_completions,
                 no_doctor,
+                no_menubar,
             };
             if non_interactive || opts.yes {
                 crate::onboarding::run_non_interactive(opts).await
@@ -336,6 +353,11 @@ pub async fn run() -> Result<()> {
         Command::Daemon(DaemonCmd::Status) => commands::daemon_status().await,
         Command::Daemon(DaemonCmd::Install { reinstall }) => commands::daemon_install(reinstall),
         Command::Daemon(DaemonCmd::Uninstall { purge }) => commands::daemon_uninstall(purge).await,
+        Command::Menubar { cmd } => match cmd {
+            None => commands::menubar_run(),
+            Some(MenubarCmd::Install) => commands::menubar_install(),
+            Some(MenubarCmd::Uninstall) => commands::menubar_uninstall(),
+        },
         Command::Completions { shell } => {
             use clap::CommandFactory;
             clap_complete::generate(shell, &mut Cli::command(), "monk", &mut std::io::stdout());
@@ -353,6 +375,7 @@ async fn maybe_first_run_onboarding(cmd: &Command, _locale: Option<&str>) -> cra
         Command::Init { .. }
             | Command::Completions { .. }
             | Command::Daemon(_)
+            | Command::Menubar { .. }
             | Command::Lang { .. }
             | Command::Doctor { .. }
             | Command::Update { .. }

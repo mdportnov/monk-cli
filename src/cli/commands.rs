@@ -586,6 +586,14 @@ pub fn daemon_install(reinstall: bool) -> Result<()> {
 }
 
 pub async fn daemon_uninstall(purge: bool) -> Result<()> {
+    // Purge also retires the menu bar login item; do it before elevation
+    // while we are still the logged-in user (the agent is per-user).
+    #[cfg(target_os = "macos")]
+    if purge {
+        if let Err(e) = crate::menubar::uninstall_agent() {
+            tracing::warn!(error = %e, "menubar agent cleanup failed");
+        }
+    }
     // On macOS the service is root-owned: ask for admin rights instead of
     // failing on `require_root` and leaving the LaunchDaemon behind.
     let msg = crate::platform::elevate_uninstall_service(purge)?;
@@ -747,4 +755,43 @@ fn refresh_service_after_update() {
             );
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+pub fn menubar_run() -> Result<()> {
+    crate::menubar::run()
+}
+
+#[cfg(target_os = "macos")]
+pub fn menubar_install() -> Result<()> {
+    let started = crate::menubar::install_agent()?;
+    if !started {
+        // launchd refused the bootstrap (already loaded, SSH session, …);
+        // the login item is registered — start the app directly for now.
+        crate::menubar::launch_detached()?;
+    }
+    println!("{}", crate::i18n::t!("menubar.installed"));
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn menubar_uninstall() -> Result<()> {
+    crate::menubar::uninstall_agent()?;
+    println!("{}", crate::i18n::t!("menubar.uninstalled"));
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_run() -> Result<()> {
+    Err(Error::Other(crate::i18n::t!("menubar.macos_only").to_string()))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_install() -> Result<()> {
+    menubar_run()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn menubar_uninstall() -> Result<()> {
+    menubar_run()
 }

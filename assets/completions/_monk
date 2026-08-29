@@ -44,6 +44,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-daemon[Skip daemon service installation]' \
 '--no-completions[Skip shell completions installation]' \
 '--no-doctor[Skip health checks]' \
+'--no-menubar[Skip menu bar app setup (macOS)]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
@@ -545,6 +546,73 @@ esac
     ;;
 esac
 ;;
+(menubar)
+_arguments "${_arguments_options[@]}" : \
+'--locale=[]:LOCALE:(en ru)' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_monk__menubar_commands" \
+"*::: :->menubar" \
+&& ret=0
+
+    case $state in
+    (menubar)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:monk-menubar-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : \
+'--locale=[]:LOCALE:(en ru)' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" : \
+'--locale=[]:LOCALE:(en ru)' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_monk__menubar__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:monk-menubar-help-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (completions)
 _arguments "${_arguments_options[@]}" : \
 '--locale=[]:LOCALE:(en ru)' \
@@ -749,6 +817,30 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
+(menubar)
+_arguments "${_arguments_options[@]}" : \
+":: :_monk__help__menubar_commands" \
+"*::: :->menubar" \
+&& ret=0
+
+    case $state in
+    (menubar)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:monk-help-menubar-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(uninstall)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
 (completions)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -787,6 +879,7 @@ _monk_commands() {
 'doctor:Check environment, permissions, and daemon health' \
 'config:Manage configuration' \
 'daemon:Manage the background daemon' \
+'menubar:Run the menu bar companion app (macOS only)' \
 'completions:Generate shell completions' \
 'update:Check GitHub releases for a new version and self-update' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -1009,6 +1102,7 @@ _monk__help_commands() {
 'doctor:Check environment, permissions, and daemon health' \
 'config:Manage configuration' \
 'daemon:Manage the background daemon' \
+'menubar:Run the menu bar companion app (macOS only)' \
 'completions:Generate shell completions' \
 'update:Check GitHub releases for a new version and self-update' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -1124,6 +1218,24 @@ _monk__help__lang_commands() {
     local commands; commands=()
     _describe -t commands 'monk help lang commands' commands "$@"
 }
+(( $+functions[_monk__help__menubar_commands] )) ||
+_monk__help__menubar_commands() {
+    local commands; commands=(
+'install:Install the menu bar app as a login item' \
+'uninstall:Remove the menu bar app login item' \
+    )
+    _describe -t commands 'monk help menubar commands' commands "$@"
+}
+(( $+functions[_monk__help__menubar__install_commands] )) ||
+_monk__help__menubar__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk help menubar install commands' commands "$@"
+}
+(( $+functions[_monk__help__menubar__uninstall_commands] )) ||
+_monk__help__menubar__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk help menubar uninstall commands' commands "$@"
+}
 (( $+functions[_monk__help__panic_commands] )) ||
 _monk__help__panic_commands() {
     local commands; commands=()
@@ -1215,6 +1327,49 @@ _monk__init_commands() {
 _monk__lang_commands() {
     local commands; commands=()
     _describe -t commands 'monk lang commands' commands "$@"
+}
+(( $+functions[_monk__menubar_commands] )) ||
+_monk__menubar_commands() {
+    local commands; commands=(
+'install:Install the menu bar app as a login item' \
+'uninstall:Remove the menu bar app login item' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'monk menubar commands' commands "$@"
+}
+(( $+functions[_monk__menubar__help_commands] )) ||
+_monk__menubar__help_commands() {
+    local commands; commands=(
+'install:Install the menu bar app as a login item' \
+'uninstall:Remove the menu bar app login item' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'monk menubar help commands' commands "$@"
+}
+(( $+functions[_monk__menubar__help__help_commands] )) ||
+_monk__menubar__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk menubar help help commands' commands "$@"
+}
+(( $+functions[_monk__menubar__help__install_commands] )) ||
+_monk__menubar__help__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk menubar help install commands' commands "$@"
+}
+(( $+functions[_monk__menubar__help__uninstall_commands] )) ||
+_monk__menubar__help__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk menubar help uninstall commands' commands "$@"
+}
+(( $+functions[_monk__menubar__install_commands] )) ||
+_monk__menubar__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk menubar install commands' commands "$@"
+}
+(( $+functions[_monk__menubar__uninstall_commands] )) ||
+_monk__menubar__uninstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk menubar uninstall commands' commands "$@"
 }
 (( $+functions[_monk__panic_commands] )) ||
 _monk__panic_commands() {

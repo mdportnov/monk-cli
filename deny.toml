@@ -1,5 +1,16 @@
 [graph]
 all-features = true
+# Only the triples we actually ship (see release.yml).
+targets = [
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
 
 [advisories]
 version = 2
@@ -12,6 +23,23 @@ ignore = [
     # proc-macro-error2 unmaintained — transitive build-time proc-macro via
     # lnk -> getset (Windows .lnk parsing). No runtime impact; no replacement yet.
     "RUSTSEC-2026-0173",
+    # GTK3 bindings (and proc-macro-error via gtk3-macros) unmaintained —
+    # phantom path: tray-icon/tao are macOS-only deps of monk, and their GTK
+    # branch is Linux-only, so this code is never built on any shipped
+    # target. cargo-deny still reports it because edge cfgs are matched
+    # against the whole `targets` list (darwin admits monk -> tray-icon,
+    # linux admits tray-icon -> libappindicator -> gtk). Drop these when
+    # tray-icon moves off GTK3 or grows a Linux backend we actually use.
+    "RUSTSEC-2024-0370",
+    "RUSTSEC-2024-0411",
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0414",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
 ]
 yanked = "deny"
 

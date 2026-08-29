@@ -41,6 +41,7 @@ src/
   config/                  toml schema, load/save
   doctor/                  health checks + self-repair actions
   platform/                OS-specific app discovery, paths, hosts file
+  menubar/                 macOS menu bar companion (tray icon, launch agent)
   tui/                     ratatui dashboard (app, view, widgets, theme)
   audit.rs, telemetry.rs, clock.rs, paths.rs, error.rs
 tests/                     integration tests

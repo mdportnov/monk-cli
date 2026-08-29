@@ -10,6 +10,8 @@ pub mod doctor;
 pub mod error;
 pub mod i18n;
 pub mod ipc;
+#[cfg(target_os = "macos")]
+pub mod menubar;
 pub mod onboarding;
 pub mod paths;
 pub mod platform;
