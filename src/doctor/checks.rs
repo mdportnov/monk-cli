@@ -26,6 +26,49 @@ pub(crate) fn check_platform() -> Check {
     )
 }
 
+/// macOS only: the menu bar app is a second copy of the binary inside
+/// `~/Applications/monk.app`, so `monk update` can leave it behind exactly
+/// the way it can leave the daemon behind.
+#[cfg(target_os = "macos")]
+pub(crate) fn check_menubar() -> Check {
+    let status = crate::menubar::status();
+    let refresh =
+        Action { key: 'm', label: "refresh menu bar app", kind: ActionKind::RefreshMenubar };
+    let Some(bundle) = status.bundle else {
+        return Check::new("menubar", "menu bar app", Status::Info, "not installed")
+            .with_hint("install it with `monk menubar install`");
+    };
+    let extras = vec![bundle.display().to_string()];
+    if status.stale {
+        return Check::new(
+            "menubar",
+            "menu bar app",
+            Status::Warn,
+            format!("the bundle predates this cli (v{})", env!("CARGO_PKG_VERSION")),
+        )
+        .with_hint("refresh it with `monk menubar install`")
+        .with_extras(extras)
+        .with_actions(vec![refresh]);
+    }
+    if status.login_item && !status.running {
+        return Check::new(
+            "menubar",
+            "menu bar app",
+            Status::Warn,
+            "registered as a login item, but no instance is running",
+        )
+        .with_hint("start it with `monk menubar install`")
+        .with_extras(extras)
+        .with_actions(vec![refresh]);
+    }
+    let detail = match (status.login_item, status.running) {
+        (true, _) => "installed, starts at login",
+        (false, true) => "running (not registered as a login item)",
+        (false, false) => "installed, not running",
+    };
+    Check::new("menubar", "menu bar app", Status::Ok, detail).with_extras(extras)
+}
+
 pub(crate) fn check_service_install() -> Check {
     #[cfg(target_os = "macos")]
     {

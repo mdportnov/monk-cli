@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-01
+
 ### Added
 
 - macOS menu bar companion (`monk menubar`): a native status item showing the
@@ -15,6 +17,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration choices and a hard-mode start. Shows the next scheduled session,
   can start the daemon when it is offline, and `monk menubar install` /
   the "Launch at login" toggle register it as a per-user launch agent.
+- The menu bar app runs from a real `monk.app` bundle, built and refreshed by
+  `monk menubar install`, so notifications carry monk's own icon and buttons.
+  Notifications now cover the whole session arc — start (including sessions
+  the scheduler fires), a five-minute warning and completion — with "Add
+  15m" and "Stop" straight on the banner. Without notification permission or
+  outside the bundle they fall back to the previous scripted banners.
+- `monk extend <duration>` adds time to the running session, mirrored by the
+  menu bar's "Add time" submenu (+5/15/30/60m). Allowed in hard mode — a
+  longer session is stricter, never an escape — and clamped to the profile's
+  `max_duration`.
+- The default mode now leads every list monk shows, and the menu bar can move
+  the star with "Make this the default ★" inside any mode's submenu.
+- The status item wears the monk mark instead of a generic circle: dimmed
+  when idle, solid with the logo's cursor during a session, and with a filled
+  block cursor in hard mode.
+
+### Fixed
+
+- The menu bar countdown no longer freezes on `0s` after a session ends:
+  macOS ignores a request to clear a status item's title, so it is now
+  written as an empty string. The countdown also rounds up, so a running
+  session never claims to have no time left.
+- `monk menubar install` now retires whatever menu bar app is already
+  running before it bootstraps the new one — previously the fresh copy lost
+  the single-instance race and exited, leaving the old binary in the menu
+  bar with nothing to say so.
+- Elevated runs no longer scatter per-user files into `/var/root`: the menu
+  bar app refuses to install or run as root, and `monk setup` skips the step
+  with the reason instead of asking. Paths that must be per-user resolve the
+  invoking user's home under `sudo`.
+- `monk update` and `monk doctor` now notice a menu bar app left on an older
+  binary, the same way they already noticed a stale daemon, and rebuild it.
+- A daemon older than the CLI answers new requests with "unknown request
+  kind"; the CLI and the menu bar now translate that into
+  `sudo monk service install`.
+- **Security (macOS)** — the daemon binary copied to `/usr/local/libexec/monk`
+  stayed owned by the user who installed it while launchd runs it as root:
+  `fs::copy` carries the source's ownership across when the caller is root.
+  Anything running as that user could have replaced the binary and been root
+  at the next launch. It is now chowned to `root:wheel`, as is its directory.
+- `monk daemon install` reported "elevation cancelled or failed" on installs
+  that had in fact succeeded. Two causes, both fixed: the elevated child
+  stripped the very success marker its parent was waiting for, and osascript
+  returns the child's output with CR line breaks, which hid the marker from
+  every line-based check. The parent now also confirms the result on disk
+  rather than trusting the handshake alone.
+- `monk menubar install` no longer skips launchd and starts the app by hand
+  because the previous job was still unloading.
+- `monk status` prints whole seconds instead of `24m 59s 903ms 562us`.
+- The menu bar app checks that macOS actually resolved a bundle identity for
+  it, not just that its path looks right, before touching the notification
+  center: asking that API for its instance without an identity aborts the
+  process rather than returning an error, which would have taken the status
+  item down with it.
+- Errors the daemon sends back now carry their diagnostic help. Declining the
+  admin prompt during setup used to end at "site blocking unavailable:
+  /etc/hosts not writable" with no mention of `sudo monk service install`,
+  because only the CLI's own errors ever rendered their help.
+- `monk setup` re-run in system mode with the daemon down explains that the
+  daemon owns `config.toml`, instead of failing with a bare EACCES after
+  asking every question.
+- The daemon rewrote the session lock once a second from a copy loaded at the
+  top of the tick, so a concurrent change — `monk extend`, `monk panic` —
+  could be flattened by a tick already in flight. Every read-modify-write of
+  the lock now holds one gate. Schedules are still checked outside it: firing
+  one starts a session, and that path takes the same gate.
+- Double-clicking `monk.app` in Finder printed a help screen to a terminal
+  nobody was looking at. With no arguments the bundled binary now runs the
+  menu bar app, and a `-psn_…` argument from Launch Services no longer makes
+  clap reject the launch outright.
+- `monk extend` said how much time was asked for, not how much was granted —
+  a profile's `max_duration` can clamp it. It now reports the session the
+  daemon returned.
+- The menu bar worker could panic on a machine that logs in within thirty
+  seconds of boot: `Instant` is anchored at boot on macOS and the poll clock
+  started by subtracting from it.
+- A bundle with an unreadable `Info.plist` reported itself as healthy and was
+  never rebuilt, quietly costing the app its notifications forever.
+- Notifications for a hard-mode session no longer carry a "Stop" button the
+  daemon is guaranteed to refuse.
+
+### Changed
+
 - The setup wizard wires up the menu bar app on macOS: interactive setup
   asks (decline just skips the step), `--quick` and non-interactive runs
   enable it by default, `--no-menubar` opts out. Install failures print the
@@ -255,5 +340,6 @@ daemon.
   (1.82) check, and quieted an unmaintained-advisory notice for the transitive,
   build-time `proc-macro-error2` dependency. All CI jobs are green.
 
-[Unreleased]: https://github.com/mdportnov/monk-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mdportnov/monk-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/mdportnov/monk-cli/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mdportnov/monk-cli/releases/tag/v0.2.0

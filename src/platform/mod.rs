@@ -101,6 +101,17 @@ pub fn legacy_user_config_file_for(user: &str) -> Option<PathBuf> {
     }
 }
 
+/// What the elevated child should print: the raw text, markers and all, so
+/// the parent can read the handshake — or the cleaned-up text when a person
+/// is the one reading it.
+pub fn service_output(msg: &str) -> String {
+    #[cfg(target_os = "macos")]
+    if macos::is_elevated_child() {
+        return msg.to_string();
+    }
+    strip_service_markers(msg)
+}
+
 /// Drop the machine-readable success markers from a service-install /
 /// -uninstall message.
 ///
@@ -108,7 +119,10 @@ pub fn legacy_user_config_file_for(user: &str) -> Option<PathBuf> {
 /// osascript that exits 0 proves nothing about the child), never something a
 /// user should read.
 pub fn strip_service_markers(msg: &str) -> String {
-    msg.lines()
+    // CR is a line break here too: osascript hands the elevated child's
+    // output back that way.
+    msg.replace('\r', "\n")
+        .lines()
         .map(|line| {
             line.split(", ")
                 .filter(|part| !part.trim().starts_with("monk:service:"))
@@ -177,5 +191,12 @@ mod tests {
     fn ordinary_text_survives_untouched() {
         let msg = "copied binary → /usr/local/libexec/monk/monkd";
         assert_eq!(strip_service_markers(msg), msg);
+    }
+
+    #[test]
+    fn markers_are_stripped_from_cr_separated_output() {
+        // osascript hands `do shell script` output back with CR line breaks.
+        let msg = "copied binary\rwrote plist\rmonk:service:install:ok";
+        assert_eq!(strip_service_markers(msg), "copied binary\nwrote plist");
     }
 }

@@ -62,6 +62,10 @@ package-deb:
 package-rpm:
     cargo generate-rpm
 
+# Regenerate the macOS app icon from the logo geometry.
+icns:
+    python3 scripts/gen-icns.py
+
 completions: build
     mkdir -p assets/completions
     ./target/release/monk completions bash > assets/completions/monk

@@ -274,6 +274,7 @@ fn request_kind(req: &Request) -> &'static str {
         Request::Status => "Status",
         Request::Start { .. } => "Start",
         Request::Stop { .. } => "Stop",
+        Request::Extend { .. } => "Extend",
         Request::Panic { .. } => "Panic",
         Request::List => "List",
         Request::Shutdown => "Shutdown",
@@ -294,6 +295,16 @@ fn request_kind(req: &Request) -> &'static str {
     }
 }
 
+/// Renders an error for the wire. `to_string()` alone drops the diagnostic
+/// help, and that help is usually the only part that tells the user what to
+/// do — the CLI on the other side has no error type to inspect, just text.
+fn describe(e: &Error) -> String {
+    match miette::Diagnostic::help(e) {
+        Some(help) => format!("{e} — {help}"),
+        None => e.to_string(),
+    }
+}
+
 fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Response {
     match req {
         Request::Ping => Response::Pong { version: env!("CARGO_PKG_VERSION").into() },
@@ -306,7 +317,7 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
             let phrase = crate::session::lock::generate_phrase();
             match sup.start(profile, duration, hard_mode, reason, phrase) {
                 Ok(s) => Response::Session(Box::new(s)),
-                Err(e) => Response::Error { message: e.to_string() },
+                Err(e) => Response::Error { message: describe(&e) },
             }
         }
         Request::Stop { .. } => match sup.stop() {
@@ -316,14 +327,18 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
                 Some(info) => Response::HardModeActive(Box::new(info)),
                 None => Response::Error { message: "hard mode active".into() },
             },
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
+        },
+        Request::Extend { by } => match sup.extend(by) {
+            Ok(s) => Response::Session(Box::new(s)),
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::Panic { phrase, cancel } => match sup.panic(&phrase, cancel) {
             Ok(_) => match sup.hard_info() {
                 Some(info) => Response::PanicScheduled(Box::new(info)),
                 None => Response::Ok,
             },
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::List => Response::Sessions { sessions: sup.active().into_iter().collect() },
         Request::Shutdown => {
@@ -340,33 +355,33 @@ fn dispatch(req: Request, sup: &Arc<Supervisor>, shutdown: &Arc<Notify>) -> Resp
         Request::ListModes => Response::Modes { modes: sup.list_modes() },
         Request::ModeStats { name } => match sup.mode_stats(&name) {
             Ok(s) => Response::ModeStatsData(s),
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::ModeDetail { name, days } => match sup.mode_detail(&name, days) {
             Ok(d) => Response::ModeDetailData(Box::new(d)),
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::SaveMode { name, profile } => match sup.save_mode(name, *profile) {
             Ok(()) => Response::Ok,
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::DeleteMode { name } => match sup.delete_mode(&name) {
             Ok(()) => Response::Ok,
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::GetGeneral => Response::General(sup.get_general()),
         Request::UpdateGeneral { general } => match sup.update_general(general) {
             Ok(()) => Response::Ok,
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::ResetAll => match sup.reset_all() {
             Ok(()) => Response::Ok,
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::GetConfig => Response::Config(Box::new(sup.get_config())),
         Request::SaveConfig { config } => match sup.save_config(*config) {
             Ok(()) => Response::Ok,
-            Err(e) => Response::Error { message: e.to_string() },
+            Err(e) => Response::Error { message: describe(&e) },
         },
         Request::NextScheduled => {
             let (profile, at) = match sup.next_scheduled() {

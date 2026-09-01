@@ -7,10 +7,59 @@
 //! proxy. Menu clicks arrive through the same proxy as user events.
 
 mod agent;
+mod bundle;
+mod icon;
+mod notify;
 
 pub use agent::{
     install as install_agent, spawn_now as launch_detached, uninstall_and_stop as uninstall_agent,
 };
+pub use bundle::is_bundled;
+
+/// What `monk doctor` and `monk update` need to know about the menu bar app
+/// without reaching into its internals.
+#[derive(Debug, Clone)]
+pub struct Status {
+    /// The LaunchAgent that starts it at login is registered.
+    pub login_item: bool,
+    /// Path of the installed `monk.app`, if it exists.
+    pub bundle: Option<std::path::PathBuf>,
+    /// The installed bundle was built by a different version of monk.
+    pub stale: bool,
+    /// An instance is up right now.
+    pub running: bool,
+}
+
+pub fn status() -> Status {
+    let bundle = bundle::app_path().ok().filter(|p| p.exists());
+    Status {
+        login_item: agent::installed(),
+        stale: bundle.is_some() && bundle::is_stale(),
+        running: running_pid().is_some(),
+        bundle,
+    }
+}
+
+/// Rebuilds the bundle around the current binary and restarts the app, so an
+/// upgraded CLI does not leave an old menu bar app running forever. No-op
+/// when the menu bar app was never installed.
+pub fn refresh_after_update(version: &str) -> Result<bool> {
+    let status = status();
+    if status.bundle.is_none() {
+        return Ok(false);
+    }
+    require_user_session()?;
+    stop_running();
+    let bin = bundle::install_as(version)?;
+    // Put it back the way the user had it: a login item stays a login item,
+    // and an app they started by hand is only restarted if it was up.
+    if status.login_item {
+        agent::register(&bin)?;
+    } else if status.running {
+        agent::spawn_now()?;
+    }
+    Ok(true)
+}
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -22,8 +71,10 @@ use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tray_icon::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{TrayIcon, TrayIconBuilder};
 
+use self::icon::Mark;
+use self::notify::{Kind, Notifier};
 use crate::ipc::{self, HardModeInfo, ModeSummary, Request, Response};
 use crate::session::Session;
 use crate::{Error, Result};
@@ -31,8 +82,13 @@ use crate::{Error, Result};
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const FULL_REFRESH: Duration = Duration::from_secs(30);
 /// Index of the first mode submenu inside the tray menu:
-/// [header, info, separator, <modes...>].
-const MODES_AT: usize = 3;
+/// [header, info, usage, separator, <modes...>].
+const MODES_AT: usize = 4;
+/// Offered from the "Add time" submenu, in minutes.
+const EXTEND_CHOICES: [u64; 4] = [5, 15, 30, 60];
+/// Start durations every mode submenu offers, on top of the configured
+/// default duration.
+const START_CHOICES: [u64; 4] = [15 * 60, 30 * 60, 60 * 60, 2 * 60 * 60];
 
 #[derive(Debug)]
 enum UserEvent {
@@ -48,17 +104,25 @@ struct Snapshot {
     /// `None` = not refreshed this tick (keep the current menu).
     modes: Option<Vec<ModeSummary>>,
     next_scheduled: Option<(Option<String>, Option<DateTime<Utc>>)>,
-    default_duration: Option<Duration>,
+    /// The daemon's general settings; `None` when not refreshed. Kept whole
+    /// because `UpdateGeneral` replaces the section, so changing one field
+    /// means echoing back the rest.
+    general: Option<crate::config::General>,
+    /// Sum of every mode's rolling 24h usage; `None` when not refreshed.
+    used_24h: Option<Duration>,
 }
 
 enum Cmd {
     Start { profile: String, duration: Duration, hard: bool },
+    Extend { by: Duration },
+    SetDefault { profile: String },
     Stop,
     StartDaemon,
     Refresh,
 }
 
 pub fn run() -> Result<()> {
+    require_user_session()?;
     let _lock = single_instance_lock()?;
 
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -79,7 +143,7 @@ pub fn run() -> Result<()> {
         *control_flow = ControlFlow::Wait;
         match event {
             Event::NewEvents(StartCause::Init) => {
-                if let Err(e) = ui.build_tray() {
+                if let Err(e) = ui.build_tray(&cmd_tx) {
                     tracing::error!(error = %e, "failed to create tray icon");
                     std::process::exit(1);
                 }
@@ -96,20 +160,37 @@ pub fn run() -> Result<()> {
     });
 }
 
+/// What the previous snapshot said about the session, so a completion can be
+/// told apart from a stop the user asked for.
+#[derive(Debug, Clone)]
+struct LastSession {
+    id: uuid::Uuid,
+    profile: String,
+    duration: Duration,
+    remaining: Duration,
+}
+
 struct Ui {
     tray: Option<TrayIcon>,
     menu: Menu,
     header: MenuItem,
     info: MenuItem,
+    usage: MenuItem,
+    add_time: Submenu,
     stop: MenuItem,
     start_daemon: MenuItem,
     login: CheckMenuItem,
     mode_menus: Vec<Submenu>,
     mode_key: String,
     default_duration: Duration,
-    icon_idle: Icon,
-    icon_active: Icon,
-    active_icon_shown: bool,
+    general: Option<crate::config::General>,
+    mark: Mark,
+    last_session: Option<LastSession>,
+    /// False until the first snapshot has been seen; see [`Ui::announce`].
+    primed: bool,
+    /// Built once the app is running: the notification center wants a live
+    /// NSApplication before it will hand out permission prompts.
+    notifier: Option<Notifier>,
 }
 
 impl Ui {
@@ -118,9 +199,24 @@ impl Ui {
         let header =
             MenuItem::with_id("header", crate::i18n::t!("menubar.connecting"), false, None);
         let info = MenuItem::with_id("info", "—", false, None);
+        let usage =
+            MenuItem::with_id("usage", crate::i18n::t!("menubar.usage_unknown"), false, None);
+        let add_time = Submenu::with_id("add_time", crate::i18n::t!("menubar.add_time"), false);
+        for mins in EXTEND_CHOICES {
+            let d = fmt_duration(Duration::from_secs(mins * 60));
+            let item = MenuItem::with_id(
+                format!("extend:{}", mins * 60),
+                crate::i18n::t!("menubar.add_minutes", duration = d),
+                true,
+                None,
+            );
+            add_time.append(&item).map_err(|e| Error::Other(e.to_string()))?;
+        }
         let stop = MenuItem::with_id("stop", crate::i18n::t!("menubar.stop"), false, None);
         let start_daemon =
             MenuItem::with_id("start_daemon", crate::i18n::t!("menubar.start_daemon"), false, None);
+        let open_tui =
+            MenuItem::with_id("open_tui", crate::i18n::t!("menubar.open_tui"), true, None);
         let login = CheckMenuItem::with_id(
             "login",
             crate::i18n::t!("menubar.launch_at_login"),
@@ -133,16 +229,19 @@ impl Ui {
         let sep_top = PredefinedMenuItem::separator();
         let sep_modes = PredefinedMenuItem::separator();
         let sep_bottom = PredefinedMenuItem::separator();
-        let items: [&dyn IsMenuItem; 9] = [
+        let items: [&dyn IsMenuItem; 12] = [
             &header,
             &info,
+            &usage,
             &sep_top,
             // Mode submenus are inserted at MODES_AT (after sep_top) once
             // the first full snapshot arrives.
             &sep_modes,
+            &add_time,
             &stop,
             &start_daemon,
             &sep_bottom,
+            &open_tui,
             &login,
             &quit,
         ];
@@ -155,22 +254,37 @@ impl Ui {
             menu,
             header,
             info,
+            usage,
+            add_time,
             stop,
             start_daemon,
             login,
             mode_menus: Vec::new(),
             mode_key: String::new(),
             default_duration: Duration::from_secs(25 * 60),
-            icon_idle: circle_icon(false),
-            icon_active: circle_icon(true),
-            active_icon_shown: false,
+            general: None,
+            mark: Mark::Idle,
+            last_session: None,
+            primed: false,
+            notifier: None,
         })
     }
 
-    fn build_tray(&mut self) -> Result<()> {
+    fn build_tray(&mut self, cmd_tx: &mpsc::Sender<Cmd>) -> Result<()> {
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            let tx = cmd_tx.clone();
+            self.notifier = Some(Notifier::new(mtm, move |action| {
+                let cmd = match action {
+                    notify::Action::Extend(by) => Cmd::Extend { by },
+                    notify::Action::Stop => Cmd::Stop,
+                };
+                let _ = tx.send(cmd);
+            }));
+        }
+
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(self.menu.clone()))
-            .with_icon(self.icon_idle.clone())
+            .with_icon(icon::render(Mark::Idle))
             .with_icon_as_template(true)
             .with_tooltip("monk")
             .build()
@@ -180,42 +294,114 @@ impl Ui {
     }
 
     fn apply(&mut self, snap: Snapshot) {
-        if let Some(d) = snap.default_duration {
-            self.default_duration = d;
+        if let Some(general) = &snap.general {
+            self.default_duration = general.default_duration;
+            self.general = Some(general.clone());
         }
         if let Some(modes) = &snap.modes {
             self.rebuild_modes(modes);
         }
+        self.announce(&snap);
         self.render(&snap);
+    }
+
+    /// The daemon has no notifier of its own, so the menu bar app is where a
+    /// finished session gets announced. A session the user stopped by hand
+    /// stays silent — they were already looking at the screen.
+    fn announce(&mut self, snap: &Snapshot) {
+        /// A session whose last countdown was inside this window ran out on
+        /// its own; anything longer was a stop the user asked for, and they
+        /// were already looking at the screen.
+        const COMPLETION_SLACK: Duration = Duration::from_secs(5);
+        /// The one warning before the end, so a session never just stops.
+        const ENDGAME: Duration = Duration::from_secs(5 * 60);
+
+        // A snapshot that never reached the daemon says nothing about the
+        // session — remembering its emptiness would turn every blip into a
+        // "session ended" followed by a "session started".
+        if !snap.daemon_ok {
+            return;
+        }
+        let prev = self.last_session.take();
+        if let Some(s) = &snap.session {
+            self.last_session = Some(LastSession {
+                id: s.id,
+                profile: s.profile.clone(),
+                duration: s.duration,
+                remaining: s.remaining(),
+            });
+        }
+        // The first snapshot that reaches the daemon describes a world the
+        // app was not watching; announcing it would fire on every login.
+        if !std::mem::replace(&mut self.primed, true) {
+            return;
+        }
+
+        match (prev, &snap.session) {
+            // A start the user may not have made themselves — the scheduler
+            // fires sessions too.
+            (prev, Some(now)) if prev.as_ref().is_none_or(|p| p.id != now.id) => {
+                let d = fmt_duration(now.duration);
+                let p = now.profile.clone();
+                let title = crate::i18n::t!("menubar.notify_start_title");
+                let body = crate::i18n::t!("menubar.notify_start_body", profile = p, duration = d);
+                self.post(&title, &body, session_kind(snap));
+            }
+            (Some(prev), Some(now)) => {
+                let left = now.remaining();
+                if prev.remaining > ENDGAME && left <= ENDGAME {
+                    let d = fmt_remaining(left);
+                    let p = now.profile.clone();
+                    let title = crate::i18n::t!("menubar.notify_endgame_title");
+                    let body =
+                        crate::i18n::t!("menubar.notify_endgame_body", profile = p, duration = d);
+                    self.post(&title, &body, session_kind(snap));
+                }
+            }
+            (Some(prev), None) if prev.remaining <= COMPLETION_SLACK => {
+                let d = fmt_duration(prev.duration);
+                let p = prev.profile;
+                let title = crate::i18n::t!("menubar.notify_done_title");
+                let body = crate::i18n::t!("menubar.notify_done_body", profile = p, duration = d);
+                self.post(&title, &body, Kind::Plain);
+            }
+            _ => {}
+        }
+    }
+
+    /// Buttons only make sense while there is a session to act on, so the
+    /// caller picks the kind; outside the app bundle both kinds degrade to a
+    /// plain scripted notification.
+    fn post(&self, title: &str, body: &str, kind: Kind) {
+        match &self.notifier {
+            Some(notifier) => notifier.post(title, body, kind),
+            None => crate::platform::notify(title, body),
+        }
     }
 
     fn render(&mut self, snap: &Snapshot) {
         let hard_active = snap.hard.is_some();
         let session_active = snap.session.is_some();
+        let panic_pending = snap.hard.as_ref().is_some_and(|h| h.panic_releases_at.is_some());
 
-        // Header + tray title.
-        let title;
+        // Header + tray title. The title is always written, empty string
+        // included: on macOS `set_title(None)` is a no-op, so skipping it
+        // would leave the last countdown frozen next to the icon.
+        let mut title = String::new();
         if !snap.daemon_ok {
             self.header.set_text(crate::i18n::t!("menubar.daemon_offline"));
-            title = None;
         } else if let Some(s) = &snap.session {
-            let remaining = fmt_duration(s.remaining());
+            let remaining = fmt_remaining(s.remaining());
             let p = s.profile.clone();
             let r = remaining.clone();
-            let line = crate::i18n::t!("menubar.active", profile = p, remaining = r);
-            if s.hard_mode {
-                self.header.set_text(format!("🔒 {line}"));
-                title = Some(format!("🔒 {remaining}"));
-            } else {
-                self.header.set_text(line);
-                title = Some(remaining);
-            }
+            self.header.set_text(crate::i18n::t!("menubar.active", profile = p, remaining = r));
+            title = remaining;
         } else {
             self.header.set_text(crate::i18n::t!("menubar.idle"));
-            title = None;
         }
 
-        // Info line: panic countdown > hard-mode hint > next schedule.
+        // Info line: panic countdown > hard-mode hint > end of the running
+        // session > next schedule.
         if let Some(h) = &snap.hard {
             if let Some(release) = h.panic_releases_at {
                 let at = release.with_timezone(&Local).format("%H:%M").to_string();
@@ -223,6 +409,9 @@ impl Ui {
             } else {
                 self.info.set_text(crate::i18n::t!("menubar.hard_hint"));
             }
+        } else if let Some(s) = &snap.session {
+            let at = s.ends_at().with_timezone(&Local).format("%H:%M").to_string();
+            self.info.set_text(crate::i18n::t!("menubar.until", time = at));
         } else if let Some((Some(profile), Some(at))) = &snap.next_scheduled {
             let at = at.with_timezone(&Local).format("%a %H:%M").to_string();
             let p = profile.clone();
@@ -233,20 +422,35 @@ impl Ui {
             self.info.set_text(crate::i18n::t!("menubar.no_schedule"));
         }
 
+        if let Some(used) = snap.used_24h {
+            if used.is_zero() {
+                self.usage.set_text(crate::i18n::t!("menubar.usage_none"));
+            } else {
+                let d = fmt_duration(used);
+                self.usage.set_text(crate::i18n::t!("menubar.usage_24h", duration = d));
+            }
+        }
+
+        self.add_time.set_enabled(snap.daemon_ok && session_active && !panic_pending);
         self.stop.set_enabled(snap.daemon_ok && session_active && !hard_active);
         self.start_daemon.set_enabled(!snap.daemon_ok);
         for m in &self.mode_menus {
             m.set_enabled(snap.daemon_ok && !session_active);
         }
 
-        if let Some(tray) = &self.tray {
-            tray.set_title(title.as_deref());
-            if session_active != self.active_icon_shown {
-                let icon =
-                    if session_active { self.icon_active.clone() } else { self.icon_idle.clone() };
-                let _ = tray.set_icon(Some(icon));
-                tray.set_icon_as_template(true);
-                self.active_icon_shown = session_active;
+        let mark = match (session_active, hard_active) {
+            (true, true) => Mark::Hard,
+            (true, false) => Mark::Active,
+            _ => Mark::Idle,
+        };
+        if let Some(tray) = &mut self.tray {
+            tray.set_title(Some(&title));
+            if mark != self.mark {
+                if let Err(e) = tray.set_icon_with_as_template(Some(icon::render(mark)), true) {
+                    tracing::warn!(error = %e, "could not swap the status icon");
+                } else {
+                    self.mark = mark;
+                }
             }
         }
     }
@@ -308,7 +512,7 @@ impl Ui {
             true,
             None,
         ));
-        for secs in [30 * 60u64, 3600, 2 * 3600] {
+        for secs in START_CHOICES {
             if secs == def.as_secs() {
                 continue;
             }
@@ -327,6 +531,15 @@ impl Ui {
             true,
             None,
         ));
+        let _ = sub.append(&PredefinedMenuItem::separator());
+        // Disabled on the mode that already holds the star, so the item
+        // doubles as a read-out of which mode is the default.
+        let _ = sub.append(&MenuItem::with_id(
+            format!("default:{}", mode.name),
+            crate::i18n::t!("menubar.make_default"),
+            !mode.is_default,
+            None,
+        ));
         sub
     }
 
@@ -340,6 +553,7 @@ impl Ui {
             "start_daemon" => {
                 let _ = cmd_tx.send(Cmd::StartDaemon);
             }
+            "open_tui" => open_tui(),
             "login" => {
                 let result = if agent::installed() {
                     agent::uninstall()
@@ -352,7 +566,13 @@ impl Ui {
                 self.login.set_checked(agent::installed());
             }
             other => {
-                if let Some(rest) = other.strip_prefix("start:") {
+                if let Some(profile) = other.strip_prefix("default:") {
+                    let _ = cmd_tx.send(Cmd::SetDefault { profile: profile.to_string() });
+                } else if let Some(secs) =
+                    other.strip_prefix("extend:").and_then(|s| s.parse::<u64>().ok())
+                {
+                    let _ = cmd_tx.send(Cmd::Extend { by: Duration::from_secs(secs) });
+                } else if let Some(rest) = other.strip_prefix("start:") {
                     // Mode names may contain ':'; the two trailing segments
                     // are always duration and the hard flag.
                     let mut parts = rest.rsplitn(3, ':');
@@ -374,6 +594,65 @@ impl Ui {
     }
 }
 
+/// Which buttons a session notification should carry. Hard mode refuses
+/// every stop, so offering one would be a button that only ever fails.
+fn session_kind(snap: &Snapshot) -> Kind {
+    if snap.hard.is_some() {
+        Kind::HardSession
+    } else {
+        Kind::Session
+    }
+}
+
+/// Hands the user the full TUI. There is no window to fall back on, so a
+/// terminal is the only place the rest of monk lives.
+fn open_tui() {
+    let Ok(exe) = std::env::current_exe() else {
+        tracing::warn!("cannot resolve the monk binary path");
+        return;
+    };
+    let quoted = exe.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "tell application \"Terminal\"\nactivate\ndo script \"\\\"{quoted}\\\" tui\"\nend tell"
+    );
+    let spawned = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "could not open Terminal");
+    }
+}
+
+/// Moving the star means replacing the whole `general` section, so the
+/// current one is read back first and only `default_profile` is touched.
+fn set_default_request(rt: &tokio::runtime::Runtime, profile: String) -> Option<Request> {
+    match rt.block_on(ipc::send(&Request::GetGeneral)) {
+        Ok(Response::General(mut general)) => {
+            general.default_profile = profile;
+            Some(Request::UpdateGeneral { general })
+        }
+        Ok(Response::Error { message }) => {
+            report_rejection(&message);
+            None
+        }
+        Ok(_) => None,
+        Err(e) => {
+            report_rejection(&e.to_string());
+            None
+        }
+    }
+}
+
+/// A rejected click has nowhere to show itself in a menu, so the daemon's
+/// reason goes to Notification Center instead of only to the log.
+fn report_rejection(message: &str) {
+    tracing::warn!(%message, "menu bar action rejected");
+    crate::platform::notify(&crate::i18n::t!("menubar.action_failed"), message);
+}
+
 fn worker(rx: mpsc::Receiver<Cmd>, proxy: EventLoopProxy<UserEvent>) {
     let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(rt) => rt,
@@ -382,46 +661,49 @@ fn worker(rx: mpsc::Receiver<Cmd>, proxy: EventLoopProxy<UserEvent>) {
             return;
         }
     };
-    let mut last_full = Instant::now() - FULL_REFRESH;
+    // `Instant` is anchored at boot on macOS and subtracting past it panics;
+    // a login item can start with seconds of uptime. `None` also states the
+    // thing directly: no full refresh has happened yet.
+    let mut last_full: Option<Instant> = None;
     loop {
         let mut force_full = false;
-        match rx.recv_timeout(POLL_INTERVAL) {
+        let request = match rx.recv_timeout(POLL_INTERVAL) {
             Ok(Cmd::Start { profile, duration, hard }) => {
-                let req = Request::Start { profile, duration, hard_mode: hard, reason: None };
-                match rt.block_on(ipc::send(&req)) {
-                    Ok(Response::Error { message }) => {
-                        tracing::warn!(%message, "start rejected");
-                    }
-                    Err(e) => tracing::warn!(error = %e, "start failed"),
-                    Ok(_) => {}
-                }
-                force_full = true;
+                Some(Request::Start { profile, duration, hard_mode: hard, reason: None })
             }
-            Ok(Cmd::Stop) => {
-                match rt.block_on(ipc::send(&Request::Stop { id: None })) {
-                    Ok(Response::Error { message }) => {
-                        tracing::warn!(%message, "stop rejected");
-                    }
-                    Err(e) => tracing::warn!(error = %e, "stop failed"),
-                    Ok(_) => {}
-                }
-                force_full = true;
-            }
+            Ok(Cmd::Extend { by }) => Some(Request::Extend { by }),
+            Ok(Cmd::SetDefault { profile }) => set_default_request(&rt, profile),
+            Ok(Cmd::Stop) => Some(Request::Stop { id: None }),
             Ok(Cmd::StartDaemon) => {
                 if let Ok(exe) = std::env::current_exe() {
                     let _ = std::process::Command::new(exe).args(["daemon", "start"]).status();
                 }
                 force_full = true;
+                None
             }
-            Ok(Cmd::Refresh) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Ok(Cmd::Refresh) => None,
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
+        if let Some(req) = request {
+            match rt.block_on(ipc::send(&req)) {
+                Ok(Response::Error { message }) => {
+                    report_rejection(&ipc::explain_rejection(message))
+                }
+                Ok(Response::HardModeActive(info)) => {
+                    let left = fmt_duration(info.remaining);
+                    report_rejection(&crate::i18n::t!("menubar.hard_denied", remaining = left));
+                }
+                Err(e) => report_rejection(&e.to_string()),
+                Ok(_) => {}
+            }
+            force_full = true;
         }
 
-        let full = force_full || last_full.elapsed() >= FULL_REFRESH;
+        let full = force_full || last_full.is_none_or(|at| at.elapsed() >= FULL_REFRESH);
         let snap = rt.block_on(fetch(full));
         if full && snap.daemon_ok {
-            last_full = Instant::now();
+            last_full = Some(Instant::now());
         }
         if proxy.send_event(UserEvent::State(Box::new(snap))).is_err() {
             return;
@@ -436,7 +718,8 @@ async fn fetch(full: bool) -> Snapshot {
         hard: None,
         modes: None,
         next_scheduled: None,
-        default_duration: None,
+        general: None,
+        used_24h: None,
     };
     match ipc::send(&Request::Status).await {
         Ok(Response::Status { active, hard_mode, .. }) => {
@@ -450,13 +733,14 @@ async fn fetch(full: bool) -> Snapshot {
         return snap;
     }
     if let Ok(Response::Modes { modes }) = ipc::send(&Request::ListModes).await {
+        snap.used_24h = Some(modes.iter().fold(Duration::ZERO, |acc, m| acc + m.stats.used_24h));
         snap.modes = Some(modes);
     }
     if let Ok(Response::NextScheduled { profile, at }) = ipc::send(&Request::NextScheduled).await {
         snap.next_scheduled = Some((profile, at));
     }
     if let Ok(Response::General(general)) = ipc::send(&Request::GetGeneral).await {
-        snap.default_duration = Some(general.default_duration);
+        snap.general = Some(general);
     }
     snap
 }
@@ -477,44 +761,118 @@ fn fmt_duration(d: Duration) -> String {
     }
 }
 
-/// Draws a 32×32 template icon: a ring when idle, a filled disc when a
-/// session is active. Black + alpha only, so macOS re-tints it per theme.
-fn circle_icon(filled: bool) -> Icon {
-    const SIZE: u32 = 32;
-    let c = (SIZE as f32 - 1.0) / 2.0;
-    let outer = 11.0f32;
-    let inner = 7.5f32;
-    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
-            let alpha = if filled {
-                smooth_edge(outer - d)
-            } else {
-                smooth_edge(outer - d) * smooth_edge(d - inner)
-            };
-            rgba.extend_from_slice(&[0, 0, 0, (alpha * 255.0) as u8]);
-        }
+/// Formats the countdown of a session that is still running. Rounds up, so
+/// the last minute reads `1m` rather than `0m` and the last second reads
+/// `1s` rather than `0s` — a running session never claims to have no time
+/// left, and a finished one shows nothing at all.
+fn fmt_remaining(d: Duration) -> String {
+    let secs = d.as_secs().max(u64::from(d.subsec_nanos() > 0));
+    if secs >= 60 {
+        fmt_duration(Duration::from_secs(secs.div_ceil(60) * 60))
+    } else {
+        format!("{}s", secs.max(1))
     }
-    Icon::from_rgba(rgba, SIZE, SIZE).expect("static icon dimensions are valid")
 }
 
-fn smooth_edge(v: f32) -> f32 {
-    v.clamp(0.0, 1.0)
+fn lock_path() -> Result<std::path::PathBuf> {
+    // Per-user dir on purpose: in system mode data_dir() is root-owned and
+    // the menu bar app runs as the logged-in user.
+    Ok(crate::paths::user_cache_dir()?.join("menubar.lock"))
 }
 
 fn single_instance_lock() -> Result<fs_err::File> {
     use fs2::FileExt;
-    // Per-user dir on purpose: in system mode data_dir() is root-owned and
-    // the menu bar app runs as the logged-in user.
-    let dir = crate::paths::user_cache_dir()?;
-    let file = fs_err::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(dir.join("menubar.lock"))?;
+    use std::io::{Seek, Write};
+
+    let mut file =
+        fs_err::OpenOptions::new().create(true).truncate(false).write(true).open(lock_path()?)?;
     file.file()
         .try_lock_exclusive()
         .map_err(|_| Error::Other(crate::i18n::t!("menubar.already_running").to_string()))?;
+    // The pid is what lets `monk menubar install` retire the instance that
+    // is holding this lock; without it an upgrade would silently leave the
+    // old binary running, since the new copy just exits on the lock.
+    file.set_len(0)?;
+    file.seek(std::io::SeekFrom::Start(0))?;
+    write!(file, "{}", std::process::id())?;
+    file.flush()?;
     Ok(file)
+}
+
+/// Pid of the running menu bar app, if any. The lock file carries it, and a
+/// dead pid is filtered out with signal 0 so a stale file reads as "nothing
+/// is running".
+fn running_pid() -> Option<nix::unistd::Pid> {
+    use fs2::FileExt;
+
+    let path = lock_path().ok()?;
+    let raw: i32 = fs_err::read_to_string(&path).ok()?.trim().parse().ok()?;
+    if raw <= 1 || raw == std::process::id() as i32 {
+        return None;
+    }
+    // The number alone proves nothing: pids are recycled, and a crashed app
+    // leaves its own behind. The lock is the evidence — if it can be taken,
+    // no menu bar app is running and that pid now belongs to a stranger we
+    // must not signal.
+    let file = fs_err::OpenOptions::new().write(true).open(&path).ok()?;
+    if file.file().try_lock_exclusive().is_ok() {
+        let _ = FileExt::unlock(file.file());
+        return None;
+    }
+    let pid = nix::unistd::Pid::from_raw(raw);
+    nix::sys::signal::kill(pid, None).ok()?;
+    Some(pid)
+}
+
+/// Stops a menu bar app that is already running, whoever started it, and
+/// waits for it to let go of the lock. Returns once no instance holds it.
+pub(crate) fn stop_running() {
+    use fs2::FileExt;
+
+    let Some(pid) = running_pid() else { return };
+    let Ok(path) = lock_path() else { return };
+    if nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM).is_err() {
+        return;
+    }
+    // Give it a moment to drop the lock; the loop exits as soon as the lock
+    // is free, so the common case costs one 50ms sleep at most.
+    for _ in 0..40 {
+        std::thread::sleep(Duration::from_millis(50));
+        let Ok(file) = fs_err::OpenOptions::new().write(true).open(&path) else { return };
+        if file.file().try_lock_exclusive().is_ok() {
+            let _ = FileExt::unlock(file.file());
+            return;
+        }
+    }
+    tracing::warn!("the running menu bar app did not exit; the new one may refuse to start");
+}
+
+/// The menu bar app belongs to a login session. Run as root it would write
+/// its login item and its bundle into `/var/root`, register with launchd's
+/// root GUI domain, and show nothing to anybody.
+pub(crate) fn require_user_session() -> Result<()> {
+    if nix::unistd::geteuid().is_root() {
+        return Err(Error::Permission(crate::i18n::t!("menubar.needs_user").to_string()));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_running_session_never_shows_zero() {
+        assert_eq!(fmt_remaining(Duration::from_millis(400)), "1s");
+        assert_eq!(fmt_remaining(Duration::from_secs(1)), "1s");
+        assert_eq!(fmt_remaining(Duration::from_secs(59)), "59s");
+    }
+
+    #[test]
+    fn the_countdown_rounds_minutes_up() {
+        assert_eq!(fmt_remaining(Duration::from_secs(60)), "1m");
+        assert_eq!(fmt_remaining(Duration::from_secs(61)), "2m");
+        assert_eq!(fmt_remaining(Duration::from_secs(25 * 60)), "25m");
+        assert_eq!(fmt_remaining(Duration::from_secs(90 * 60)), "1h30m");
+    }
 }

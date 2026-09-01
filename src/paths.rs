@@ -103,6 +103,17 @@ pub fn user_cache_dir() -> Result<PathBuf> {
     Ok(p)
 }
 
+/// Home of the human this process acts for. Under `sudo` that is the
+/// invoking user, not root: forcing [`DIRS`] first runs the HOME rewrite, so
+/// per-user artefacts (LaunchAgents, `~/Applications`) never land in
+/// `/var/root` when a command was elevated.
+pub fn user_home() -> Result<PathBuf> {
+    let _ = dirs()?;
+    directories::BaseDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .ok_or_else(|| Error::Other("cannot resolve home directory".into()))
+}
+
 pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }

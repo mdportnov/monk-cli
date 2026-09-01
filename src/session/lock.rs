@@ -141,6 +141,14 @@ impl SessionLock {
         self.reseal();
     }
 
+    /// Grows the planned duration. Kept apart from [`Self::apply_penalty`]
+    /// on purpose: a penalty is bookkeeping the session imposes on the user,
+    /// an extension is the user's own choice, and stats read them apart.
+    pub fn extend(&mut self, extra: Duration) {
+        self.duration_ms = self.duration_ms.saturating_add(extra.as_millis());
+        self.reseal();
+    }
+
     pub fn advance(&mut self, delta: Duration) {
         self.progressed_ms = self.progressed_ms.saturating_add(delta.as_millis());
         self.reseal();
@@ -415,6 +423,16 @@ mod tests {
         let back: SessionLock = serde_json::from_str(&raw).unwrap();
         assert!(back.verify());
         assert_eq!(lock, back);
+    }
+
+    #[test]
+    fn extending_moves_the_end_and_reseals() {
+        let mut lock = sample();
+        let before = lock.ends_at();
+        lock.extend(Duration::from_secs(5 * 60));
+        assert!(lock.verify());
+        assert_eq!(lock.ends_at() - before, chrono::Duration::minutes(5));
+        assert_eq!(lock.penalty_applied_ms, 0, "an extension is not a penalty");
     }
 
     #[test]

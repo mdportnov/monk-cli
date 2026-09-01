@@ -38,6 +38,18 @@ fn codec() -> LengthDelimitedCodec {
     LengthDelimitedCodec::builder().max_frame_length(1024 * 1024).new_codec()
 }
 
+/// Turns the daemon's rejection of a request kind it does not know into the
+/// thing that actually needs doing. It only ever means one thing: the daemon
+/// is running an older binary than the client — on macOS it keeps its own
+/// copy under `/usr/local/libexec`, so a CLI upgrade alone leaves it behind.
+pub fn explain_rejection(message: String) -> String {
+    if message.contains("unknown request kind") {
+        crate::i18n::t!("ipc.daemon_outdated").to_string()
+    } else {
+        message
+    }
+}
+
 pub async fn send(req: &Request) -> Result<Response> {
     let name = socket_name()?;
     let stream = tokio::time::timeout(CONNECT_TIMEOUT, Stream::connect(name))

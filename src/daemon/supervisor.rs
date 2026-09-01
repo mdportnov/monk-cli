@@ -20,7 +20,7 @@ use parking_lot::{Mutex, RwLock};
 
 /// Lock ordering contract — acquire in this order, release in reverse:
 ///
-/// 1. `start_gate` (serializes session starts)
+/// 1. `session_gate` (serializes every read-modify-write of the session lock)
 /// 2. `config_write` (serializes writers against each other)
 /// 3. `config` (RwLock; clone out fast, never hold across I/O)
 /// 4. `hosts`
@@ -30,7 +30,11 @@ use parking_lot::{Mutex, RwLock};
 /// 8. `last_fired_window`
 ///
 /// `store` is a standalone file-backed handle and is treated as a leaf —
-/// never acquire any of the above while it's in flight.
+/// never acquire any of the above while it's in flight. Every sequence that
+/// loads the session lock, changes it and saves it back must hold
+/// `session_gate` for the whole sequence: `tick` rewrites the lock once a
+/// second, so without the gate a concurrent `extend` (or `panic`) is loaded,
+/// modified and then flattened by the tick that was already in flight.
 #[derive(Debug)]
 pub struct Supervisor {
     config: Arc<RwLock<Config>>,
@@ -44,7 +48,7 @@ pub struct Supervisor {
     active_profile: Arc<RwLock<Option<String>>>,
     last_tamper_mac: Arc<Mutex<Option<String>>>,
     last_fired_window: Arc<Mutex<Option<FiredWindow>>>,
-    start_gate: Arc<Mutex<()>>,
+    session_gate: Arc<Mutex<()>>,
     consecutive_hosts_failures: Arc<AtomicU32>,
 }
 
@@ -70,7 +74,7 @@ impl Supervisor {
             active_profile: Arc::new(RwLock::new(None)),
             last_tamper_mac: Arc::new(Mutex::new(None)),
             last_fired_window: Arc::new(Mutex::new(None)),
-            start_gate: Arc::new(Mutex::new(())),
+            session_gate: Arc::new(Mutex::new(())),
             consecutive_hosts_failures: Arc::new(AtomicU32::new(0)),
         })
     }
@@ -118,7 +122,8 @@ impl Supervisor {
         let events = self.audit.read_all().unwrap_or_default();
         let now = chrono::Utc::now();
         let default = cfg.general.default_profile.clone();
-        cfg.profiles
+        let mut modes: Vec<_> = cfg
+            .profiles
             .iter()
             .map(|(name, p)| crate::ipc::ModeSummary {
                 name: name.clone(),
@@ -131,7 +136,13 @@ impl Supervisor {
                 is_default: name == &default,
                 has_schedule: p.schedule.as_ref().is_some_and(|s| s.enabled),
             })
-            .collect()
+            .collect();
+        // The default mode leads every list monk shows — it is the one the
+        // user reaches for most, and `profiles` is a BTreeMap, so without
+        // this the order is alphabetical and the star lands wherever the
+        // name happens to sort.
+        modes.sort_by(|a, b| b.is_default.cmp(&a.is_default).then_with(|| a.name.cmp(&b.name)));
+        modes
     }
 
     pub fn mode_detail(&self, name: &str, days: u32) -> Result<crate::ipc::ModeDetailPayload> {
@@ -314,7 +325,7 @@ impl Supervisor {
         reason: Option<String>,
         panic_phrase: String,
     ) -> Result<Session> {
-        let _gate = self.start_gate.lock();
+        let _gate = self.session_gate.lock();
         self.consecutive_hosts_failures.store(0, Ordering::SeqCst);
 
         if let Some((existing, _)) = self.store.load()? {
@@ -381,7 +392,69 @@ impl Supervisor {
         }
     }
 
+    /// Adds time to the running session. Allowed in hard mode: a longer
+    /// session is stricter than a shorter one, never a way out of one.
+    pub fn extend(&self, by: Duration) -> Result<Session> {
+        const MAX_EXTEND: Duration = Duration::from_secs(4 * 60 * 60);
+        if by.is_zero() {
+            return Err(Error::Other("extension must be longer than zero".into()));
+        }
+        if by > MAX_EXTEND {
+            return Err(Error::Other(format!(
+                "extension capped at {}",
+                humantime::format_duration(MAX_EXTEND)
+            )));
+        }
+
+        let _gate = self.session_gate.lock();
+        let Some((mut lock, kind)) = self.store.load()? else {
+            return Err(Error::Other("no active session".into()));
+        };
+        if matches!(kind, LoadKind::TamperedPrimary | LoadKind::TamperedBackup) {
+            self.handle_tamper(&mut lock);
+            self.store.save(&lock)?;
+            return Err(Error::Other("session lock was tampered with; extension refused".into()));
+        }
+        if lock.is_expired() {
+            return Err(Error::Other("no active session".into()));
+        }
+        // Extending would silently outlive the pending release; make the user
+        // cancel the panic first so the two intentions cannot contradict.
+        if lock.panic_requested_at.is_some() {
+            return Err(Error::Other("a panic release is pending; cancel it first".into()));
+        }
+
+        let planned = Duration::from_millis(u64::try_from(lock.duration_ms).unwrap_or(u64::MAX));
+        let limits =
+            self.config.read().profile(&lock.profile).map(|p| p.limits.clone()).unwrap_or_default();
+        let mut granted = by;
+        if let Some(max) = limits.max_duration {
+            if planned >= max {
+                return Err(Error::Config(format!(
+                    "profile `{}` is capped at {}",
+                    lock.profile,
+                    humantime::format_duration(max)
+                )));
+            }
+            granted = granted.min(max - planned);
+        }
+
+        lock.extend(granted);
+        self.store.save(&lock)?;
+        self.audit.append_with(
+            AuditKind::SessionExtended,
+            Some(lock.id),
+            &lock.profile,
+            serde_json::json!({
+                "added_ms": u64::try_from(granted.as_millis()).unwrap_or(u64::MAX),
+                "duration_ms": u64::try_from(lock.duration_ms).unwrap_or(u64::MAX),
+            }),
+        );
+        Ok(lock_to_session(&lock))
+    }
+
     pub fn stop(&self) -> Result<Option<Session>> {
+        let _gate = self.session_gate.lock();
         let Some((lock, _)) = self.store.load()? else {
             return Ok(None);
         };
@@ -394,6 +467,7 @@ impl Supervisor {
     }
 
     pub fn panic(&self, phrase: &str, cancel: bool) -> Result<SessionLock> {
+        let _gate = self.session_gate.lock();
         let Some((mut lock, kind)) = self.store.load()? else {
             return Err(Error::Other("no active session".into()));
         };
@@ -417,10 +491,23 @@ impl Supervisor {
     }
 
     pub fn tick(&self) -> Result<()> {
+        // Schedules are checked *outside* the gate on purpose: firing one
+        // calls `start`, which takes the same mutex, and `parking_lot`'s is
+        // not reentrant — doing it under the gate deadlocks the daemon the
+        // first time a schedule window opens.
+        if self.tick_session()? {
+            self.check_schedules();
+        }
+        Ok(())
+    }
+
+    /// Advances the running session by one tick. Returns `true` when there is
+    /// no session, i.e. when a scheduled one may start.
+    fn tick_session(&self) -> Result<bool> {
+        let _gate = self.session_gate.lock();
         let Some((mut lock, kind)) = self.store.load()? else {
             *self.active_profile.write() = None;
-            self.check_schedules();
-            return Ok(());
+            return Ok(true);
         };
 
         let now_ms = clock::monotonic_ms() as u64;
@@ -430,7 +517,7 @@ impl Supervisor {
         if matches!(kind, LoadKind::TamperedPrimary | LoadKind::TamperedBackup) {
             self.handle_tamper(&mut lock);
             self.store.save(&lock)?;
-            return Ok(());
+            return Ok(false);
         }
 
         lock.advance(delta);
@@ -438,7 +525,7 @@ impl Supervisor {
         if lock.should_release_via_panic() {
             self.finalize(&lock, SessionState::Aborted)?;
             self.audit.append(AuditKind::SessionPanicked, Some(lock.id), "panic released");
-            return Ok(());
+            return Ok(true);
         }
 
         if lock.is_expired() {
@@ -449,7 +536,7 @@ impl Supervisor {
                 &lock.profile,
                 serde_json::json!({ "duration_ms": lock.duration_ms }),
             );
-            return Ok(());
+            return Ok(true);
         }
 
         let cfg = self.config.read().clone();
@@ -500,7 +587,7 @@ impl Supervisor {
 
         self.store.save(&lock)?;
         *self.active_profile.write() = Some(lock.profile.clone());
-        Ok(())
+        Ok(false)
     }
 
     pub fn restore(&self) -> Result<()> {
@@ -839,6 +926,129 @@ mod tests {
         fn revert(&mut self) -> Result<()> {
             Ok(())
         }
+    }
+
+    /// A supervisor whose lock store and audit log live in a tempdir, so a
+    /// test never observes — or writes to — the installed daemon's state.
+    fn isolated(profile: Profile) -> (Supervisor, tempfile::TempDir) {
+        let mut config = crate::config::Config::default();
+        config.profiles.insert("test".into(), profile);
+        config.general.default_profile = "test".into();
+        isolated_with(config)
+    }
+
+    fn isolated_with(config: crate::config::Config) -> (Supervisor, tempfile::TempDir) {
+        let mut supervisor = Supervisor::new(config).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        supervisor.store = std::sync::Arc::new(crate::session::LockStore::with_paths(
+            dir.path().join("session.lock"),
+            vec![dir.path().join("a/session.lock"), dir.path().join("b/session.lock")],
+        ));
+        supervisor.audit =
+            std::sync::Arc::new(AuditLog::with_path(dir.path().join("audit.sqlite3")));
+        *supervisor.hosts.lock() = Box::new(MockBlocker::new(false));
+        (supervisor, dir)
+    }
+
+    fn start_test_session(sup: &Supervisor, duration: Duration) {
+        sup.start("test".into(), duration, false, None, "phrase".into()).unwrap();
+    }
+
+    #[test]
+    fn the_default_mode_leads_the_list() {
+        let mut config = crate::config::Config::default();
+        for name in ["alpha", "omega", "mid"] {
+            config.profiles.insert(name.into(), Profile::default());
+        }
+        config.general.default_profile = "omega".into();
+        let (sup, _dir) = isolated_with(config);
+
+        let names: Vec<_> = sup.list_modes().into_iter().map(|m| m.name).collect();
+
+        assert_eq!(names, ["omega", "alpha", "mid"], "star first, then alphabetical");
+    }
+
+    #[test]
+    fn extend_grows_the_running_session() {
+        let (sup, _dir) = isolated(Profile::default());
+        start_test_session(&sup, Duration::from_secs(600));
+
+        let session = sup.extend(Duration::from_secs(300)).unwrap();
+
+        assert_eq!(session.duration, Duration::from_secs(900));
+    }
+
+    #[test]
+    fn a_scheduled_start_does_not_deadlock_the_tick() {
+        // `tick` holds the session gate and firing a schedule calls `start`,
+        // which takes it too — and parking_lot's mutex is not reentrant. Run
+        // it off-thread so a regression fails the test instead of hanging
+        // the whole suite.
+        use chrono::{Datelike, Local};
+        let today = match Local::now().weekday().num_days_from_monday() {
+            0 => crate::config::Weekday::Mon,
+            1 => crate::config::Weekday::Tue,
+            2 => crate::config::Weekday::Wed,
+            3 => crate::config::Weekday::Thu,
+            4 => crate::config::Weekday::Fri,
+            5 => crate::config::Weekday::Sat,
+            _ => crate::config::Weekday::Sun,
+        };
+        let profile = Profile {
+            schedule: Some(crate::config::Schedule {
+                enabled: true,
+                days: vec![today],
+                start: "00:00".into(),
+                end: "23:59".into(),
+                tz: "local".into(),
+            }),
+            ..Profile::default()
+        };
+        let (sup, _dir) = isolated(profile);
+        let sup = std::sync::Arc::new(sup);
+
+        let worker = sup.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = worker.tick();
+            let _ = tx.send(result.is_ok());
+        });
+
+        let finished = rx.recv_timeout(Duration::from_secs(10));
+        assert_eq!(finished, Ok(true), "tick did not return: the schedule check deadlocked");
+        assert!(sup.active().is_some(), "the scheduled session should have started");
+    }
+
+    #[test]
+    fn a_tick_does_not_undo_an_extension() {
+        // `tick` rewrites the session lock every second from a copy it loaded
+        // at the top; without a shared gate it flattens a concurrent extend.
+        let (sup, _dir) = isolated(Profile::default());
+        start_test_session(&sup, Duration::from_secs(600));
+
+        sup.extend(Duration::from_secs(300)).unwrap();
+        sup.tick().unwrap();
+
+        assert_eq!(sup.active().unwrap().duration, Duration::from_secs(900));
+    }
+
+    #[test]
+    fn extend_stops_at_the_profile_cap() {
+        let mut profile = Profile::default();
+        profile.limits.max_duration = Some(Duration::from_secs(900));
+        let (sup, _dir) = isolated(profile);
+        start_test_session(&sup, Duration::from_secs(600));
+
+        let session = sup.extend(Duration::from_secs(3600)).unwrap();
+        assert_eq!(session.duration, Duration::from_secs(900));
+
+        assert!(sup.extend(Duration::from_secs(60)).is_err(), "already at the cap");
+    }
+
+    #[test]
+    fn extend_without_a_session_is_an_error() {
+        let (sup, _dir) = isolated(Profile::default());
+        assert!(sup.extend(Duration::from_secs(300)).is_err());
     }
 
     #[test]

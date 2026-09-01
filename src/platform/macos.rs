@@ -153,6 +153,18 @@ fn require_root() -> Result<()> {
     }
 }
 
+/// Hands a path to `root:wheel`. Called on everything the root daemon
+/// executes: anything the invoking user can still rewrite would be a way to
+/// run their own code as root at the next launch.
+fn claim_for_root(path: &Path) -> Result<()> {
+    nix::unistd::chown(
+        path,
+        Some(nix::unistd::Uid::from_raw(0)),
+        Some(nix::unistd::Gid::from_raw(0)),
+    )
+    .map_err(|e| Error::Permission(format!("could not chown {} to root: {e}", path.display())))
+}
+
 pub fn install_service(bin: &str) -> Result<String> {
     require_root()?;
 
@@ -174,6 +186,12 @@ pub fn install_service(bin: &str) -> Result<String> {
         fs_err::copy(src, dst)?;
         msgs.push(format!("copied binary → {}", dst.display()));
     }
+    // launchd runs this copy as root, so it must not be writable by the user
+    // who installed it. `fs::copy` uses macOS `copyfile`, which carries the
+    // source's ownership across when the caller is root — leaving a
+    // user-owned binary that runs with full privileges.
+    claim_for_root(dst)?;
+    claim_for_root(Path::new(SYSTEM_BIN_DIR))?;
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs_err::set_permissions(dst, std::fs::Permissions::from_mode(0o755));
@@ -328,11 +346,28 @@ fn quiet_launchctl(
 /// osascript exiting 0 only proves the AppleScript ran — the child may have
 /// failed silently — so the child's stable success marker is required before
 /// we report success.
-fn elevate_service_command(args: &str, prompt: &str, marker: &str, retry: &str) -> Result<String> {
+/// Env flag the elevated child sees. It tells the child to hand its raw
+/// output back — markers included — instead of the cleaned-up text meant for
+/// a human at a terminal. Without it the child strips the very marker the
+/// parent is waiting for and a successful install reads as a failure.
+pub const ELEVATED_ENV: &str = "MONK_ELEVATED";
+
+/// True when this process was started by [`elevate_service_command`].
+pub fn is_elevated_child() -> bool {
+    std::env::var_os(ELEVATED_ENV).is_some()
+}
+
+fn elevate_service_command(
+    args: &str,
+    prompt: &str,
+    marker: &str,
+    retry: &str,
+    verify: fn() -> bool,
+) -> Result<String> {
     let exe = std::env::current_exe()?;
     let exe_str = exe.to_string_lossy().to_string();
     let sh_quoted = shell_single_quote(&exe_str);
-    let inner = format!("{sh_quoted} {args}");
+    let inner = format!("{ELEVATED_ENV}=1 {sh_quoted} {args}");
     let as_inner = escape_applescript(&inner);
     let as_prompt = escape_applescript(prompt);
     let script = format!(
@@ -341,7 +376,10 @@ fn elevate_service_command(args: &str, prompt: &str, marker: &str, retry: &str) 
     let out = Command::new("osascript").args(["-e", &script]).output().map_err(|e| {
         Error::Elevation(format!("osascript failed to launch: {e} — run manually: {retry}"))
     })?;
-    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    // `do shell script` hands newlines back as CR; left alone they turn the
+    // child's report into one long line and hide the success marker from
+    // every line-based check downstream.
+    let stdout = String::from_utf8_lossy(&out.stdout).replace('\r', "\n").trim().to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if !out.status.success() {
         return Err(if is_user_cancelled(out.status.code(), &stderr) {
@@ -350,13 +388,31 @@ fn elevate_service_command(args: &str, prompt: &str, marker: &str, retry: &str) 
             Error::Elevation(format!("{stderr} — try `{retry}`"))
         });
     }
-    if stdout.contains(marker) {
+    // The marker is the fast path; the on-disk check is what makes this
+    // honest when the child is an older binary, or when osascript mangles
+    // the output on its way back.
+    if stdout.contains(marker) || verify() {
         Ok(stdout)
     } else {
         Err(Error::Elevation(format!(
             "child command did not confirm — stdout: {stdout:?} stderr: {stderr:?}"
         )))
     }
+}
+
+/// The system service is installed and runs the binary we just handed it.
+fn service_installed_at_this_version() -> bool {
+    if !Path::new(SYSTEM_LAUNCHD_PLIST).exists() {
+        return false;
+    }
+    let Ok(out) = Command::new(SYSTEM_BIN).arg("--version").output() else { return false };
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.split_whitespace().next_back().map(|v| v.trim_start_matches('v'))
+        == Some(env!("CARGO_PKG_VERSION"))
+}
+
+fn service_absent() -> bool {
+    !Path::new(SYSTEM_LAUNCHD_PLIST).exists()
 }
 
 /// Install the system service, asking for admin rights when we lack them.
@@ -370,6 +426,7 @@ pub fn elevate_install_service() -> Result<String> {
         "monk wants to install the system service",
         INSTALL_SUCCESS_MARKER,
         "sudo monk service install",
+        service_installed_at_this_version,
     )
 }
 
@@ -387,6 +444,7 @@ pub fn elevate_uninstall_service(purge: bool) -> Result<String> {
         "monk wants to remove the system service",
         UNINSTALL_SUCCESS_MARKER,
         "sudo monk service uninstall",
+        service_absent,
     )
 }
 

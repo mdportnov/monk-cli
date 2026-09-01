@@ -164,7 +164,16 @@ async fn persist_config(cfg: &Config) -> Result<()> {
             }
         }
     }
-    cfg.save()
+    cfg.save().map_err(|e| {
+        // In system mode the daemon owns config.toml and the user cannot
+        // write it directly. Reaching here means the daemon is down, and the
+        // raw EACCES tells the user nothing about why or what to do.
+        if crate::paths::system_mode() && !nix_is_root() {
+            Error::Other(t!("setup.config_needs_daemon", error = e.to_string()).to_string())
+        } else {
+            e
+        }
+    })
 }
 
 fn run_service_install() {
@@ -196,6 +205,12 @@ fn run_service_install() {
 /// user without a configured blocker.
 #[cfg(target_os = "macos")]
 fn menubar_setup_step(ask: bool) -> Result<()> {
+    // Elevated setup would write the login item and the bundle into
+    // /var/root and show nothing to anybody; say so instead of asking.
+    if crate::menubar::require_user_session().is_err() {
+        println!("  {}", t!("setup.menubar_needs_user"));
+        return Ok(());
+    }
     if ask {
         let yes = t!("common.yes").to_string();
         let no = t!("common.no").to_string();

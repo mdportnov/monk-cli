@@ -81,6 +81,8 @@ onboarding:
   first_run_nudge: "Похоже, это первый запуск. Запусти `monk init` для быстрой настройки."
 
 setup:
+  config_needs_daemon: "не удалось сохранить конфиг: им владеет системный демон, а он не запущен — запустите его и повторите `monk setup` (%{error})"
+  menubar_needs_user: "меню-бар пропущен: он пользовательский — запустите `monk menubar install` без sudo"
   platform_detected: "Платформа обнаружена: {platform}"
   daemon_starting: "Запуск службы демона..."
   daemon_started: "Служба демона настроена"
@@ -134,6 +136,8 @@ panic:
   cancelled: "Запрос выхода отменён."
 
 update:
+  menubar_refresh_failed: "меню-бар не обновлён: %{error} — запустите `monk menubar install`"
+  menubar_refreshed: "приложение меню-бара пересобрано под новый бинарь"
   checking: "проверяю github releases…"
   up_to_date: "monk v%{current} актуален (последний релиз: v%{latest})"
   available: "доступно обновление: v%{current} → v%{latest}"
@@ -397,6 +401,23 @@ tui:
 menubar:
   connecting: "monk — подключение…"
   idle: "Нет активной сессии"
+  until: "До %{time}"
+  usage_24h: "За 24 часа: %{duration} в фокусе"
+  usage_none: "За 24 часа сессий не было"
+  usage_unknown: "Загрузка статистики…"
+  make_default: "Сделать режимом по умолчанию ★"
+  add_time: "Добавить время"
+  add_minutes: "+%{duration}"
+  open_tui: "Открыть monk в терминале"
+  action_failed: "monk: действие отклонено"
+  hard_denied: "Жёсткий режим — осталось %{remaining}"
+  notify_action_extend: "Добавить %{duration}"
+  notify_start_title: "monk: фокус начался"
+  notify_start_body: "%{profile} — %{duration}"
+  notify_endgame_title: "monk: сессия к концу"
+  notify_endgame_body: "%{profile} — осталось %{duration}"
+  notify_done_title: "monk: сессия завершена"
+  notify_done_body: "%{profile} — %{duration} в фокусе"
   active: "%{profile} — осталось %{remaining}"
   daemon_offline: "monk — демон не запущен"
   offline_hint: "Нажмите «Запустить демон» ниже"
@@ -412,7 +433,12 @@ menubar:
   start_daemon: "Запустить демон"
   launch_at_login: "Запускать при входе"
   quit: "Закрыть monk из меню-бара"
+  notifications_hint: "при первом запуске macOS спросит разрешение на уведомления — если отклонили, включите их в «Системных настройках» > «Уведомления» > monk"
   installed: "Приложение меню-бара добавлено в автозапуск"
   uninstalled: "Приложение меню-бара убрано из автозапуска"
+  needs_user: "приложение меню-бара — пользовательское: запустите `monk menubar install` без sudo"
   macos_only: "приложение меню-бара доступно только на macOS"
   already_running: "monk menubar уже запущен"
+
+ipc:
+  daemon_outdated: "демон старее клиента — обновите его: `sudo monk service install`"

@@ -81,6 +81,11 @@ enum Command {
     },
     #[command(about = "Stop the active session")]
     Stop,
+    #[command(about = "Add time to the active session")]
+    Extend {
+        #[arg(value_name = "DURATION", value_parser = parse_duration)]
+        duration: Duration,
+    },
     #[command(about = "Request an escape from hard mode")]
     Panic {
         #[arg(long)]
@@ -256,8 +261,33 @@ fn parse_duration_opt(raw: &str) -> std::result::Result<String, String> {
     Ok(raw.to_string())
 }
 
+/// Arguments to parse, with two macOS launch quirks smoothed over: Launch
+/// Services starts an app bundle with no arguments at all — which clap would
+/// answer with a help screen nobody can see — and older systems tack on a
+/// `-psn_0_…` process serial number that clap would reject outright.
+fn launch_args() -> Vec<std::ffi::OsString> {
+    let args = std::env::args_os()
+        .filter(|arg| !arg.to_string_lossy().starts_with("-psn_"))
+        .collect::<Vec<_>>();
+    bundle_default(args)
+}
+
+/// Inside `monk.app`, a bare invocation is Launch Services opening the app.
+#[cfg(target_os = "macos")]
+fn bundle_default(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    if args.len() == 1 && crate::menubar::is_bundled() {
+        args.push("menubar".into());
+    }
+    args
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bundle_default(args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    args
+}
+
 pub async fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(launch_args());
 
     let is_daemon_run = matches!(cli.command, Command::Daemon(DaemonCmd::Run));
 
@@ -320,6 +350,7 @@ pub async fn run() -> Result<()> {
             commands::start(profile, duration, hard, reason).await
         }
         Command::Stop => commands::stop().await,
+        Command::Extend { duration } => commands::extend(duration).await,
         Command::Panic { phrase, cancel } => commands::panic_cmd(phrase, cancel).await,
         Command::Status => commands::status().await,
         Command::Profiles => commands::profiles().await,
