@@ -1,6 +1,6 @@
 [package]
-name = "monk"
-version = "0.3.0"
+name = "monk-cli"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.82"
 description = "A cross-platform CLI focus & distraction blocker"
@@ -9,6 +9,13 @@ repository = "https://github.com/mdportnov/monk-cli"
 readme = "README.md"
 keywords = ["focus", "blocker", "productivity", "tui", "cli"]
 categories = ["command-line-utilities"]
+
+# The crate is `monk-cli` on crates.io — plain `monk` was taken by an
+# unrelated project — but everything a user or the code touches is `monk`:
+# the binary, the library target, and the Debian/RPM package names below.
+[lib]
+name = "monk"
+path = "src/lib.rs"
 
 [[bin]]
 name = "monk"
@@ -74,7 +81,10 @@ tao = "0.36"
 tray-icon = "0.24"
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+# `monk`, not `{ name }`: the release assets are named after the binary, not
+# after the crate.
+pkg-url = "{ repo }/releases/download/v{ version }/monk-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "monk-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
@@ -83,6 +93,7 @@ pkg-fmt = "zip"
 pkg-fmt = "zip"
 
 [package.metadata.deb]
+name = "monk"
 maintainer = "Mike Portnov <mikport26@gmail.com>"
 section = "utility"
 priority = "optional"
@@ -97,6 +108,7 @@ assets = [
 ]
 
 [package.metadata.generate-rpm]
+name = "monk"
 assets = [
     { source = "target/release/monk", dest = "/usr/bin/monk", mode = "755" },
     { source = "assets/systemd/monk-packaged.service", dest = "/usr/lib/systemd/user/monk.service", mode = "644" },
