@@ -128,10 +128,14 @@ git clone https://github.com/mdportnov/monk-cli; cd monk-cli
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
 
-### cargo-binstall
+### cargo / cargo-binstall
+
+The crate is published as **`monk-cli`** — plain `monk` on crates.io is an
+unrelated project — but it installs a binary called `monk`.
 
 ```sh
-cargo binstall monk
+cargo binstall monk-cli   # prebuilt binary from the GitHub release
+cargo install monk-cli    # or build it from source
 ```
 
 ### Package managers

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-01
+
+### Changed
+
+- Published to crates.io as **`monk-cli`**: the plain `monk` name belongs to
+  an unrelated project, so `cargo binstall monk` would have installed
+  somebody else's tool. Everything a user touches keeps the old name — the
+  binary, the library target, and the Debian and RPM packages — and the
+  binstall metadata points at the release assets, which are named after the
+  binary rather than the crate.
+
 ## [0.3.0] - 2026-09-01
 
 ### Added
@@ -340,6 +351,7 @@ daemon.
   (1.82) check, and quieted an unmaintained-advisory notice for the transitive,
   build-time `proc-macro-error2` dependency. All CI jobs are green.
 
-[Unreleased]: https://github.com/mdportnov/monk-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/mdportnov/monk-cli/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/mdportnov/monk-cli/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mdportnov/monk-cli/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mdportnov/monk-cli/releases/tag/v0.2.0
