@@ -81,6 +81,8 @@ onboarding:
   first_run_nudge: "Looks like this is your first run. Run `monk init` for a quick setup."
 
 setup:
+  config_needs_daemon: "could not save the config: the system daemon owns it and is not running — start it, then run `monk setup` again (%{error})"
+  menubar_needs_user: "menu bar app skipped: it is per-user — run `monk menubar install` without sudo"
   platform_detected: "Platform detected: {platform}"
   daemon_starting: "Starting daemon service..."
   daemon_started: "Daemon service configured"
@@ -134,6 +136,8 @@ panic:
   cancelled: "Panic request cancelled."
 
 update:
+  menubar_refresh_failed: "menu bar app not refreshed: %{error} — run `monk menubar install`"
+  menubar_refreshed: "menu bar app rebuilt around the new binary"
   checking: "checking github releases…"
   up_to_date: "monk v%{current} is up to date (latest release: v%{latest})"
   available: "update available: v%{current} → v%{latest}"
@@ -397,6 +401,23 @@ tui:
 menubar:
   connecting: "monk — connecting…"
   idle: "No active session"
+  until: "Until %{time}"
+  usage_24h: "Last 24h: %{duration} focused"
+  usage_none: "No sessions in the last 24h"
+  usage_unknown: "Loading usage…"
+  make_default: "Make this the default ★"
+  add_time: "Add time"
+  add_minutes: "+%{duration}"
+  open_tui: "Open monk in Terminal"
+  action_failed: "monk: action refused"
+  hard_denied: "Hard mode — %{remaining} to go"
+  notify_action_extend: "Add %{duration}"
+  notify_start_title: "monk: focus started"
+  notify_start_body: "%{profile} — %{duration}"
+  notify_endgame_title: "monk: wrapping up"
+  notify_endgame_body: "%{profile} — %{duration} left"
+  notify_done_title: "monk: session complete"
+  notify_done_body: "%{profile} — %{duration} focused"
   active: "%{profile} — %{remaining} left"
   daemon_offline: "monk — daemon offline"
   offline_hint: "Click 'Start daemon' below to bring it back"
@@ -412,7 +433,12 @@ menubar:
   start_daemon: "Start daemon"
   launch_at_login: "Launch at login"
   quit: "Quit monk menu bar"
+  notifications_hint: "macOS asks to allow notifications on first launch — if you dismissed it, turn them on in System Settings > Notifications > monk"
   installed: "Menu bar app added as a login item"
   uninstalled: "Menu bar app login item removed"
+  needs_user: "the menu bar app is per-user: run `monk menubar install` without sudo"
   macos_only: "the menu bar app is only available on macOS"
   already_running: "monk menubar is already running"
+
+ipc:
+  daemon_outdated: "the daemon is older than this cli — refresh it with `sudo monk service install`"

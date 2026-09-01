@@ -92,6 +92,16 @@ _arguments "${_arguments_options[@]}" : \
 '--version[Print version]' \
 && ret=0
 ;;
+(extend)
+_arguments "${_arguments_options[@]}" : \
+'--locale=[]:LOCALE:(en ru)' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':duration:_default' \
+&& ret=0
+;;
 (panic)
 _arguments "${_arguments_options[@]}" : \
 '--phrase=[]:PHRASE:_default' \
@@ -665,6 +675,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(extend)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (panic)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -870,6 +884,7 @@ _monk_commands() {
 'lang:Set the interface language' \
 'start:Start a focus session' \
 'stop:Stop the active session' \
+'extend:Add time to the active session' \
 'panic:Request an escape from hard mode' \
 'status:Show daemon and session status' \
 'profiles:List profiles' \
@@ -1085,6 +1100,11 @@ _monk__doctor_commands() {
     local commands; commands=()
     _describe -t commands 'monk doctor commands' commands "$@"
 }
+(( $+functions[_monk__extend_commands] )) ||
+_monk__extend_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk extend commands' commands "$@"
+}
 (( $+functions[_monk__help_commands] )) ||
 _monk__help_commands() {
     local commands; commands=(
@@ -1093,6 +1113,7 @@ _monk__help_commands() {
 'lang:Set the interface language' \
 'start:Start a focus session' \
 'stop:Stop the active session' \
+'extend:Add time to the active session' \
 'panic:Request an escape from hard mode' \
 'status:Show daemon and session status' \
 'profiles:List profiles' \
@@ -1202,6 +1223,11 @@ _monk__help__daemon__uninstall_commands() {
 _monk__help__doctor_commands() {
     local commands; commands=()
     _describe -t commands 'monk help doctor commands' commands "$@"
+}
+(( $+functions[_monk__help__extend_commands] )) ||
+_monk__help__extend_commands() {
+    local commands; commands=()
+    _describe -t commands 'monk help extend commands' commands "$@"
 }
 (( $+functions[_monk__help__help_commands] )) ||
 _monk__help__help_commands() {

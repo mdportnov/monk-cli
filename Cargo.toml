@@ -66,6 +66,10 @@ encoding_rs = "0.8"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSSet", "NSError", "NSBundle", "NSDictionary"] }
+objc2-user-notifications = { version = "0.3", features = ["UNUserNotificationCenter", "UNNotificationRequest", "UNNotificationContent", "UNNotificationCategory", "UNNotificationAction", "UNNotificationResponse", "UNNotificationSound", "UNNotificationTrigger", "UNNotification", "UNNotificationSettings", "block2"] }
 tao = "0.36"
 tray-icon = "0.24"
 

@@ -131,21 +131,47 @@ pub async fn stop() -> Result<()> {
     }
 }
 
+pub async fn extend(by: Duration) -> Result<()> {
+    match ipc::send(&Request::Extend { by }).await? {
+        Response::Session(s) => {
+            // Reported from the session the daemon returned, never from what
+            // was asked for: a profile's `max_duration` can clamp the
+            // extension, and claiming the full hour would be a lie.
+            let left = Duration::from_secs(s.remaining().as_secs());
+            println!(
+                "extended `{}` — now {}, {} remaining",
+                s.profile,
+                humantime::format_duration(s.duration),
+                humantime::format_duration(left)
+            );
+            Ok(())
+        }
+        Response::Error { message } => Err(Error::Other(ipc::explain_rejection(message))),
+        _ => Err(Error::Ipc("unexpected response".into())),
+    }
+}
+
 pub async fn status() -> Result<()> {
     match ipc::send(&Request::Status).await {
         Ok(Response::Status { active, hard_mode, pid }) => {
             println!("daemon: running (pid {pid})");
             if let Some(s) = active {
+                // Truncated to whole seconds: the raw Duration renders as
+                // "24m 59s 903ms 562us", which reads like a stopwatch, not a
+                // countdown.
                 println!(
                     "active: {} ({} remaining)",
                     s.profile,
-                    humantime::format_duration(s.remaining())
+                    humantime::format_duration(Duration::from_secs(s.remaining().as_secs()))
                 );
             } else {
                 println!("active: none");
             }
             if let Some(h) = hard_mode {
-                println!("hard mode: on ({} remaining)", humantime::format_duration(h.remaining));
+                println!(
+                    "hard mode: on ({} remaining)",
+                    humantime::format_duration(Duration::from_secs(h.remaining.as_secs()))
+                );
                 println!("panic phrase: {}", h.panic_phrase);
                 println!("    invoke: monk panic \"{}\"", h.panic_phrase);
                 if let Some(at) = h.panic_releases_at {
@@ -576,12 +602,12 @@ pub fn daemon_install(reinstall: bool) -> Result<()> {
     // prompts.
     if reinstall {
         match crate::platform::elevate_uninstall_service(false) {
-            Ok(msg) => println!("{}", crate::platform::strip_service_markers(&msg)),
+            Ok(msg) => println!("{}", crate::platform::service_output(&msg)),
             Err(e) => eprintln!("uninstall step (continuing): {e}"),
         }
     }
     let msg = crate::platform::elevate_install_service()?;
-    println!("{}", crate::platform::strip_service_markers(&msg));
+    println!("{}", crate::platform::service_output(&msg));
     Ok(())
 }
 
@@ -597,7 +623,7 @@ pub async fn daemon_uninstall(purge: bool) -> Result<()> {
     // On macOS the service is root-owned: ask for admin rights instead of
     // failing on `require_root` and leaving the LaunchDaemon behind.
     let msg = crate::platform::elevate_uninstall_service(purge)?;
-    println!("{}", crate::platform::strip_service_markers(&msg));
+    println!("{}", crate::platform::service_output(&msg));
     Ok(())
 }
 
@@ -695,8 +721,26 @@ pub async fn update(check_only: bool) -> Result<()> {
     let path = outcome.exe.display().to_string();
     println!("{}", crate::i18n::t!("update.updated", version = outcome.version, path = path));
     refresh_service_after_update();
+    refresh_menubar_after_update(&outcome.version);
     Ok(())
 }
+
+/// The menu bar app runs its own copy of the binary inside `monk.app`, the
+/// same way the daemon does — replacing the CLI alone would leave yesterday's
+/// status item running. Only rebuilds a bundle that already exists.
+#[cfg(target_os = "macos")]
+fn refresh_menubar_after_update(version: &str) {
+    match crate::menubar::refresh_after_update(version) {
+        Ok(true) => println!("{}", crate::i18n::t!("update.menubar_refreshed")),
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("{}", crate::i18n::t!("update.menubar_refresh_failed", error = e.to_string()))
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn refresh_menubar_after_update(_version: &str) {}
 
 /// Bring the installed background service up to the version we just wrote.
 ///
@@ -771,6 +815,7 @@ pub fn menubar_install() -> Result<()> {
         crate::menubar::launch_detached()?;
     }
     println!("{}", crate::i18n::t!("menubar.installed"));
+    println!("{}", crate::i18n::t!("menubar.notifications_hint"));
     Ok(())
 }
 

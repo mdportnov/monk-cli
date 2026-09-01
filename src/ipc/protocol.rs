@@ -32,6 +32,11 @@ pub enum Request {
     Stop {
         id: Option<Uuid>,
     },
+    /// Adds time to the running session. Accepted in hard mode too: a longer
+    /// session is stricter, never an escape.
+    Extend {
+        by: Duration,
+    },
     Pause {
         id: Uuid,
     },

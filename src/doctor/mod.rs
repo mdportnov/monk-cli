@@ -55,6 +55,8 @@ pub enum ActionKind {
     PrintPathHint,
     PruneStaleAppRefs,
     ResetConfig,
+    #[cfg(target_os = "macos")]
+    RefreshMenubar,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize)]
@@ -77,6 +79,8 @@ impl ActionKind {
             ActionKind::PrintPathHint => actions::print_path_hint(),
             ActionKind::PruneStaleAppRefs => actions::prune_stale_app_refs(),
             ActionKind::ResetConfig => actions::reset_config(),
+            #[cfg(target_os = "macos")]
+            ActionKind::RefreshMenubar => actions::refresh_menubar(),
         }
     }
 }
@@ -102,6 +106,7 @@ pub fn purpose_for(id: &str) -> &'static str {
         "log" => "tail of the daemon log for quick triage",
         "env.path" => "is monk on $PATH so new shells can find it?",
         "env.completions" => "shell completions installed for your interactive shell",
+        "menubar" => "macOS menu bar companion — its own copy of the binary in ~/Applications",
         _ => "",
     }
 }
@@ -158,6 +163,8 @@ pub async fn run() -> Report {
     checks.push(checks::check_blocker_backend());
     checks.push(checks::check_dns_server().await);
     checks.push(checks::check_block_page().await);
+    #[cfg(target_os = "macos")]
+    checks.push(checks::check_menubar());
     checks.push(checks::check_env_path());
     checks.push(checks::check_completions());
     checks.push(checks::check_log_tail());
@@ -185,13 +192,24 @@ pub async fn run_fix() -> crate::Result<()> {
             continue;
         }
         for a in &c.actions {
-            if !matches!(
+            #[cfg(target_os = "macos")]
+            let auto_fixable = matches!(
                 a.kind,
                 ActionKind::ReinstallService
                     | ActionKind::InstallCompletions
                     | ActionKind::PrintPathHint
                     | ActionKind::PruneStaleAppRefs
-            ) {
+                    | ActionKind::RefreshMenubar
+            );
+            #[cfg(not(target_os = "macos"))]
+            let auto_fixable = matches!(
+                a.kind,
+                ActionKind::ReinstallService
+                    | ActionKind::InstallCompletions
+                    | ActionKind::PrintPathHint
+                    | ActionKind::PruneStaleAppRefs
+            );
+            if !auto_fixable {
                 continue;
             }
             printed_any = true;

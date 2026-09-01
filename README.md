@@ -40,7 +40,7 @@
 - **Hard mode** — tamper-evident session lock signed with BLAKE3 keyed HMAC. No `monk stop`, no config edits, no daemon kill can shortcut it.
 - **Background daemon** — Unix domain / local socket IPC, fail-closed reconciliation loop, SIGTERM-safe cleanup, systemd / launchd / Windows Task Scheduler install.
 - **Interactive TUI** — ratatui-powered dashboard for sessions, live stats, profile editing, type-to-filter mode search, daily-cap progress, and a high-contrast hard-mode badge.
-- **Menu bar app (macOS)** — native status item with the session countdown and one-click mode start/stop; set up automatically by the wizard, or via `monk menubar install`.
+- **Menu bar app (macOS)** — native status item with the session countdown, one-click mode start/stop, "add time" on a running session, and notifications with Add/Stop buttons; set up automatically by the wizard, or via `monk menubar install`.
 - **Localized** — English and Русский out of the box via `rust-i18n`.
 - **Zero unsafe** — `#![deny(unsafe_code)]` in the main crate.
 
@@ -174,6 +174,7 @@ Prefer a UI? `monk tui` opens the full dashboard. Start a committed session you 
 | ---------------------------------------------------- | --------------------------------------------- |
 | `monk start [PROFILE] [-d DUR] [--hard] [--reason …]` | Start a focus session (`--hard` = irreversible) |
 | `monk stop`                                          | End the active session (soft mode only)       |
+| `monk extend <DUR>`                                  | Add time to the running session (works in hard mode) |
 | `monk panic [--phrase …] [--cancel]`                 | Request — or cancel — a delayed hard-mode escape |
 | `monk status`                                        | Daemon + session status                       |
 | `monk stats`                                         | Session statistics                            |
@@ -211,7 +212,11 @@ Built-in presets for `--preset`: `deepwork`, `study`, `detox`, `sleep`, `sober`,
 
 ### Menu bar (macOS)
 
-A native status item next to the clock: a ring when idle, a filled dot with a countdown while a session runs (🔒 in hard mode). Every profile gets a submenu with blocked-site/app counts, duration choices and a hard-mode start; hard sessions can't be stopped from the menu — `monk panic` in a terminal stays the only escape. The setup wizard offers it on macOS (skip with `--no-menubar`); if you use a menu bar manager like Ice or Bartender, the icon may start in the hidden section — Cmd-drag it out once.
+A native status item next to the clock, wearing the monk mark: dimmed when idle, solid with a countdown while a session runs, and with a filled block cursor in hard mode. Every mode gets a submenu with blocked-site/app counts, duration choices, a hard-mode start and "make this the default ★" — the default mode always leads the list. A running session can be extended from "Add time" (+5/15/30/60m); hard sessions still can't be stopped from the menu — `monk panic` in a terminal stays the only escape.
+
+`monk menubar install` builds `~/Applications/monk.app` around the current binary and registers it as a login item, so notifications carry monk's own icon and buttons: the app announces a session's start, a five-minute warning and its completion, with "Add 15m" and "Stop session" on the banner. macOS asks for notification permission on first launch — decline it and the app falls back to plain scripted banners, everything else keeps working. It is a per-user app: install it without `sudo`. If you use a menu bar manager like Ice or Bartender, the icon may start in the hidden section — Cmd-drag it out once.
+
+`monk update` and `monk doctor` notice when the bundle is left on an older binary and rebuild it. Other platforms have no menu bar app: `monk menubar` says so and exits, and nothing else changes.
 
 | Command                  | What it does                                            |
 | ------------------------ | ------------------------------------------------------- |

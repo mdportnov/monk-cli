@@ -31,6 +31,9 @@ _monk() {
             monk,doctor)
                 cmd="monk__doctor"
                 ;;
+            monk,extend)
+                cmd="monk__extend"
+                ;;
             monk,help)
                 cmd="monk__help"
                 ;;
@@ -168,6 +171,9 @@ _monk() {
                 ;;
             monk__help,doctor)
                 cmd="monk__help__doctor"
+                ;;
+            monk__help,extend)
+                cmd="monk__help__extend"
                 ;;
             monk__help,help)
                 cmd="monk__help__help"
@@ -332,7 +338,7 @@ _monk() {
 
     case "${cmd}" in
         monk)
-            opts="-h -V --locale --help --version init tui lang start stop panic status profiles profile apps stats doctor config daemon menubar completions update help"
+            opts="-h -V --locale --help --version init tui lang start stop extend panic status profiles profile apps stats doctor config daemon menubar completions update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -875,8 +881,26 @@ _monk() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        monk__extend)
+            opts="-h -V --locale --help --version <DURATION>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --locale)
+                    COMPREPLY=($(compgen -W "en ru" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         monk__help)
-            opts="init tui lang start stop panic status profiles profile apps stats doctor config daemon menubar completions update help"
+            opts="init tui lang start stop extend panic status profiles profile apps stats doctor config daemon menubar completions update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1100,6 +1124,20 @@ _monk() {
             return 0
             ;;
         monk__help__doctor)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        monk__help__extend)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

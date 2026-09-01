@@ -377,6 +377,14 @@ pub(crate) fn open_path_action(
     Ok(format!("opened {}", path.display()))
 }
 
+/// Rebuilds `monk.app` around the current binary and restarts it.
+#[cfg(target_os = "macos")]
+pub(crate) fn refresh_menubar() -> std::result::Result<String, String> {
+    crate::menubar::install_agent()
+        .map(|_| "menu bar app refreshed".to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

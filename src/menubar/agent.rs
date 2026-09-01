@@ -1,18 +1,18 @@
 //! Login-item management for the menu bar app: a per-user LaunchAgent that
-//! starts `monk menubar` at login (Aqua session only).
+//! starts `monk menubar` at login (Aqua session only). The job points at the
+//! executable inside `monk.app` rather than at the bare binary — see
+//! [`super::bundle`] for why the identity matters.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::{Error, Result};
 
-pub const AGENT_LABEL: &str = "dev.monk.menubar";
+pub const AGENT_LABEL: &str = super::bundle::BUNDLE_ID;
 const AGENT_TEMPLATE: &str = include_str!("../../assets/launchd/dev.monk.menubar.plist");
 
 pub fn agent_plist_path() -> Result<PathBuf> {
-    let home = directories::BaseDirs::new()
-        .map(|d| d.home_dir().to_path_buf())
-        .ok_or_else(|| Error::Other("cannot resolve home directory".into()))?;
+    let home = crate::paths::user_home()?;
     Ok(home.join("Library/LaunchAgents").join(format!("{AGENT_LABEL}.plist")))
 }
 
@@ -25,7 +25,18 @@ pub fn installed() -> bool {
 /// the plist is still in place (the agent loads at next login) and the
 /// caller may fall back to [`spawn_now`].
 pub fn install() -> Result<bool> {
-    let bin = std::env::current_exe()?;
+    super::require_user_session()?;
+    // Whatever is running now runs the *old* binary; leave it up and the new
+    // bundle would lose the single-instance race and exit unnoticed.
+    super::stop_running();
+    let bin = super::bundle::install()?;
+    register(&bin)
+}
+
+/// Writes the login item for an already-built bundle and asks launchd to
+/// start it now. Split out so a refresh can rebuild the bundle without
+/// re-deciding whether the user wants a login item at all.
+pub fn register(bin: &std::path::Path) -> Result<bool> {
     let bin = bin.to_str().ok_or_else(|| Error::Other("non-utf8 binary path".into()))?;
     let plist = agent_plist_path()?;
     if let Some(dir) = plist.parent() {
@@ -35,6 +46,10 @@ pub fn install() -> Result<bool> {
     let uid = nix::unistd::getuid();
     // Boot out any stale registration first; ignore failures (not loaded).
     let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}/{AGENT_LABEL}")]);
+    // launchd unloads asynchronously, and bootstrapping a label it is still
+    // tearing down fails with "service already loaded" — which would send us
+    // down the direct-launch fallback for no reason.
+    wait_until_unloaded(uid.as_raw());
     let target = format!("gui/{uid}");
     let status = Command::new("launchctl")
         .args(["bootstrap", &target])
@@ -53,7 +68,12 @@ pub fn install() -> Result<bool> {
 /// immediately, so callers may fire this without checking first.
 pub fn spawn_now() -> Result<()> {
     use std::os::unix::process::CommandExt;
-    let exe = std::env::current_exe()?;
+    // Prefer the bundled copy: started from the bare binary, the app has no
+    // identity to hang notifications off.
+    let exe = match super::bundle::executable_path() {
+        Ok(path) if path.exists() => path,
+        _ => std::env::current_exe()?,
+    };
     Command::new(exe)
         .arg("menubar")
         .stdin(Stdio::null())
@@ -82,7 +102,25 @@ pub fn uninstall() -> Result<()> {
 pub fn uninstall_and_stop() -> Result<()> {
     let uid = nix::unistd::getuid();
     let _ = quiet_launchctl(&["bootout", &format!("gui/{uid}/{AGENT_LABEL}")]);
-    uninstall()
+    // launchctl only retires the job it started; an app launched by hand
+    // would otherwise outlive the bundle it runs from.
+    super::stop_running();
+    uninstall()?;
+    super::bundle::uninstall()
+}
+
+/// Polls until launchd forgets the label, or ~2s pass.
+fn wait_until_unloaded(uid: u32) {
+    let target = format!("gui/{uid}/{AGENT_LABEL}");
+    for _ in 0..20 {
+        match quiet_launchctl(&["print", &target]) {
+            Ok(status) if status.success() => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            _ => return,
+        }
+    }
+    tracing::debug!("launchd still reports the menu bar job after bootout");
 }
 
 fn quiet_launchctl(args: &[&str]) -> std::io::Result<std::process::ExitStatus> {

@@ -19,6 +19,7 @@ pub const LEGACY_AUDIT_FILE: &str = "audit.log";
 pub enum AuditKind {
     SessionStarted,
     SessionCompleted,
+    SessionExtended,
     SessionPanicked,
     PanicRequested,
     PanicCancelled,
@@ -46,6 +47,7 @@ impl AuditKind {
         match self {
             Self::SessionStarted => "session_started",
             Self::SessionCompleted => "session_completed",
+            Self::SessionExtended => "session_extended",
             Self::SessionPanicked => "session_panicked",
             Self::PanicRequested => "panic_requested",
             Self::PanicCancelled => "panic_cancelled",
@@ -70,6 +72,7 @@ impl AuditKind {
         Some(match s {
             "session_started" => Self::SessionStarted,
             "session_completed" => Self::SessionCompleted,
+            "session_extended" => Self::SessionExtended,
             "session_panicked" => Self::SessionPanicked,
             "panic_requested" => Self::PanicRequested,
             "panic_cancelled" => Self::PanicCancelled,
